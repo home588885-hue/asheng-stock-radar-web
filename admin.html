@@ -1751,11 +1751,7 @@ h1 {
       let lastEntryPoolRefreshAt = 0;
       let lastEntryResumeAt = 0;
       let latestScanProgress = {};
-      const entrySurvivalSince = new Map(JSON.parse(sessionStorage.getItem('entrySurvivalSince')||'[]'));
-      const entrySoftFailSince = new Map(JSON.parse(sessionStorage.getItem('entrySoftFailSince')||'[]'));
-      const FORMAL_SURVIVAL_MINUTES = 12;
-      const SOFT_FAIL_GRACE_MINUTES = 3;
-      const saveEntrySurvival=()=>{sessionStorage.setItem('entrySurvivalSince',JSON.stringify([...entrySurvivalSince]));sessionStorage.setItem('entrySoftFailSince',JSON.stringify([...entrySoftFailSince]));};
+      // 進場雷達僅保留最近完整日K快照，不建立盤中存活計時器。
       const scanProgressSuffix = () => latestScanProgress?.latest_complete === false ? `｜🔄 最新資料 ${Number(latestScanProgress.latest_count || 0)}/${Number(latestScanProgress.total_stocks || 0)}，訊號數尚未代表全市場` : '';
       const $ = selector => document.querySelector(selector);
       const fetchWithTimeout = async (url, options = {}, timeoutMs = 12000) => {
@@ -1845,6 +1841,8 @@ h1 {
             })[char]
         );
       const memberFacingText = value => String(value ?? '')
+        .replace(/盤中正式買點仍需即時量價與12分鐘存活確認/g, '夜間模型候選，隔日須自行核對現價與成交量')
+        .replace(/12:50起持續確認12分鐘/g, '以最近完整日K模型觀察')
         .replace(/V5\s*Precision/gi, '高品質確認')
         .replace(/正式\s*V5/gi, '進場確認')
         .replace(/原\s*V5/gi, '原進場模型')
@@ -2720,177 +2718,13 @@ h1 {
         if (rows.length) await savePullbackWatchRows(rows);
       };
 
-      const quoteMinutes = quote => {
-        const m = String(quote?.quote_time || '').match(/(\d{1,2}):(\d{2})/);
-        return m ? Number(m[1]) * 60 + Number(m[2]) : taipeiMarketState().totalMinutes;
-      };
-      const entrySurvivalState = (item, quote, baseAction) => {
+      // Entry radar is night-snapshot-only; the old intraday 12-minute gate is retired.
+      // Never turn an EOD candidate into a live buy instruction based on a page timer.
+      const entrySnapshotState = (item, baseAction) => {
         if (!baseAction) return null;
-        if (baseAction.key === 'wait') return { ...baseAction, phase:'candidate', buyable:false, rank:Number(baseAction.rank || 10), text:'🟡 進場候選｜等確認', detail:(baseAction.text ? baseAction.text + '｜' : '') + (baseAction.detail || '保留候選，暫不列為可買') };
-        if (!quote) return { ...baseAction, phase:'observe', buyable:false, rank:baseAction.rank, text:'👀 模型候選｜等盤中存活檢查', detail:'缺即時報價，不列為可下單訊號' };
-        const metrics = item?.metrics || {};
-        const mc = metrics.ma_cluster || {};
-        const symbol = String(item?.stock_id || '');
-        const price = Number(quote?.price);
-        const open = Number(quote?.open);
-        const high = Number(quote?.high);
-        const low = Number(quote?.low);
-        const prev = Number(quote?.prev_close ?? metrics.close);
-        const volume = Number(quote?.volume_lots || 0);
-        const avg20 = Number(metrics.avg_volume_20_lots || 0);
-        const ma10 = Number(metrics.ma10), ma20 = Number(metrics.ma20), ma60 = Number(metrics.ma60);
-        const mas = [ma10,ma20,ma60].filter(v => Number.isFinite(v) && v > 0);
-        const maxMa = mas.length === 3 ? Math.max(...mas) : null;
-        const pos1y = Number(metrics.position_1y_pct);
-        const dailyK = Number(metrics.daily_k);
-        const dailyD = Number(metrics.daily_d);
-        const breakout = Number(mc.breakout_price ?? metrics.high20_prev ?? metrics.recent_high20);
-        const ext20 = Number.isFinite(price) && ma20 > 0 ? (price/ma20-1)*100 : null;
-        const distBreak = Number.isFinite(price) && breakout > 0 ? (price/breakout-1)*100 : null;
-        const fraction = marketFraction(quote?.quote_time);
-        const projectedLots = fraction > 0 ? volume / fraction : volume;
-        const projectedRatio = avg20 > 0 ? projectedLots / avg20 : null;
-        const qMin = quoteMinutes(quote);
-        const quoteFinal = qMin >= 810;
-        const fullDailyConfirmed = quoteFinal && String(item?.as_of || '') === expectedSignalDataDate() && signalDataFresh(item);
-
-        const structurePass = mc.all_rising === true && maxMa != null && price >= maxMa * .995;
-        // Formal buy remains strict. Starter is intentionally looser so a safe early position can exist before every confirmation is perfect.
-        const liquidityPass = avg20 >= 500 && projectedLots >= 1000 && projectedRatio != null && projectedRatio >= .70 && projectedRatio <= 2.20;
-        const starterLiquidityBase = avg20 >= 500 && projectedLots >= 1000 && projectedRatio != null && projectedRatio >= .55 && projectedRatio <= 2.60;
-        const kdPass = Number.isFinite(dailyK) && dailyK >= 35 && (dailyK <= 80 || (dailyK <= 95 && Number.isFinite(dailyD) && dailyK >= dailyD));
-        const starterKdPass = Number.isFinite(dailyK) && dailyK >= 30 && (dailyK <= 85 || (dailyK <= 95 && Number.isFinite(dailyD) && dailyK >= dailyD));
-        const positionPass = Number.isFinite(pos1y) && pos1y <= 80 && kdPass && ext20 != null && ext20 <= 9;
-        const starterPositionPass = Number.isFinite(pos1y) && pos1y <= 85 && starterKdPass && ext20 != null && ext20 <= 9;
-        const tapePass = Number.isFinite(open) && Number.isFinite(prev) && price >= open * .985 && price >= prev * .985;
-        const intradayRange = Number.isFinite(high) && Number.isFinite(low) && high > low ? high - low : null;
-        const upperWick = Number.isFinite(high) && Number.isFinite(open) && Number.isFinite(price) ? Math.max(0, high - Math.max(open, price)) : null;
-        const upperWickShare = intradayRange != null && intradayRange > 0 && upperWick != null ? upperWick / intradayRange : null;
-        const rejectionPct = Number.isFinite(high) && Number.isFinite(price) && high > 0 && price > 0 ? (high / price - 1) * 100 : null;
-        const lowPositionExplosive = avg20 >= 500
-          && projectedLots >= 1000
-          && projectedRatio != null && projectedRatio > 2.60 && projectedRatio <= 4.00
-          && Number.isFinite(pos1y) && pos1y <= 35
-          && ext20 != null && ext20 <= 6
-          && mc.all_rising === true
-          && Number.isFinite(open) && Number.isFinite(prev)
-          && price >= open * .995 && price >= prev * .995
-          && (rejectionPct == null || rejectionPct < 2);
-        const midPositionBreakout = avg20 >= 500
-          && projectedLots >= 1000
-          && projectedRatio != null && projectedRatio > 2.60 && projectedRatio <= 3.20
-          && Number.isFinite(pos1y) && pos1y > 35 && pos1y <= 70
-          && ext20 != null && ext20 <= 8
-          && mc.all_rising === true && mc.above_all_mas === true
-          && Number.isFinite(distBreak) && distBreak > 0 && distBreak <= 3
-          && Number.isFinite(dailyK) && Number.isFinite(dailyD) && dailyK >= 30 && dailyK <= 80 && dailyK >= dailyD
-          && Number.isFinite(open) && Number.isFinite(prev)
-          && price >= open * .995 && price >= prev * .995
-          && (rejectionPct == null || rejectionPct < 2);
-        const starterLiquidityPass = starterLiquidityBase || lowPositionExplosive || midPositionBreakout;
-        const intradayBreakoutFailed = breakout > 0 && Number.isFinite(high) && Number.isFinite(price) && high >= breakout * 1.005 && price < breakout * .998 && ((upperWickShare != null && upperWickShare >= .45 && rejectionPct != null && rejectionPct >= 2) || (rejectionPct != null && rejectionPct >= 3)) && (!Number.isFinite(open) || price <= open * 1.005);
-        let locationPass = true;
-        if (baseAction.key === 'pre') locationPass = distBreak != null && distBreak >= -5 && distBreak <= 1.5;
-        if (baseAction.key === 'breakout') locationPass = distBreak != null && distBreak >= -.5 && distBreak <= 8;
-        if (baseAction.key === 'add') locationPass = ma20 > 0 && price >= ma20 * .995 && ext20 != null && ext20 <= 8;
-        const starterLocationPass = locationPass;
-        const starterPass = structurePass && starterLiquidityPass && starterPositionPass && tapePass && starterLocationPass;
-        const survivalPass = structurePass && liquidityPass && positionPass && tapePass && locationPass;
-
-        if (intradayBreakoutFailed) {
-          entrySurvivalSince.delete(symbol); entrySoftFailSince.delete(symbol); saveEntrySurvival();
-          return { ...baseAction, phase:'blocked', buyable:false, trialable:false, rank:Math.max(10,Number(baseAction.rank || 0))+300, text:'🔴 明確不能買｜長上影突破失敗', detail:'盤中曾突破 '+num(breakout,2)+'，高點 '+num(high,2)+' 後回落 '+num(rejectionPct,1)+'%｜現價重新跌回突破價下方，取消試單資格，等重新站回再評估' };
-        }
-
-        if (!starterPass) {
-          entrySurvivalSince.delete(symbol); saveEntrySurvival();
-          const survivalReasons = [];
-          if (!structurePass) survivalReasons.push('均線／價格結構未通過');
-          if (!starterLiquidityPass) {
-            if (avg20 < 500) survivalReasons.push('20日均量 '+num(avg20,0)+'張｜低於500張門檻');
-            else if (projectedLots < 1000) survivalReasons.push('推估今日量 '+num(projectedLots,0)+'張｜低於1000張門檻');
-            else if (projectedRatio != null && projectedRatio < .55) survivalReasons.push('推估量比 '+num(projectedRatio,2)+'x｜低於試單門檻0.55x');
-            else if (projectedRatio != null && projectedRatio > 2.60) survivalReasons.push('推估量比 '+num(projectedRatio,2)+'x｜高於試單上限2.60x');
-            else survivalReasons.push('量能尚未通過試單門檻');
-          }
-          if (!starterPositionPass) survivalReasons.push('位置或KD偏高／偏弱');
-          if (!tapePass) survivalReasons.push('盤中價格轉弱');
-          if (!starterLocationPass) survivalReasons.push('買點位置不合格');
-          return { ...baseAction, phase:'candidate', buyable:false, trialable:false, rank:Math.max(10,Number(baseAction.rank || 0)), text:'🟡 近買點｜等條件補齊', detail:(survivalReasons.slice(0,2).join('＋') || '條件尚未完成')+'｜先不試單，保留追蹤' };
-        }
-
-        // Safe starter layer: no obvious risk is present, but one or more formal confirmations are still missing.
-        // Core MA structure and hard risk controls still reset immediately. Soft misses get a short grace window instead of erasing the whole timer.
-        if (!survivalPass) {
-          const hardSurvivalFailure = !structurePass ||
-            (ma20 > 0 && Number.isFinite(price) && price < ma20 * .985) ||
-            (Number.isFinite(open) && open > 0 && price < open * .97) ||
-            (Number.isFinite(prev) && prev > 0 && price < prev * .97);
-          const pending = [];
-          if (!liquidityPass) {
-            if (avg20 < 500) pending.push('20日均量 '+num(avg20,0)+'張｜低於500張門檻');
-            else if (projectedLots < 1000) pending.push('推估今日量 '+num(projectedLots,0)+'張｜低於1000張門檻');
-            else if (projectedRatio != null && projectedRatio < .70) pending.push('推估量比 '+num(projectedRatio,2)+'x｜低於正式門檻0.70x');
-            else if (projectedRatio != null && projectedRatio > 2.20) pending.push('推估量比 '+num(projectedRatio,2)+'x｜高於正式上限2.20x');
-            else pending.push('量能尚未達正式門檻');
-          }
-          if (!positionPass) pending.push('位置／KD尚未達正式門檻');
-          if (!locationPass) pending.push('正式買點位置待確認');
-          if (!tapePass) pending.push('盤中價格短暫轉弱');
-
-          if (hardSurvivalFailure) {
-            entrySurvivalSince.delete(symbol); entrySoftFailSince.delete(symbol); saveEntrySurvival();
-            return { ...baseAction, phase:'starter', buyable:false, trialable:true, rank:Number(baseAction.rank || 0)+30, text:'🔵 可小量佈局試單｜硬條件重新確認', detail:(pending.slice(0,2).join('＋') || '核心結構待重新確認')+'｜正式買點計時重新開始' };
-          }
-
-          if (lowPositionExplosive) {
-            entrySoftFailSince.delete(symbol); saveEntrySurvival();
-            return { ...baseAction, phase:'starter', buyable:false, trialable:true, rank:Number(baseAction.rank || 0)+45, text:'🔵 底部放量發動｜可小量試單', detail:'1年位階 '+num(pos1y,1)+'%｜距MA20 '+num(ext20,1)+'%｜推估量比 '+num(projectedRatio,2)+'x；低位階放量視為發動，不等同高檔爆量，正式買點仍維持原門檻' };
-          }
-
-          if (midPositionBreakout) {
-            entrySoftFailSince.delete(symbol); saveEntrySurvival();
-            return { ...baseAction, phase:'starter', buyable:false, trialable:true, rank:Number(baseAction.rank || 0)+44, text:'🔵 中位突破發動｜可小量試單', detail:'1年位階 '+num(pos1y,1)+'%｜突破價上方 '+num(distBreak,1)+'%｜距MA20 '+num(ext20,1)+'%｜推估量比 '+num(projectedRatio,2)+'x；屬中位階帶量突破，先小部位，正式買點仍維持原門檻' };
-          }
-
-          if (entrySurvivalSince.has(symbol)) {
-            const nowSoft = Date.now();
-            if (!entrySoftFailSince.has(symbol)) { entrySoftFailSince.set(symbol, nowSoft); saveEntrySurvival(); }
-            const softFailMinutes = (nowSoft - Number(entrySoftFailSince.get(symbol))) / 60000;
-            if (softFailMinutes >= SOFT_FAIL_GRACE_MINUTES) {
-              entrySurvivalSince.delete(symbol); entrySoftFailSince.delete(symbol); saveEntrySurvival();
-              return { ...baseAction, phase:'starter', buyable:false, trialable:true, rank:Number(baseAction.rank || 0)+32, text:'🔵 可小量佈局試單｜正式條件重新計時', detail:(pending.slice(0,2).join('＋') || '軟條件未恢復')+'｜超過'+SOFT_FAIL_GRACE_MINUTES+'分鐘，正式買點計時重新開始' };
-            }
-            return { ...baseAction, phase:'starter', buyable:false, trialable:true, rank:Number(baseAction.rank || 0)+34, text:'🔵 可小量佈局試單｜軟條件短暫未滿', detail:(pending.slice(0,2).join('＋') || '軟條件短暫波動')+'｜保留正式買點計時，最多寬限'+SOFT_FAIL_GRACE_MINUTES+'分鐘' };
-          }
-
-          return { ...baseAction, phase:'starter', buyable:false, trialable:true, rank:Number(baseAction.rank || 0)+35, text:'🔵 可小量佈局試單｜正式條件尚未全滿', detail:(pending.slice(0,2).join('＋') || '基本結構安全')+'｜只用小部位，等完整確認再加碼' };
-        }
-        entrySoftFailSince.delete(symbol); saveEntrySurvival();
-        if (qMin < 770) {
-          entrySurvivalSince.delete(symbol); saveEntrySurvival();
-          return { ...baseAction, phase:'starter', buyable:false, trialable:true, rank:baseAction.rank+40, text:'🔵 可小量佈局試單', detail:'盤中結構、量能、位置目前通過｜先小部位，不一次買滿；12:50後再進入'+FORMAL_SURVIVAL_MINUTES+'分鐘存活確認' };
-        }
-
-        if (quoteFinal) {
-          if (fullDailyConfirmed) return { ...baseAction, phase:'confirmed', buyable:false, rank:baseAction.rank+200, text:'📌 今日條件完成｜明日優先追蹤', detail:'今日收盤條件已完整確認；保留在進場雷達，明日盤中依最新量價重新確認，不用退回發動前' };
-          return { ...baseAction, phase:'final_wait', buyable:false, rank:baseAction.rank+120, text:'⚡ 已收盤｜完整日K優先補算中', detail:'13:30已收盤，今日不再新增部位；進場候選約每60秒優先重算，資料源可用後自動完成確認' };
-        }
-
-        const now = Date.now();
-        if (!entrySurvivalSince.has(symbol)) { entrySurvivalSince.set(symbol, now); saveEntrySurvival(); }
-        const heldSeconds = Math.max(0, Math.floor((now - Number(entrySurvivalSince.get(symbol))) / 1000));
-        const targetSeconds = FORMAL_SURVIVAL_MINUTES * 60;
-        const heldMinutes = heldSeconds / 60;
-        const elapsedText = String(Math.floor(heldSeconds / 60)).padStart(2,'0') + ':' + String(heldSeconds % 60).padStart(2,'0');
-        const targetText = String(FORMAL_SURVIVAL_MINUTES).padStart(2,'0') + ':00';
-        const survivalPct = Math.max(0, Math.min(100, Math.floor(heldSeconds / targetSeconds * 100)));
-        if (heldMinutes < FORMAL_SURVIVAL_MINUTES) {
-          return { ...baseAction, phase:'starter', buyable:false, trialable:true, rank:baseAction.rank+60, text:'🔵 可小量佈局試單｜穩定度確認中', detail:`目前條件成立 ${elapsedText}｜可小部位試單；滿${FORMAL_SURVIVAL_MINUTES}分鐘後標示起漲條件已穩定`, survivalPct, survivalElapsed:elapsedText, survivalTarget:targetText };
-        }
-        return { ...baseAction, phase:'trial', buyable:true, rank:baseAction.rank+100, text:'✅ 起漲條件已穩定｜可小量分批', detail:`12:50後核心條件已連續成立滿${FORMAL_SURVIVAL_MINUTES}分鐘｜風控持續監看，不另設正式買點層級`, survivalPct:100, survivalElapsed:targetText, survivalTarget:targetText, survivalDone:true };
+        return {...baseAction, phase:'candidate', buyable:false, trialable:false,
+          detail:'最近完整交易日日K候選，非盤中即時買點｜'+String(baseAction.detail||'請先確認當下市場行情')};
       };
-
 
       const entrySectionHtml = (title, rows, emptyText = '', tone = '') => {
         const stableKey = 'entry-' + (tone || 'default');
@@ -3347,10 +3181,7 @@ h1 {
         const quickHtml = `<div class="quick-grid"><div><span>${priceLabel}</span><b>${priceValue}</b></div><div><span>技術＋籌碼</span><b>${combinedScore}</b></div><div><span>1年位階</span><b>${num(metrics.position_1y_pct)}%</b></div><div><span>5日/20日均量</span><b>${num(metrics.volume_5_20_ratio, 2)}x</b></div></div>`;
         const hiddenModelHtml = `${launchQualityHtml}${precisionHtml}${warrant ? `<div class="signal-note">${warrant}</div>` : ''}${bottomHtml}${launchHtml}${launchSequenceHtml}${holding ? '' : guideHtml}`;
         const detailHtml = `<details class="card-details"><summary>完整判斷與數據</summary><div class="detail-body">${hiddenModelHtml}${v5Html}${chipHtml}${holding ? '' : liquidityHtml}${playbookHtml}<div class="metrics"><span class="pill">3年位階 ${num(metrics.position_3y_pct)}%</span><span class="pill">週K ${num(metrics.weekly_k)}｜${gradeText(weeklyKGrade(metrics.weekly_k))}</span><span class="pill">月K ${num(metrics.monthly_k)}｜${gradeText(monthlyKGrade(metrics.monthly_k))}</span><span class="pill">${backtestSignal(item)}</span>${metrics.backtest ? `<span class="pill">5日 ${num(metrics.backtest.win_rate_5d_pct)}%</span><span class="pill">20日 ${num(metrics.backtest.win_rate_20d_pct)}%</span>` : ''}</div><div class="why">${reasons}</div>${cautions ? `<div class="warn">${cautions}</div>` : ''}</div></details>`;
-        const survivalHtml = Number.isFinite(Number(signal.survivalPct))
-          ? `<div class="survival-progress ${signal.survivalDone ? 'done' : ''}"><div class="survival-progress-head"><span>${signal.survivalDone ? '✅ 存活確認完成' : '⏱ 存活進度'}</span><span>${esc(signal.survivalElapsed || '00:00')} / ${esc(signal.survivalTarget || '12:00')}｜${Math.max(0,Math.min(100,Number(signal.survivalPct)||0))}%</span></div><div class="survival-progress-track"><div class="survival-progress-fill" style="width:${Math.max(0,Math.min(100,Number(signal.survivalPct)||0))}%"></div></div></div>`
-          : '';
-        const actionHtml = options.hideSignal ? '' : `<div class="trade-signal ${signal.className}">${esc(memberFacingText(signal.text))}<small style="display:block;margin-top:4px;font-weight:500">${esc(memberFacingText(signal.detail || ''))}</small>${survivalHtml}</div>`;
+        const actionHtml = options.hideSignal ? '' : `<div class="trade-signal ${signal.className}">${esc(memberFacingText(signal.text))}<small style="display:block;margin-top:4px;font-weight:500">${esc(memberFacingText(signal.detail || ''))}</small></div>`;
         return `<article class="card" data-stock-id="${esc(item.stock_id)}"><div class="top"><div><div class="name">${esc(item.stock_id)} ${esc(item.stock_name)}</div><div class="meta">${esc(item.market)}${item.industry ? '・' + esc(item.industry) : ''}${timeInfoStages() ? '' : '｜資料日 ' + esc(item.as_of || '-')}</div></div><div class="badge ${esc(item.stage)}">模型 ${Number(item.score || 0)}分</div></div>${companyProfileHtml(item)}${volumePriceHtml(item, displayQuote)}${pullbackWatchHtml(item, displayQuote)}${holding ? holdingTodayHtml : actionHtml + quickHtml + deviationWarningHtml + riskSummary}${holdingHtml}${holdingStatusHtml}${detailHtml}${timeInfoStages() ? timeInfoHtml(item, displayQuote) : '<div class="time">背景模型掃描：' + updated + '</div>'}</article>`;
       }
 
@@ -3623,7 +3454,7 @@ h1 {
         const research = bottom.research || {};
         if (bottom.confirmed === true) {
           const bonuses = [bottom.bonus_k_turn === true ? 'KD轉強加分' : '', bottom.bonus_recover_prev_open === true ? '昨跌今收復加分' : ''].filter(Boolean).join('｜');
-          return { rank: 6, className: 'live-launch', title: '🔥 底部起漲型態確認｜已轉進場雷達', detail: `底部型態後 ${Number(bottom.recent_base_days || 0)} 日｜溫量紅K｜日量/20日均量 ${num(bottom.day_volume_ratio, 2)}x${bonuses ? `｜${bonuses}` : ''}`, extra: research.validated_for_current_rule === false ? '型態確認不等於正式買點｜已轉進場雷達做量價與12分鐘存活確認' : `歷史10日內觸及+3% ${num(research.hit_3pct_10d_pct, 1)}%｜+5% ${num(research.hit_5pct_10d_pct, 1)}%｜n=${Number(research.sample_size || 0)}；這是發動命中率，不是固定持有勝率` };
+          return { rank: 6, className: 'live-launch', title: '🔥 底部起漲型態確認｜已轉進場雷達', detail: `底部型態後 ${Number(bottom.recent_base_days || 0)} 日｜溫量紅K｜日量/20日均量 ${num(bottom.day_volume_ratio, 2)}x${bonuses ? `｜${bonuses}` : ''}`, extra: research.validated_for_current_rule === false ? '型態確認不等於正式買點｜已轉進場雷達依最新完整日K觀察' : `歷史10日內觸及+3% ${num(research.hit_3pct_10d_pct, 1)}%｜+5% ${num(research.hit_5pct_10d_pct, 1)}%｜n=${Number(research.sample_size || 0)}；這是發動命中率，不是固定持有勝率` };
         }
         if (quote && bottom.live_window_eligible === true) {
           const live = liveState(item, quote);
@@ -4070,22 +3901,10 @@ h1 {
           return;
         }
         const market = taipeiMarketState();
-        let cls = 'closed';
-        let text = '⚪ 現在階段：休市｜下一交易日 09:00 開始追蹤盤中候選';
-        if (market.weekday && market.totalMinutes < 540) {
-          text = '⚪ 現在階段：盤前待機｜09:00 開始追蹤盤中候選';
-        } else if (market.weekday && market.totalMinutes >= 540 && market.totalMinutes < 770) {
-          cls = 'observe';
-          text = '👀 現在階段：盤中觀察｜優先找起漲第一天與盤中發動';
-        } else if (market.weekday && market.totalMinutes >= 770 && market.totalMinutes < 810) {
-          cls = 'survival';
-          text = '🟠 現在階段：起漲條件穩定度確認｜12:50起持續確認12分鐘，風控不中斷';
-        } else if (market.weekday && market.totalMinutes >= 810) {
-          cls = 'confirm';
-          text = '📌 現在階段：盤後整理｜保留明日優先名單，下一交易日盤中重新確認';
-        }
-        box.className = 'entry-phase on ' + cls;
-        box.textContent = text;
+        box.className = 'entry-phase on ' + (market.open ? 'observe' : 'closed');
+        box.textContent = market.open
+          ? '📘 進場雷達｜目前顯示最近完整日K模型快照｜盤中不抓候選股即時價，不執行12分鐘確認'
+          : '📘 進場雷達｜交易日晚上9點起分批更新模型｜候選股不使用盤中存活計時';
       };
 
       async function refreshLiveQuotes() {
@@ -4156,7 +3975,7 @@ h1 {
               .map(item => ({ item, quote: quoteMap.get(String(item.stock_id)) || null }))
               .map(row => {
                 const baseAction = simpleActionState(row.item,row.quote);
-                return { ...row, action: entrySurvivalState(row.item,row.quote,baseAction) };
+                return { ...row, action: entrySnapshotState(row.item,baseAction) };
               })
               .filter(row => row.action)
               .sort((a,b)=>b.action.rank-a.action.rank);
@@ -4259,7 +4078,7 @@ h1 {
         const requestedStage = stage;
         if (liveTimer) clearInterval(liveTimer);
         if (livePoolTimer) clearInterval(livePoolTimer);
-        if (!$('#list').querySelector('[data-stock-id]')) $('#list').innerHTML = `<div class="box empty loading">${stage === 'ENTRY' ? '正在整理進場雷達與收盤存活訊號…' : '正在建立盤中看盤池…'}</div>`;
+        if (!$('#list').querySelector('[data-stock-id]')) $('#list').innerHTML = `<div class="box empty loading">${stage === 'ENTRY' ? '正在整理進場雷達的夜間模型快照…' : '正在建立盤中看盤池…'}</div>`;
         try {
           if (stage === 'ENTRY') {
             const cachedPool = readEntryPoolCache();
