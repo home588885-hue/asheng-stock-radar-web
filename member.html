@@ -78,6 +78,27 @@ h1 {
   display: block;
   font-size: 23px;
   margin-top: 3px;
+  font-variant-numeric: tabular-nums;
+}
+.stat .stat-explain {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+  margin-top: 4px;
+}
+.stat.stat-signal b {
+  font-size: clamp(16px, 2vw, 21px);
+  color: #d9f7e5;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.stat.stat-signal {
+  border: 1px solid rgba(72, 187, 132, 0.15);
+}
+@media (max-width: 640px) {
+  .stat.stat-signal b { font-size: 18px !important; }
+  .stat .stat-explain { font-size: 11px; }
 }
 .bar {
   height: 8px;
@@ -950,10 +971,10 @@ h1 {
 
         <section class="box">
           <div class="stats">
-            <div class="stat"><small>有效股票</small><b id="done">-</b></div>
-            <div class="stat"><small>主檔股票</small><b id="total">-</b></div>
-            <div class="stat"><small>🟠 發動前候選</small><b id="cCount">-</b></div>
-            <div class="stat"><small>🟢 突破／回踩候選</small><b id="bCount">-</b></div>
+            <div class="stat"><small>已取得模型資料</small><b id="done">-</b><span class="stat-explain">近期可用的股票快照</span></div>
+            <div class="stat"><small>市場追蹤範圍</small><b id="total">-</b><span class="stat-explain">目前追蹤的股票總數</span></div>
+            <div class="stat stat-signal"><small>🌱 高品質發動前</small><b id="cCount">載入中</b><span class="stat-explain" id="cCountInfo">依最近完整日K篩選</span></div>
+            <div class="stat stat-signal"><small>🎯 進場雷達候選</small><b id="bCount">查看名單</b><span class="stat-explain" id="bCountInfo">切換進場雷達查看</span></div>
           </div>
           <div class="bar"><i id="bar"></i></div>
           <div class="note" id="note">讀取資料中…</div>
@@ -1719,6 +1740,8 @@ h1 {
             progress:data.progress || {},
             stage_counts:data.stage_counts || {},
             launch_counts:data.launch_counts || {},
+            quality_screen:data.quality_screen || null,
+            quality_total:data.quality_total ?? null,
             picks:data.picks.slice(0,250)
           };
           localStorage.setItem(LAUNCH_DATA_CACHE_KEY, JSON.stringify({ saved_at:Date.now(), data:compact }));
@@ -1800,19 +1823,31 @@ h1 {
         return { response:null, data:null };
       };
       let globalHeaderSummary = null;
+      // Each tile uses its own source and definition. Never equate raw breakout
+      // events with entry-radar tracking candidates.
+      const setCandidateSummary = (id, count, sourceLabel) => {
+        const cell = $('#'+id), info = $('#'+id+'Info');
+        if (!cell || !info) return;
+        if (count == null || !Number.isFinite(Number(count)) || Number(count) < 0) {
+          cell.textContent = id === 'cCount' ? '待更新' : '查看名單';
+          info.textContent = id === 'cCount' ? '尚未取得品質篩選結果' : '切換進場雷達查看';
+          return;
+        }
+        const n = Math.floor(Number(count));
+        cell.textContent = n > 0 ? n.toLocaleString('zh-TW')+' 檔' : '暫無符合';
+        info.textContent = n > 0 ? sourceLabel : '目前沒有通過條件的新候選';
+      };
       const applyGlobalHeaderSummary = data => {
-        const launch = data?.launch_counts || {};
-        const prelaunch = Number(launch.prelaunch || 0);
-        const breakout = Number(launch.first_actionable || 0);
-        const secondBuy = Number(launch.second_buy || 0);
-        $('#cCount').textContent = prelaunch;
-        $('#bCount').textContent = breakout + secondBuy;
+        // quality_total is produced AFTER the locked MA10/20/60 quality screen.
+        // launch_counts.prelaunch / first_actionable are different statistics.
+        const hasQuality = data?.quality_screen && data?.quality_total != null
+          && Number.isFinite(Number(data.quality_total));
+        if (hasQuality) setCandidateSummary('cCount', data.quality_total, '盤後高品質候選');
+        else if (!globalHeaderSummary?.qualityKnown) setCandidateSummary('cCount', null);
         globalHeaderSummary = {
-          prelaunch,
-          breakout,
-          secondBuy,
-          generated_at: data?.generated_at || null,
-          last_batch_at: data?.progress?.last_batch_at || null,
+          qualityKnown:!!hasQuality || !!globalHeaderSummary?.qualityKnown,
+          generated_at:data?.generated_at || null,
+          last_batch_at:data?.progress?.last_batch_at || null,
         };
       };
       const refreshGlobalHeaderSummary = async () => {
@@ -3734,6 +3769,7 @@ h1 {
         if (LOCKED_SETTINGS.nightlySnapshotOnly) {
           const rows = liveBasePicks.filter(item => launchQualityState(item).keep);
           stableListRender(rows.length ? rows.map(item => card(item)).join('') : '<div class="box empty">目前沒有符合發動前條件的候選股。</div>');
+          setCandidateSummary('cCount', rows.length, '目前畫面符合發動前條件');
           $('#note').textContent = `🌱 發動前｜${rows.length} 檔｜日 K 模型於交易日晚上 9 點分批更新，盤中不抓價。`;
           return;
         }
@@ -3912,8 +3948,9 @@ h1 {
         }
         if (!liveBasePicks.length) {
           if (stage === 'ENTRY') {
-            $('#list').innerHTML = '<div class="box empty">目前四個動作都沒有新訊號。</div>';
-            $('#note').textContent = '只顯示四個動作；底層模型仍照常運算。';
+            $('#list').innerHTML = '<div class="box empty">目前進場雷達沒有新的追蹤候選。</div>';
+            $('#note').textContent = '目前無新候選；下次交易日晚上9點起分批更新。';
+            setCandidateSummary('bCount', 0, '最近完整日K追蹤名單');
           }
           return;
         }
@@ -3925,6 +3962,7 @@ h1 {
               .map(row => ({...row,action:{...row.action,phase:'candidate',buyable:false}}))
               .sort((a,b)=>b.action.rank-a.action.rank);
             renderEntrySections(rows);
+            setCandidateSummary('bCount', rows.length, '最近完整日K追蹤名單');
             $('#note').textContent = `🎯 進場雷達｜候選 ${rows.length} 檔｜晚上 9 點更新完整日 K｜盤中不抓價。`;
           } else {
             stableListRender(liveBasePicks.map(item => card(item)).join(''));
