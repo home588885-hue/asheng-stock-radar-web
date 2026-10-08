@@ -1000,7 +1000,7 @@ h1 {
             <button class="search-clear" id="stockClearBtn" hidden>清除</button>
           </div>
           <div class="entry-phase" id="entryPhase"></div>
-          <div class="holding-note">📌 已買進：只顯示目前登入會員自己的持股｜盤中報價約5秒、模型約2分鐘重算。<span id="memberIdentity"></span><button class="holding-sync" id="syncHoldingsBtn">登出</button></div>
+          <div class="holding-note">📌 已買進：只顯示目前登入會員自己的持股｜已買進盤中報價約2分鐘更新；選股模型於交易日晚上9點更新。<span id="memberIdentity"></span><button class="holding-sync" id="syncHoldingsBtn">登出</button></div>
         </section>
         <p id="timeInfoExplanation" class="time-info-explanation" hidden>盤中價格為即時資料；技術模型依最後完整交易日 K 棒計算，尚未收盤時顯示前一交易日屬正常。</p>
         <main class="list" id="list">
@@ -1598,10 +1598,11 @@ h1 {
       const SETTINGS_LOCK_VERSION = '2026-10-07-member-fast-v6';
       const LOCKED_SETTINGS = Object.freeze({
         modelRule: LOCKED_RULE_VERSION,
-        entryQuoteRefreshMs: 30000,
-        entryPoolRefreshMs: 60000,
-        holdingQuoteRefreshMs: 30000,
-        holdingModelRefreshMs: 60000,
+        entryQuoteRefreshMs: 0,
+        entryPoolRefreshMs: 0,
+        holdingQuoteRefreshMs: 120000,
+        holdingModelRefreshMs: 0,
+        nightlySnapshotOnly: true,
         preserveLastValidTodayQuote: true,
         stableThreeTabNavigation: true,
         noJumpRefresh: true,
@@ -1644,6 +1645,7 @@ h1 {
         } catch (error) {}
       };
       const bestTodayQuote = (quote, stockId = '') => {
+        if (!holdings.has(String(stockId || quote?.stock_id || ''))) return null; // 即時價只供目前已買進股票
         if (validTodayQuote(quote)) return quote;
         const cached = liveQuoteCache.get(String(stockId || quote?.stock_id || ''));
         return validTodayQuote(cached) ? { ...cached, cached_last_trade:true } : null;
@@ -1653,7 +1655,7 @@ h1 {
         const seen = new Set();
         for (const item of (items || [])) {
           const id = String(item?.stock_id || '');
-          if (!id || seen.has(id)) continue;
+          if (!id || seen.has(id) || !holdings.has(id)) continue;
           seen.add(id);
           unique.push({ stock_id:id, market:item?.market || 'tse' });
         }
@@ -1934,6 +1936,8 @@ h1 {
       };
       const refreshExactStock = async (symbol, baseItem = null, master = null, options = {}) => {
         const expected = expectedSignalDataDate();
+        // Read existing 21:00 model snapshot; do not trigger on-demand full recalculation.
+        if (LOCKED_SETTINGS.nightlySnapshotOnly) return { item:baseItem, fresh:String(baseItem?.as_of || '') === expected, refreshed:false, expected };
         const baseDate = String(baseItem?.as_of || '');
         const hasLaunchLifecycle = baseItem?.metrics?.launch_sequence != null && baseItem?.metrics?.ma_cluster?.breakout_detected_raw !== undefined;
         const hasHoldingManagement = baseItem?.metrics?.holding_management?.effective_prev_low_break !== undefined && baseItem?.metrics?.holding_management?.prev_low !== undefined;
@@ -2042,6 +2046,7 @@ h1 {
       };
       const candleGuardCache = new Map();
       const loadCandleGuards = async (items, maxChecks = Infinity) => {
+        if (LOCKED_SETTINGS.nightlySnapshotOnly) return items || [];
         const queue = (items || []).filter(item => !holdings.has(String(item.stock_id)) && item.metrics?.entry_candle_guard?.version !== '2026-10-06-kbar-ma10-20-60-v3' && (pullbackWatch.has(String(item.stock_id)) || baseSimpleActionState(item) || item.metrics?.ma_cluster?.watch_ready || item.metrics?.launch_sequence || Math.abs(Number(item.metrics?.close)/Number(item.metrics?.ma20)-1)<=.03)).slice(0, Math.max(0, Number.isFinite(maxChecks) ? maxChecks : Infinity));
         let cursor=0;
         await Promise.all(Array.from({length:Math.min(4,queue.length)},async()=>{
@@ -3507,7 +3512,7 @@ h1 {
             liveBasePicks = rankedPicks.slice(0, 100);
             await refreshSimpleQuotes();
             if (liveTimer) clearInterval(liveTimer);
-            liveTimer = setInterval(refreshSimpleQuotes, ENTRY_QUOTE_REFRESH_MS);
+            liveTimer = null; // 不再輪詢發動前候選報價
           }
         } catch (error) {
           if (navigationSeq !== navToken || stage !== requestedStage) return;
@@ -3883,6 +3888,13 @@ h1 {
         if (stage !== 'LAUNCH' || document.hidden || !liveBasePicks.length) return;
         const renderNavToken = navigationSeq;
         const renderStage = stage;
+        // 夜間模型快照：發動前不再盤中抓取候選股報價。
+        if (LOCKED_SETTINGS.nightlySnapshotOnly) {
+          const rows = liveBasePicks.filter(item => launchQualityState(item).keep);
+          stableListRender(rows.length ? rows.map(item => card(item)).join('') : '<div class="box empty">目前沒有符合發動前條件的候選股。</div>');
+          $('#note').textContent = `🌱 發動前｜${rows.length} 檔｜日 K 模型於交易日晚上 9 點分批更新，盤中不抓價。`;
+          return;
+        }
         const market = taipeiMarketState();
         if (!market.open && !(market.weekday && market.totalMinutes > 810)) {
           $('#note').textContent = `🌱 發動前｜只保留接近發動、位置未過熱的候選｜目前非盤中，下一交易時段會顯示今日即時價格。`;
@@ -4075,6 +4087,21 @@ h1 {
           }
           return;
         }
+        // 進場雷達/看盤模式維持晚間日 K 快照，不對非持股抓盤中價格。
+        if (LOCKED_SETTINGS.nightlySnapshotOnly) {
+          if (stage === 'ENTRY') {
+            const rows = liveBasePicks.map(item => ({ item, quote:null, action:simpleActionState(item) }))
+              .filter(row => row.action && (row.action.key !== 'wait' || row.action.keep_candidate))
+              .map(row => ({...row,action:{...row.action,phase:'candidate',buyable:false}}))
+              .sort((a,b)=>b.action.rank-a.action.rank);
+            renderEntrySections(rows);
+            $('#note').textContent = `🎯 進場雷達｜候選 ${rows.length} 檔｜晚上 9 點更新完整日 K｜盤中不抓價。`;
+          } else {
+            stableListRender(liveBasePicks.map(item => card(item)).join(''));
+            $('#note').textContent = '看盤候選｜日 K 模型快照；只有已買進股票更新盤中價格。';
+          }
+          return;
+        }
         const market = taipeiMarketState();
         const finalQuoteWindow = stage === 'ENTRY' && market.weekday && market.totalMinutes > 810;
         if (!market.open && !finalQuoteWindow) {
@@ -4229,8 +4256,8 @@ h1 {
             if (!v5Data && !launchData) {
               if (liveBasePicks.length) {
                 await refreshLiveQuotes();
-                liveTimer = setInterval(refreshLiveQuotes, ENTRY_QUOTE_REFRESH_MS);
-                livePoolTimer = setInterval(refreshV5MonitorPool, ENTRY_POOL_REFRESH_MS);
+                liveTimer = null; // 不再輪詢未買進候選報價
+                livePoolTimer = null; // 候選快照由夜間掃描更新
                 return;
               }
               throw new Error('進場資料來源暫時無法讀取');
@@ -4250,8 +4277,8 @@ h1 {
             }
             await refreshLiveQuotes();
             lastEntryPoolRefreshAt = Date.now();
-            liveTimer = setInterval(refreshLiveQuotes, ENTRY_QUOTE_REFRESH_MS);
-            livePoolTimer = setInterval(refreshV5MonitorPool, ENTRY_POOL_REFRESH_MS);
+            liveTimer = null; // 不再輪詢未買進候選報價
+            livePoolTimer = null; // 候選快照由夜間掃描更新
             return;
           }
           const fetchStage = async targetStage => {
@@ -4288,7 +4315,7 @@ h1 {
           $('#total').textContent = progress.total_stocks ?? 0;
           $('#bar').style.width = Math.min(100, Number(progress.percent || 0)) + '%';
           await refreshLiveQuotes();
-          liveTimer = setInterval(refreshLiveQuotes, 15000);
+          liveTimer = null; // 停止一般候選盤中報價
         } catch (error) {
           if (navigationSeq !== navToken || stage !== requestedStage) return;
           $('#list').innerHTML = '<div class="box empty error">進場雷達讀取逾時或資料庫忙碌。<br><button class="refresh" onclick="location.reload()">重新載入</button></div>';
@@ -4434,7 +4461,9 @@ h1 {
           }
           holdingQuoteRefreshing = true;
           try {
-            const payload = await window.getLiveQuotes(items.map(item => ({ stock_id:String(item.stock_id), market:String(item.market || '') })));
+            const payload = taipeiMarketState().open
+              ? await window.getLiveQuotes(items.map(item => ({ stock_id:String(item.stock_id), market:String(item.market || '') })))
+              : { ok:true,quotes:items.map(item => bestTodayQuote(null, item.stock_id)).filter(Boolean) };
             if (!payload?.ok) throw new Error('live_quote_failed');
             const quoteMap = new Map((payload.quotes || []).map(quote => [String(quote.stock_id || ''), quote]));
             stableListRender(items.map(item => {
@@ -4442,7 +4471,7 @@ h1 {
               return quote ? intradayCard(item, quote) : card(item,{hideSignal:true});
             }).join('') + fallbackHtml);
             const freshCount = items.filter(item => String(item.as_of || '') === expectedSignalDataDate()).length;
-            $('#note').textContent = `📌 已買進 ${symbols.length} 檔｜⚡持股報價優先｜模型 ${freshCount}/${items.length} 檔已到 ${expectedSignalDataDate()}｜盤中約5秒更新；完整模型背景優先重算。`;
+            $('#note').textContent = `📌 已買進 ${symbols.length} 檔｜⚡持股報價優先｜模型 ${freshCount}/${items.length} 檔已到 ${expectedSignalDataDate()}｜盤中約2分鐘更新報價；模型晚上9點集中更新。`;
           } catch (error) {
             stableListRender(items.map(item => card(item,{hideSignal:true})).join('') + fallbackHtml);
             $('#note').textContent = `📌 持股 ${symbols.length} 檔已保留｜官方報價暫時未回，沿用今天最後有效成交價；模型仍在背景更新。`;
@@ -4484,8 +4513,9 @@ h1 {
         await render();
         if (!holdingStillCurrent()) return;
         refreshHoldingModels();
-        liveTimer = setInterval(() => { if (holdingStillCurrent()) render(); }, taipeiMarketState().open ? LOCKED_SETTINGS.holdingQuoteRefreshMs : 60000);
-        livePoolTimer = setInterval(() => { if (holdingStillCurrent()) refreshHoldingModels(); }, LOCKED_SETTINGS.holdingModelRefreshMs);
+        // 唯有目前登入帳號的已買進股票在交易時段更新即時報價；休市不輪詢。
+        liveTimer = setInterval(() => { if (holdingStillCurrent() && taipeiMarketState().open) render(); }, LOCKED_SETTINGS.holdingQuoteRefreshMs);
+        livePoolTimer = null; // 不在使用者開啟頁面時反覆更新完整模型
       }
 
       function openHoldingDialog(stockId) {
