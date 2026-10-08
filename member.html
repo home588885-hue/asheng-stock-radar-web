@@ -1651,6 +1651,8 @@ h1 {
         return validTodayQuote(cached) ? { ...cached, cached_last_trade:true } : null;
       };
       window.getLiveQuotes = async items => {
+        // 網頁在背景或非交易時段，禁止發出新的即時行情請求。
+        if (document.hidden || !taipeiMarketState().open) return { ok:true, quotes:[] };
         const unique = [];
         const seen = new Set();
         for (const item of (items || [])) {
@@ -1689,6 +1691,7 @@ h1 {
       let holdingLoadSeq = 0;
       let holdingQuoteRefreshing = false;
       let holdingModelRefreshing = false;
+      let holdingVisibilityControl = null; // 已買進頁專屬，切換分頁後失效
       let pullbackWatch = new Map();
       let stage = 'LAUNCH';
       let navigationSeq = 0;
@@ -1773,6 +1776,7 @@ h1 {
         return fetchJsonWithTimeout(ANALYZER_FALLBACK_API + '?' + suffix, options, timeoutMs);
       };
       const fetchLiveQuoteChunk = async symbols => {
+        if (document.hidden || !taipeiMarketState().open) return [];
         const suffix = '?' + new URLSearchParams({ symbols }).toString();
         for (const base of [LIVE_API, LIVE_FALLBACK_API]) {
           try {
@@ -4223,6 +4227,7 @@ h1 {
         const navToken = navigationSeq;
         const requestedStage = stage;
         const holdingToken = ++holdingLoadSeq;
+        holdingVisibilityControl = null;
         const holdingStillCurrent = () => holdingToken === holdingLoadSeq && navigationSeq === navToken && stage === requestedStage && stage === 'HOLDING';
         if (liveTimer) { clearInterval(liveTimer); liveTimer = null; }
         if (livePoolTimer) { clearInterval(livePoolTimer); livePoolTimer = null; }
@@ -4276,8 +4281,9 @@ h1 {
         let items = baseResults.map(result => result.item).filter(Boolean);
         let fallbackHtml = baseResults.map(result => result.fallback).filter(Boolean).join('');
         liveBasePicks = items;
+        let lastHoldingQuoteRequestAt = 0;
         const render = async () => {
-          if (!holdingStillCurrent() || holdingQuoteRefreshing) return;
+          if (!holdingStillCurrent() || document.hidden || holdingQuoteRefreshing) return;
           if (!items.length || typeof window.getLiveQuotes !== 'function') {
             stableListRender(items.map(item => card(item,{hideSignal:true})).join('') + fallbackHtml);
             const freshCount = items.filter(item => String(item.as_of || '') === expectedSignalDataDate()).length;
@@ -4286,7 +4292,9 @@ h1 {
           }
           holdingQuoteRefreshing = true;
           try {
-            const payload = taipeiMarketState().open
+            const quoteOpen = !document.hidden && taipeiMarketState().open;
+            if (quoteOpen) lastHoldingQuoteRequestAt = Date.now();
+            const payload = quoteOpen
               ? await window.getLiveQuotes(items.map(item => ({ stock_id:String(item.stock_id), market:String(item.market || '') })))
               : { ok:true,quotes:items.map(item => bestTodayQuote(null, item.stock_id)).filter(Boolean) };
             if (!payload?.ok) throw new Error('live_quote_failed');
@@ -4338,8 +4346,29 @@ h1 {
         await render();
         if (!holdingStillCurrent()) return;
         refreshHoldingModels();
-        // 唯有目前登入帳號的已買進股票在交易時段更新即時報價；休市不輪詢。
-        liveTimer = setInterval(() => { if (holdingStillCurrent() && taipeiMarketState().open) render(); }, LOCKED_SETTINGS.holdingQuoteRefreshMs);
+        // 背景真正停掉定時器；回到持股頁前景才重新啟動。保留 2 分鐘頻率。
+        const manageHoldingQuoteTimer = () => {
+          const active = holdingStillCurrent() && !document.hidden && taipeiMarketState().open;
+          if (!active) {
+            if (liveTimer) { clearInterval(liveTimer); liveTimer = null; }
+            return;
+          }
+          if (!liveTimer) liveTimer = setInterval(() => {
+            if (!holdingStillCurrent() || document.hidden || !taipeiMarketState().open) {
+              if (liveTimer) { clearInterval(liveTimer); liveTimer = null; }
+              return;
+            }
+            render();
+          }, LOCKED_SETTINGS.holdingQuoteRefreshMs);
+        };
+        holdingVisibilityControl = () => {
+          manageHoldingQuoteTimer();
+          if (holdingStillCurrent() && !document.hidden && taipeiMarketState().open
+              && !holdingQuoteRefreshing && Date.now() - lastHoldingQuoteRequestAt >= 60000) {
+            render(); // 回到前景超過 60 秒才補抓，避免 visibility/focus 雙重請求
+          }
+        };
+        manageHoldingQuoteTimer();
         livePoolTimer = null; // 不在使用者開啟頁面時反覆更新完整模型
       }
 
@@ -4412,6 +4441,7 @@ h1 {
           detailInteractionLock = false;
           if (liveTimer) { clearInterval(liveTimer); liveTimer = null; }
           if (livePoolTimer) { clearInterval(livePoolTimer); livePoolTimer = null; }
+          holdingVisibilityControl = null;
           liveBasePicks = [];
           stageViewCache.delete(targetStage);
           Array.from(document.querySelectorAll('.tab')).forEach(item => item.classList.remove('on'));
@@ -4498,8 +4528,16 @@ h1 {
           refreshSimpleQuotes();
         } else if (stage === 'HOLDING') {
           if (!$('#list')?.querySelector('[data-stock-id]')) loadHoldingCards();
+          else if (typeof holdingVisibilityControl === 'function') holdingVisibilityControl();
         }
       };
+      // iOS 切換 App／瀏覽器標籤：背景立即停用報價定時器；前景恢復由上方處理。
+      document.addEventListener('visibilitychange', () => {
+        if (stage === 'HOLDING' && typeof holdingVisibilityControl === 'function') holdingVisibilityControl();
+        else if (document.hidden && liveTimer && stage === 'HOLDING') {
+          clearInterval(liveTimer); liveTimer = null;
+        }
+      });
       document.addEventListener('visibilitychange', refreshEntryOnResume);
       window.addEventListener('focus', refreshEntryOnResume);
       document.addEventListener('visibilitychange', checkExternalScanCommit);
