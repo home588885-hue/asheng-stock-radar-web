@@ -1,0 +1,17 @@
+{
+  "name": "阿勝底部起漲雷達",
+  "short_name": "穩",
+  "lang": "zh-Hant",
+  "start_url": "./admin.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0b1020",
+  "theme_color": "#0b1020",
+  "icons": [
+    {
+      "src": "./apple-touch-icon.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    }
+  ]
+}
