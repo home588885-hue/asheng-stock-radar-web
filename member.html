@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>阿勝｜底部轉強選股雷達</title>
     <meta name="theme-color" content="#0b1020" />
-    <meta name="asheng-build" content="member-v165" />
+    <meta name="asheng-build" content="member-pages-v1" />
     <style>
 @tailwind base;
 @tailwind components;
@@ -1200,6 +1200,7 @@ h1 {
 
       if (!memberSession) {
         showLogin();
+        authMsg.textContent = '請輸入雷達原本的 Email 與密碼。';
 
         const smartLogin = async () => {
           const email = document.querySelector('#memberEmail').value.trim().toLowerCase();
@@ -4648,7 +4649,7 @@ h1 {
       window.addEventListener('focus', refreshEntryOnResume);
       document.addEventListener('visibilitychange', checkExternalScanCommit);
       window.addEventListener('focus', checkExternalScanCommit);
-      const PAGE_BUILD = 'member-v165';
+      const PAGE_BUILD = 'member-pages-v1';
       let pageVersionCheckAt = 0;
       const checkLatestPageBuild = async () => {
         if (document.hidden) return;

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>阿勝底部起漲雷達｜管理員</title>
     <meta name="theme-color" content="#0b1020" />
-    <meta name="asheng-build" content="admin-pages-v1" />
+    <meta name="asheng-build" content="admin-pages-v2" />
     <style>
 @tailwind base;
 @tailwind components;
@@ -933,7 +933,7 @@ h1 {
   </head>
   <body>
     <section id="memberAuth" class="box member-auth" style="display:block">
-      <h2>🔐 阿勝選股雷達會員登入</h2>
+      <h2>🔐 阿勝底部起漲雷達管理員登入</h2>
       <div class="member-auth-row">
         <input id="memberEmail" type="email" autocomplete="email" placeholder="Email">
         <input id="memberPassword" type="password" autocomplete="current-password" placeholder="密碼">
@@ -945,8 +945,8 @@ h1 {
     </section>
     <div id="app" style="display:none">
       <div class="wrap">
-        <h1>📈 阿勝｜底部轉強選股雷達・會員版</h1>
-        <p class="lead">會員先看顏色，再看 MA20：🟡先等｜🔵小量試｜🟢分批進｜🔴先避開。買進後由系統接著判斷續抱、加碼、警戒與出場。</p>
+        <h1>📈 阿勝底部起漲雷達｜管理員</h1>
+        <p class="lead">先看顏色，再看 MA20：🟡先等｜🔵小量試｜🟢分批進｜🔴先避開。買進後由系統接著判斷續抱、加碼、警戒與出場。</p>
 
         <section class="box">
           <div class="stats">
@@ -1000,7 +1000,7 @@ h1 {
             <button class="search-clear" id="stockClearBtn" hidden>清除</button>
           </div>
           <div class="entry-phase" id="entryPhase"></div>
-          <div class="holding-note">📌 已買進：只顯示目前登入會員自己的持股｜盤中報價約5秒、模型約2分鐘重算。<span id="memberIdentity"></span><button class="holding-sync" id="syncHoldingsBtn">登出</button></div>
+          <div class="holding-note">📌 已買進：只顯示管理員自己的持股｜盤中報價約5秒、模型約2分鐘重算。<span id="memberIdentity"></span><button class="holding-sync" id="syncHoldingsBtn">登出</button></div>
         </section>
         <p id="timeInfoExplanation" class="time-info-explanation" hidden>盤中價格為即時資料；技術模型依最後完整交易日 K 棒計算，尚未收盤時顯示前一交易日屬正常。</p>
         <main class="list" id="list">
@@ -1018,7 +1018,7 @@ h1 {
         </dialog>
 
         <div class="footer">
-          資料採盤後低速更新。研究型選股模型，僅供研究參考，不構成投資建議。｜會員私人持股版
+          資料採盤後低速更新。研究型選股模型，僅供研究參考，不構成投資建議。｜管理員持股版
         </div>
       </div>
     </div>
@@ -1200,6 +1200,7 @@ h1 {
 
       if (!memberSession) {
         showLogin();
+        authMsg.textContent = '請輸入雷達原本的 Email 與密碼。';
 
         const smartLogin = async () => {
           const email = document.querySelector('#memberEmail').value.trim().toLowerCase();
@@ -4658,7 +4659,7 @@ h1 {
       window.addEventListener('focus', refreshEntryOnResume);
       document.addEventListener('visibilitychange', checkExternalScanCommit);
       window.addEventListener('focus', checkExternalScanCommit);
-      const PAGE_BUILD = 'admin-pages-v1';
+      const PAGE_BUILD = 'admin-pages-v2';
       let pageVersionCheckAt = 0;
       const checkLatestPageBuild = async () => {
         if (document.hidden) return;
