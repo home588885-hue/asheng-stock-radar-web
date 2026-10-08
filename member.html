@@ -3020,9 +3020,9 @@ h1 {
         </div>`;
         const outHtml = banner+
           entryBucketHtml('focus','⭐ 優先查看','原模型條件相對成熟，仍須核對當日行情',focusRows,{open:true,tone:'focus',preview:6})+
-          entryBucketHtml('wait','🟡 等待確認','尚缺量價、位置或其他條件，並非可直接買進',waitRows,{tone:'near',preview:5})+
-          entryBucketHtml('pullback','🔵 位置偏高｜等回踩','避免追高，觀察支撐與短均線',pullbackRows,{tone:'high',preview:5})+
-          entryBucketHtml('avoid','🔴 風險警戒｜先避開','已觸發風險或轉弱條件，不列買進候選',avoidRows,{tone:'blocked',preview:5});
+          entryBucketHtml('wait','🟡 等待確認','尚缺量價、位置或其他條件，並非可直接買進',waitRows,{open:!focusRows.length,tone:'near',preview:5})+
+          entryBucketHtml('pullback','🔵 位置偏高｜等回踩','避免追高，觀察支撐與短均線',pullbackRows,{open:!focusRows.length&&!waitRows.length,tone:'high',preview:5})+
+          entryBucketHtml('avoid','🔴 風險警戒｜先避開','已觸發風險或轉弱條件，不列買進候選',avoidRows,{open:!focusRows.length&&!waitRows.length&&!pullbackRows.length,tone:'blocked',preview:5});
         stableListRender(outHtml);
         return { earlyRows, starterRows, completedRows, recalcRows, blockedRows, highRows,
           weakeningRows, queuedRows, nearRows, trackingRows, staleRows,
