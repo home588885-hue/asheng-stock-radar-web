@@ -488,6 +488,53 @@ h1 {
 }
 #list { overflow-anchor: none; }
 #note { overflow-anchor: none; }
+/* Visual entry radar organized by group, preserving complete detail cards. */
+
+/* 進場雷達：先看重點，股票詳情按需展開。僅影響進場分類視覺。 */
+.entry-list-overview { padding:14px; border:1px solid #64748b55; border-radius:14px; background:#142039; display:grid; gap:6px; margin:8px 0 12px; }
+.entry-list-overview strong { font-size:19px; color:#e5edf9; }
+.entry-list-overview span { color:#dbeafe; font-size:14px; line-height:1.6; }
+.entry-list-overview small { color:#9eafc9; font-size:12px; line-height:1.5; }
+.entry-bucket { border:1px solid #37465f; border-radius:14px; background:#111c31; margin:10px 0; overflow:hidden; }
+.entry-bucket-focus { border-color:#4ade8088; }
+.entry-bucket-avoid { border-color:#fb718555; }
+.entry-bucket-fold > summary, .entry-mini > summary, .entry-extra > summary { cursor:pointer; list-style:none; }
+.entry-bucket-fold > summary::-webkit-details-marker, .entry-mini > summary::-webkit-details-marker, .entry-extra > summary::-webkit-details-marker { display:none; }
+.entry-bucket-head { display:flex; gap:12px; align-items:center; justify-content:space-between; padding:14px; }
+.entry-bucket-headline { display:grid; gap:4px; min-width:0; }
+.entry-bucket-headline b { font-size:18px; font-weight:800; }
+.entry-bucket-headline small { font-size:12px; color:#a7b7cf; line-height:1.45; }
+.entry-bucket-count { white-space:nowrap; color:#dbeafe; font-weight:800; font-size:15px; border-radius:99px; padding:6px 9px; background:#23334e; }
+.entry-bucket-head::after { content:'⌄'; font-size:20px; color:#94a3b8; }
+.entry-bucket-fold[open] > .entry-bucket-head::after { content:'⌃'; }
+.entry-bucket-body { display:grid; gap:8px; padding:0 10px 12px; }
+.entry-mini { background:#1a2840; border:1px solid #354762; border-radius:11px; overflow:hidden; }
+.entry-mini[open] { border-color:#75a3df; }
+.entry-mini-summary { padding:11px; display:grid; grid-template-columns:minmax(0,1fr) auto auto; gap:3px 7px; align-items:start; }
+.entry-mini-name { display:grid; gap:3px; min-width:0; }
+.entry-mini-name strong { font-size:17px; overflow-wrap:anywhere; }
+.entry-mini-name small { color:#aec2df; font-size:12px; overflow-wrap:anywhere; }
+.entry-mini-score { color:#e5f6ee; border-radius:7px; background:#24524488; padding:4px 7px; font-size:12px; font-weight:700; white-space:nowrap; }
+.entry-mini-expand { font-size:11px; padding:5px 0; color:#a1b9db; white-space:nowrap; }
+.entry-mini-metrics, .entry-mini-date { grid-column:1 / -1; font-size:12px; line-height:1.55; color:#c3d0e4; }
+.entry-mini-metrics { margin-top:5px; }
+.entry-mini-metrics b { color:#f7fafc; }
+.entry-mini-date { color:#94a7c2; }
+.entry-mini-full { padding:5px 8px 9px; border-top:1px solid #334155; }
+.entry-mini-full > .card { margin:0; }
+.entry-extra { margin-top:3px; background:#15233b; border:1px solid #364b6a; border-radius:10px; padding:4px 7px 8px; }
+.entry-extra > summary { color:#bdd6fb; font-weight:700; padding:9px; }
+.entry-extra .entry-mini { margin:6px 0; }
+@media (max-width:640px) {
+  .entry-bucket-head { padding:11px; gap:6px; }
+  .entry-bucket-headline b { font-size:16px; }
+  .entry-bucket-count { font-size:13px; }
+  .entry-list-overview strong { font-size:18px; }
+  .entry-mini-summary { grid-template-columns:minmax(0,1fr) auto; }
+  .entry-mini-expand { display:none; }
+  .entry-mini-score { grid-column:2; }
+}
+
 .entry-section {
   border: 1px solid var(--line);
   border-radius: 14px;
@@ -2756,16 +2803,47 @@ h1 {
           detail:'最近完整交易日日K候選，非盤中即時買點｜'+String(baseAction.detail||'請先確認當下市場行情')};
       };
 
-      const entrySectionHtml = (title, rows, emptyText = '', tone = '') => {
-        const stableKey = 'entry-' + (tone || 'default');
-        if (!rows.length) {
-          if (!emptyText) return '';
-          const emptyTitle = tone === 'buy' ? '⚪ 正式買點｜目前 0 檔' : title + '｜0 檔';
-          return `<section class="entry-section ${tone} empty" data-stable-key="${stableKey}"><div class="entry-section-title">${emptyTitle}</div><div class="entry-section-empty">${emptyText}</div></section>`;
-        }
-        return `<section class="entry-section ${tone}" data-stable-key="${stableKey}"><div class="entry-section-title">${title}｜${rows.length} 檔</div>` +
-          rows.map(row => v5MonitorCard(row.item, row.quote || null, row.action || null)).join('') +
-          '</section>';
+      // Compact entry display only; this does not alter MA10/20/60 signals or eligibility.
+      const entryCompactStock = (row, bucketLabel) => {
+        const item=row.item||{}, m=item.metrics||{}, id=String(item.stock_id||'');
+        const score=Number(item.score), close=Number(m.close), ma20=Number(m.ma20);
+        const dist=close>0&&ma20>0?(close/ma20-1)*100:null;
+        const vol=Number(m.current_volume_lots);
+        const rawAction=String(row.action?.text||'').replace(/^[^\\p{L}\\p{N}]+/u,'').split('｜')[0];
+        const actionText=rawAction||bucketLabel;
+        const tradeContext=(row.action?.phase==='blocked'||bucketLabel.includes('避開'))?'風險警示':
+           '盤後模型觀察，非即時買點';
+        const originalAction=row.action||{};
+        const safeDisplayAction={...originalAction,buyable:false,trialable:false,
+          text:bucketLabel.includes('避開')?(originalAction.text||'🔴 風險警戒'):originalAction.text||'🟡 模型候選',
+          detail:(originalAction.detail||'模型條件待核對')+'｜盤中未逐檔更新報價，下單前請核對實際行情'};
+        const expanded=v5MonitorCard(item, null, safeDisplayAction);
+        return `<details class="entry-mini" data-stock-key="${esc(id)}">
+          <summary class="entry-mini-summary">
+            <span class="entry-mini-name"><strong>${esc(id)} ${esc(item.stock_name||'')}</strong><small>${esc(actionText)}</small></span>
+            <span class="entry-mini-score">模型 ${Number.isFinite(score)?esc(num(score,0)):'-'} 分</span>
+            <span class="entry-mini-expand">詳情 ▾</span>
+            <span class="entry-mini-metrics">模型收盤 <b>${close>0?esc(num(close,2)):'-'}</b>｜距MA20 ${dist==null?'-':(dist>=0?'+':'')+esc(num(dist,1))+'%'}｜成交量 ${Number.isFinite(vol)?esc(num(vol,0))+'張':'-'}</span>
+            <span class="entry-mini-date">模型基準 ${esc(item.as_of||'待更新')}｜${tradeContext}</span>
+          </summary>
+          <div class="entry-mini-full">${expanded}</div>
+        </details>`;
+      };
+      const entryBucketHtml=(key,title,note,rows,{open=false,tone='near',preview=5}={})=>{
+        if(!rows.length)return '';
+        const first=rows.slice(0,preview),rest=rows.slice(preview);
+        return `<section class="entry-bucket entry-bucket-${key}" data-stable-key="entry-bucket-${key}">
+          <details class="entry-bucket-fold" data-entry-fold="${key}" ${open?'open':''}>
+            <summary class="entry-bucket-head">
+              <span class="entry-bucket-headline"><b>${title}</b><small>${note}</small></span>
+              <span class="entry-bucket-count">${rows.length} 檔</span>
+            </summary>
+            <div class="entry-bucket-body">
+              ${first.map(row=>entryCompactStock(row,title)).join('')}
+              ${rest.length?`<details class="entry-extra" data-entry-fold="${key}-rest"><summary>展開其餘 ${rest.length} 檔</summary>${rest.map(row=>entryCompactStock(row,title)).join('')}</details>`:''}
+            </div>
+          </details>
+        </section>`;
       };
       const renderEntrySections = rows => {
         rows=[...new Map((rows||[]).map(row=>[String(row?.item?.stock_id||''),row])).values()].filter(row=>row?.item?.stock_id);
@@ -2907,19 +2985,48 @@ h1 {
           return phase === 'candidate' || (!afterClose && phase === 'observe');
         });
 
-        const outHtml =
-          entrySectionHtml('🚀 盤中起漲｜優先看', earlyRows, '', 'early-launch') +
-          entrySectionHtml('🔵 可小量試單｜穩定度持續確認', starterRows, '', 'starter') +
-          entrySectionHtml('📌 今日條件完成｜明日優先追蹤', completedRows, '', 'completed') +
-          entrySectionHtml('⚡ 收盤資料補算中', recalcRows, '', 'recalc') +
-          entrySectionHtml('🌱 底部型態已確認｜等盤中起漲', queuedRows, '', 'bottom-confirmed') +
-          entrySectionHtml('🔴 明確不能買｜風險條件觸發', blockedRows, '', 'blocked') +
-          entrySectionHtml('🔵 位置偏高｜等回踩', highRows, '', 'high-wait') +
-          entrySectionHtml('🟠 轉弱／回踩觀察', weakeningRows, '', 'weakening') +
-          entrySectionHtml('🟡 等確認｜條件尚未補齊', nearRows, '', 'near') +
-          entrySectionHtml('🔵 回踩持續追蹤｜等待重新轉強', trackingRows, '', 'track');
+        // Existing mutually exclusive risk classification above is preserved.
+        // Below only changes visual grouping and sorting. No candidate is silently discarded.
+        const rowScore = row => Number(row?.item?.score||0);
+        const rowVolume = row => Number(row?.item?.metrics?.current_volume_lots||0);
+        const sortEntryVisual = arr => [...arr].sort((a,b)=>
+          rowScore(b)-rowScore(a) ||
+          Number(b?.action?.rank||0)-Number(a?.action?.rank||0) ||
+          rowVolume(b)-rowVolume(a) ||
+          String(b?.item?.scanned_at||'').localeCompare(String(a?.item?.scanned_at||'')));
+        const safeWatch = [
+          ...earlyRows,...starterRows,...completedRows,
+          ...queuedRows,...trackingRows,...nearRows,...recalcRows
+        ];
+        const visuallyStrong = row => {
+          const m=row.item?.metrics||{},mc=m.ma_cluster||{};
+          const close=Number(m.close),ma20=Number(m.ma20),pos=Number(m.position_1y_pct);
+          const k=Number(m.daily_k),lots=Number(m.current_volume_lots);
+          return row.item?.as_of && Number(row.item?.score)>=75 && lots>=1000 &&
+            mc.all_rising===true && mc.above_all_mas===true &&
+            close>0 && ma20>0 && close>=ma20 && (close/ma20-1)*100<=5 &&
+            Number.isFinite(pos)&&pos<80 && Number.isFinite(k)&&k<=80;
+        };
+        const focusRows=sortEntryVisual(safeWatch.filter(row=>!inRows(recalcRows,row)&&visuallyStrong(row))).slice(0,8);
+        const focusIds=new Set(focusRows.map(rowId));
+        const waitRows=sortEntryVisual(safeWatch.filter(row=>!focusIds.has(rowId(row))));
+        const pullbackRows=sortEntryVisual(highRows);
+        const avoidRows=sortEntryVisual([...blockedRows,...weakeningRows]);
+        const displayedTotal=focusRows.length+waitRows.length+pullbackRows.length+avoidRows.length;
+        const banner=`<div class="entry-list-overview" data-stable-key="entry-overview">
+          <strong>🎯 進場雷達｜${displayedTotal} 檔追蹤</strong>
+          <span>⭐ 優先查看 ${focusRows.length}　🟡 待確認 ${waitRows.length}　🔵 等回踩 ${pullbackRows.length}　🔴 風險避開 ${avoidRows.length}</span>
+          <small>以最近完整日 K 快照分類，非盤中即時買點｜點股票名稱展開完整數據${staleRows.length?'｜另有 '+staleRows.length+' 檔過期快照未列入':''}</small>
+        </div>`;
+        const outHtml = banner+
+          entryBucketHtml('focus','⭐ 優先查看','原模型條件相對成熟，仍須核對當日行情',focusRows,{open:true,tone:'focus',preview:6})+
+          entryBucketHtml('wait','🟡 等待確認','尚缺量價、位置或其他條件，並非可直接買進',waitRows,{tone:'near',preview:5})+
+          entryBucketHtml('pullback','🔵 位置偏高｜等回踩','避免追高，觀察支撐與短均線',pullbackRows,{tone:'high',preview:5})+
+          entryBucketHtml('avoid','🔴 風險警戒｜先避開','已觸發風險或轉弱條件，不列買進候選',avoidRows,{tone:'blocked',preview:5});
         stableListRender(outHtml);
-        return { earlyRows, starterRows, completedRows, recalcRows, blockedRows, highRows, weakeningRows, queuedRows, nearRows, trackingRows, staleRows };
+        return { earlyRows, starterRows, completedRows, recalcRows, blockedRows, highRows,
+          weakeningRows, queuedRows, nearRows, trackingRows, staleRows,
+          focusRows, waitRows, pullbackRows, avoidRows, displayedTotal };
       };
 
       const isEntryRadarItem = item => {
@@ -3731,10 +3838,13 @@ h1 {
           const key=stableNodeKey(n),o=cur.get(key);
           if(!o){list.appendChild(n);return;}
           if(o.innerHTML!==n.innerHTML){
-            const opens=Array.from(o.querySelectorAll('.card-details')).map(d=>d.open);
+            const openKeys = new Map(Array.from(o.querySelectorAll('details[data-entry-fold],details[data-stock-key],.card-details')).map((d,j)=>[d.dataset.entryFold ? 'group:'+d.dataset.entryFold : d.dataset.stockKey ? 'stock:'+d.dataset.stockKey : 'detail:'+j, d.open]));
             o.className=n.className;
             o.innerHTML=n.innerHTML;
-            Array.from(o.querySelectorAll('.card-details')).forEach((d,j)=>d.open=!!opens[j]);
+            Array.from(o.querySelectorAll('details[data-entry-fold],details[data-stock-key],.card-details')).forEach((d,j)=>{
+              const key=d.dataset.entryFold ? 'group:'+d.dataset.entryFold : d.dataset.stockKey ? 'stock:'+d.dataset.stockKey : 'detail:'+j;
+              if(openKeys.has(key))d.open=openKeys.get(key);
+            });
           }
           cur.delete(key);
         });
@@ -3961,9 +4071,9 @@ h1 {
               .filter(row => row.action && (row.action.key !== 'wait' || row.action.keep_candidate))
               .map(row => ({...row,action:{...row.action,phase:'candidate',buyable:false}}))
               .sort((a,b)=>b.action.rank-a.action.rank);
-            renderEntrySections(rows);
-            setCandidateSummary('bCount', rows.length, '最近完整日K追蹤名單');
-            $('#note').textContent = `🎯 進場雷達｜候選 ${rows.length} 檔｜晚上 9 點更新完整日 K｜盤中不抓價。`;
+            const view=renderEntrySections(rows);
+            setCandidateSummary('bCount', view.displayedTotal, '最近完整日K追蹤名單');
+            $('#note').textContent = `🎯 進場雷達｜追蹤 ${view.displayedTotal} 檔｜優先 ${view.focusRows.length}、待確認 ${view.waitRows.length}、等回踩 ${view.pullbackRows.length}、風險 ${view.avoidRows.length}｜晚上9點起分批更新日K，盤中不抓候選股報價。`;
           } else {
             stableListRender(liveBasePicks.map(item => card(item)).join(''));
             $('#note').textContent = '看盤候選｜日 K 模型快照；只有已買進股票更新盤中價格。';
