@@ -1726,7 +1726,7 @@ h1 {
             progress:data.progress || {},
             stage_counts:data.stage_counts || {},
             launch_counts:data.launch_counts || {},
-            picks:data.picks.slice(0,70)
+            picks:data.picks.slice(0,250)
           };
           localStorage.setItem(LAUNCH_DATA_CACHE_KEY, JSON.stringify({ saved_at:Date.now(), data:compact }));
         } catch (error) {}
@@ -3369,7 +3369,7 @@ h1 {
             let response, launchData;
             for (let attempt = 0; attempt < 2; attempt++) {
               try {
-                const limit = attempt === 0 ? '70' : '30';
+                const limit = attempt === 0 ? '250' : '100';
                 const result = await fetchJsonWithTimeout(API + '&' + new URLSearchParams({ limit, fresh_hours: '96', mode: 'launch' }).toString(), { cache: 'no-store' }, attempt === 0 ? 15000 : 12000);
                 response = result.response;
                 launchData = result.data;
@@ -3395,12 +3395,18 @@ h1 {
             }
             applyGlobalHeaderSummary(launchData);
             const launchPicks = launchData.picks || [];
+            // These candidates are already quality-screened by the API before its response limit.
+            // Display the true qualified count; never fill the page with lower-score names.
+            const qualifiedTotal = Number(launchData.quality_total ?? launchPicks.length);
+            const hiddenByTransport = Math.max(0,qualifiedTotal-launchPicks.length);
             const bottomConfirmed = launchPicks.filter(item => item.metrics?.bottom_start?.confirmed === true).length;
             const bottomBase = launchPicks.filter(item => item.metrics?.bottom_start?.current_base === true).length;
             const counts = launchData.stage_counts || {};
             data = {
               ...launchData,
               picks: launchPicks,
+              quality_total: qualifiedTotal,
+              quality_hidden: hiddenByTransport,
               combined_counts: {
                 total: launchPicks.length,
                 bottom_confirmed: bottomConfirmed,
@@ -3513,7 +3519,7 @@ h1 {
             const breakout = actionRows.filter(row=>row.action.key==='breakout').length;
             const add = actionRows.filter(row=>row.action.key==='add').length;
             const scanText = progress.latest_complete === false ? `｜🔄 最新資料 ${Number(progress.latest_count || 0)}/${Number(progress.total_stocks || 0)}，目前不是全市場最終數` : '';
-            $('#note').textContent = `🌱 發動前候選｜🟠可小量卡位｜尚未進正式買點雷達｜🟠發動前 ${pre}｜🟢突破 ${breakout}｜🔁回踩 ${add}${scanText}`;
+            $('#note').textContent = `🌱 高品質發動前｜符合原模型與量價／位置／風險條件 ${rankedPicks.length} 檔｜🟠發動前 ${pre}｜🟢突破 ${breakout}｜🔁回踩 ${add}${scanText}` + (data.quality_total > rankedPicks.length ? `｜尚有 ${Number(data.quality_total)-rankedPicks.length} 檔待載入` : '');
           }
           stableListRender(rankedPicks.length
             ? rankedPicks.map(card).join('')
