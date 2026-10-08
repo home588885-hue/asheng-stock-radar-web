@@ -1789,6 +1789,7 @@ h1 {
         if (document.hidden || !taipeiMarketState().open) return [];
         const suffix = '?' + new URLSearchParams({ symbols }).toString();
         for (const base of [LIVE_API, LIVE_FALLBACK_API]) {
+          if (document.hidden) return []; // 防止切背景後補送備援請求
           try {
             const response = await fetch(base + suffix, { cache:'no-store' });
             const data = await response.json();
@@ -4358,17 +4359,17 @@ h1 {
         refreshHoldingModels();
         // 背景真正停掉定時器；回到持股頁前景才重新啟動。保留 2 分鐘頻率。
         const manageHoldingQuoteTimer = () => {
-          const active = holdingStillCurrent() && !document.hidden && taipeiMarketState().open;
+          const active = holdingStillCurrent() && !document.hidden; // 前景保留輕量排程，隔日開盤能自動恢復
           if (!active) {
             if (liveTimer) { clearInterval(liveTimer); liveTimer = null; }
             return;
           }
           if (!liveTimer) liveTimer = setInterval(() => {
-            if (!holdingStillCurrent() || document.hidden || !taipeiMarketState().open) {
+            if (!holdingStillCurrent() || document.hidden) {
               if (liveTimer) { clearInterval(liveTimer); liveTimer = null; }
               return;
             }
-            render();
+            if (taipeiMarketState().open) render(); // 休市不發行情請求，隔日開盤自動重啟
           }, LOCKED_SETTINGS.holdingQuoteRefreshMs);
         };
         holdingVisibilityControl = () => {
