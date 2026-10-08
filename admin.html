@@ -3903,8 +3903,8 @@ h1 {
         const market = taipeiMarketState();
         box.className = 'entry-phase on ' + (market.open ? 'observe' : 'closed');
         box.textContent = market.open
-          ? '📘 進場雷達｜目前顯示最近完整日K模型快照｜盤中不抓候選股即時價，不執行12分鐘確認'
-          : '📘 進場雷達｜交易日晚上9點起分批更新模型｜候選股不使用盤中存活計時';
+          ? '📘 進場雷達｜最近完整日K模型快照｜盤中不抓候選股報價，請核對當下市場行情'
+          : '📘 進場雷達｜交易日晚上9點起分批更新模型｜目前顯示最後成功更新的候選快照';
       };
 
       async function refreshLiveQuotes() {
