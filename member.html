@@ -2602,6 +2602,20 @@ h1 {
         if(bottomConfirmed)return {key:'bottom',rank:35,className:'scout',text:'🌱 底部型態已確認｜等盤中起漲',detail:'型態已成立；尚未出現盤中發動前只列等待起漲，不當成已起漲',keep_candidate:true};
         if(base&&base.key!=='wait'&&item.metrics?.entry_candle_guard?.version!=='2026-10-06-kbar-ma10-20-60-v3')return {key:'wait',rank:10,className:'wait',text:'🟡 等確認／不追價',detail:'K棒最後過濾資料待確認｜保留候選，暫不試單',candle_guard:true,keep_candidate:true};
         if(base)return base;
+        // 已確認開始起漲者直接併入進場雷達；即使尚缺平均量能／最後確認，也不能整檔消失。
+        if(isActiveLaunchItem(item)){
+          const m=item?.metrics||{};
+          const avg20=Number(m.avg_volume_20_lots||0),vol=Number(m.current_volume_lots||0);
+          const missing=[];
+          if(avg20<500) missing.push('20日均量未達500張');
+          if(vol<1000) missing.push('當日量未達1000張');
+          return {
+            key:'wait',rank:18,className:'first',
+            text:'🟡 已起漲｜等待進場條件確認',
+            detail:(missing.length?missing.join('｜'):'已發動但正式進場條件尚未全滿')+'｜保留在進場雷達，不回發動前、不消失',
+            keep_candidate:true,active_launch_fallback:true
+          };
+        }
         const watch=pullbackWatch.get(String(item.stock_id));
         if(watch?.active){
           const watchText=watch.state==='pullback'?'🟠 回踩追蹤中':watch.state==='ready'?'🟢 回踩守住轉強':'🔵 等回踩守住再轉強';
@@ -2664,7 +2678,7 @@ h1 {
       // Core MA10/MA20/MA60 model, holdings, LINE, API source and refresh cadence are outside this lock.
       const RADAR_CLASSIFICATION_LOCK = Object.freeze({
         locked:true,
-        baseline:'2026-10-09-active-merged-entry-v5',
+        baseline:'2026-10-09-active-entry-fallback-v6',
         scope:'frontend-classification-only',
         rules:'prelaunch-entry-holding-with-internal-active-handoff',
       });
@@ -3002,7 +3016,8 @@ h1 {
           const m=row.item?.metrics||{},mc=m.ma_cluster||{};
           const close=Number(m.close),ma20=Number(m.ma20),pos=Number(m.position_1y_pct);
           const k=Number(m.daily_k),lots=Number(m.current_volume_lots);
-          return row.item?.as_of && Number(row.item?.score)>=75 && lots>=1000 &&
+          return row.action?.active_launch_fallback!==true &&
+            row.item?.as_of && Number(row.item?.score)>=75 && lots>=1000 &&
             mc.all_rising===true && mc.above_all_mas===true &&
             close>0 && ma20>0 && close>=ma20 && (close/ma20-1)*100<=5 &&
             Number.isFinite(pos)&&pos<80 && Number.isFinite(k)&&k<=80;
