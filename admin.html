@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>阿勝底部起漲雷達｜管理員</title>
     <meta name="theme-color" content="#0b1020" />
-    <meta name="asheng-build" content="admin-pages-v2" />
+    <meta name="asheng-build" content="admin-pages-v3" />
     <style>
 @tailwind base;
 @tailwind components;
@@ -1038,7 +1038,7 @@ h1 {
 
               <div class="risk-note"><b>2｜看懂每天何時更新</b><br>📅 <b>選股模型</b>：交易日台灣時間 <b>晚上 9:00 開始分批更新</b>，以已取得的最新完整日 K 計算 MA10／MA20／MA60、KD、MACD、量價與其他既有模型；資料來源未就緒、休市或額度保護啟動時，可能沿用較早的模型快照，並不是 9:00 當下全部股票瞬間完成。<br>⚡ <b>盤中即時報價</b>：只在「📌 已買進」頁更新本人已買進股票，交易時段約 <b>每 2 分鐘</b>取一次；其他候選區不盤中抓價、不盤中升降級。<br>🌙 <b>休市與盤後</b>：不持續抓取盤中即時價格，顯示最後可用的模型與資料時間。</div>
 
-              <div class="risk-note"><b>3｜三個區域要怎麼看</b><br>🌱 <b>發動前</b>：晚上更新後觀察底部整理、均線轉強、接近突破的候選，不代表當下即時買點。<br>🎯 <b>進場雷達</b>：依最近一次完成的模型快照整理突破、回踩與近買點候選；<b>白天不會即時偵測新的第一根突破</b>。當天盤中大漲的股票，可能要等晚間資料更新後才看得到。<br>📌 <b>已買進</b>：保留自己的持股，盤中優先更新價格、漲跌及損益，搭配上次模型快照檢視續抱、警戒與出場風險。</div>
+              <div class="risk-note"><b>3｜四個區域要怎麼看</b><br>🌱 <b>發動前</b>：底部整理、均線轉強、接近突破，但還沒有真正發動。<br>🔥 <b>發動中</b>：已出現第一根突破／起漲，或仍在發動後早期追蹤，但還沒有完成正式進場確認；這一區就是避免「發動前消失、進場雷達尚未接手」的交棒區。<br>🎯 <b>進場雷達</b>：已進入正式進場條件或高確認候選，再依風險與位置判斷是否分批。<br>📌 <b>已買進</b>：保留自己的持股，盤中優先更新價格、漲跌及損益，搭配上次模型快照檢視續抱、警戒與出場風險。</div>
 
               <div class="risk-note"><b>4｜進場雷達先看風險，不把舊訊號當即時價</b><br>🟠 <b>可小量觀察／試單條件</b>：僅表示最近模型快照符合部分條件，隔日下單前要自行核對市場現價與成交量。<br>🟡 <b>近買點／等確認</b>：必要條件還沒齊全，不追。<br>🔵 <b>位置偏高／等回踩</b>：即使趨勢強，也要控制距 MA20 的乖離。<br>🔴 <b>明確不能買</b>：長上影突破失敗、跌破支撐、均線結構破壞或明顯轉弱。<br><b>提醒：</b>沒有盤中逐檔重新確認，候選的顏色與「可試單」文字不能視為即時買進指令。</div>
 
@@ -1058,6 +1058,7 @@ h1 {
           <div class="nav-label">簡單看三區</div>
           <div class="tabs primary-tabs">
             <button class="tab on" data-stage="LAUNCH">🟠 發動前</button>
+            <button class="tab" data-stage="PREATTACK">🔥 發動中</button>
             <button class="tab" data-stage="ENTRY">🎯 進場雷達</button>
             <button class="tab" data-stage="HOLDING">📌 已買進</button>
             <button class="refresh" id="refresh">重新整理</button>
@@ -2674,9 +2675,9 @@ h1 {
       // Core MA10/MA20/MA60 model, holdings, LINE, API source and refresh cadence are outside this lock.
       const RADAR_CLASSIFICATION_LOCK = Object.freeze({
         locked:true,
-        baseline:'2026-10-08-prelaunch-handoff-v2',
+        baseline:'2026-10-09-four-stage-lifecycle-v3',
         scope:'frontend-classification-only',
-        rules:'launch-entry-pullback',
+        rules:'prelaunch-active-entry-holding',
       });
 
       const pullbackWatchState = (item, quote = null) => {
@@ -3055,6 +3056,23 @@ h1 {
           watch?.active===true ||
           item?.__pullback_watch===true;
       };
+      const isActiveLaunchItem = item => {
+        const m=item?.metrics||{};
+        const mc=m.ma_cluster||{};
+        const seq=m.launch_sequence||mc.launch_sequence||{};
+        const entryState=String(m?.trade_lifecycle?.entry?.state||'');
+        const days=Number(seq.days_since_first);
+        const started =
+          m.first_breakout20===true ||
+          mc.breakout_detected_raw===true ||
+          mc.breakout_first_bar===true ||
+          entryState==='starter' ||
+          (Number.isFinite(days)&&days>=0&&days<=3);
+        const formal =
+          entryState==='formal_candidate' ||
+          m?.v5?.entry_confirmed===true;
+        return started && !formal && !holdings.has(String(item?.stock_id||''));
+      };
       const launchQualityState = item => {
         const m=item?.metrics||{};
         const bottom=m.bottom_start||{};
@@ -3065,6 +3083,8 @@ h1 {
         const expected=expectedSignalDataDate();
         const expectedMs=expected ? Date.parse(expected+'T00:00:00Z') : NaN;
 
+        // 已經發動就交棒到「發動中」，不再留在發動前。
+        if (isActiveLaunchItem(item)) return { keep:false, rank:0, className:'active-launch', label:'🔥 已進發動中' };
         // 已經進入進場雷達的股票，不再重複留在發動前。
         if (isEntryRadarItem(item)) return { keep:false, rank:0, className:'promoted', label:'🎯 已進進場雷達' };
 
@@ -3399,7 +3419,7 @@ h1 {
                 second_buy: Number(launchData.launch_counts?.second_buy || 0)
               },
             };
-          } else if (stage === 'ENTRY' || stage === 'PREATTACK') {
+          } else if (stage === 'ENTRY') {
             const fetchStage = async targetStage => {
               const query = new URLSearchParams({ limit: '100', fresh_hours: '96', stage: targetStage });
               const result = await fetchJsonWithTimeout(API + '&' + query.toString(), { cache: 'no-store' }, 10000);
@@ -3410,6 +3430,12 @@ h1 {
             };
             const results = await Promise.all(['A', 'B', 'C'].map(fetchStage));
             data = { ...results[0], picks: results.flatMap(result => result.picks || []) };
+          } else if (stage === 'PREATTACK') {
+            const query = new URLSearchParams({ limit: '100', fresh_hours: '96', mode: 'launch' });
+            const result = await fetchJsonWithTimeout(API + '&' + query.toString(), { cache: 'no-store' }, 10000);
+            const response = result.response;
+            data = result.data;
+            if (!response.ok || !data.ok || !isLockedRulePayload(data)) throw new Error('模型版本鎖定保護：拒絕不同選股版本');
           } else {
             const query = new URLSearchParams({ limit: '80', fresh_hours: '96' });
             if (stage && stage !== 'ENTRY' && stage !== 'PREATTACK') query.set('stage', stage);
@@ -3458,7 +3484,7 @@ h1 {
             }, 0);
           }
           const launchFiltered = stage === 'LAUNCH' ? allPicks.filter(item => launchQualityState(item).keep) : allPicks;
-          const picks = stage === 'ENTRY' ? allPicks.filter(item => actionableSignals.has(tradeSignal(item).className)) : stage === 'PREATTACK' ? allPicks.filter(item => ['first', 'scout', 'early'].includes(tradeSignal(item).className)) : launchFiltered;
+          const picks = stage === 'ENTRY' ? allPicks.filter(item => actionableSignals.has(tradeSignal(item).className)) : stage === 'PREATTACK' ? allPicks.filter(isActiveLaunchItem) : launchFiltered;
           const stageRank = { C: 3, B: 2, A: 1, WATCH: 0 };
           const signalRank = { highwin: 12, v5buy: 10, first: 6, add: 5, early: 4, position: 3, attack: 2, scout: 1 };
           const rankedPicks = [...picks].sort((a, b) => {
@@ -3491,6 +3517,9 @@ h1 {
             const bCombined = Number(b.metrics?.chip?.combined_score ?? b.score ?? 0);
             return bCombined - aCombined || Number(b.score || 0) - Number(a.score || 0);
           });
+          if (stage === 'PREATTACK') {
+            $('#note').textContent = `🔥 發動中｜目前 ${rankedPicks.length} 檔｜已出現第一根／突破或仍在發動早期，尚未完成正式進場確認。`;
+          }
           if (stage === 'LAUNCH') {
             const actionRows = rankedPicks.map(item => ({item,action:simpleActionState(item)})).filter(row=>row.action);
             const pre = actionRows.filter(row=>row.action.key==='pre').length;
@@ -3501,7 +3530,7 @@ h1 {
           }
           stableListRender(rankedPicks.length
             ? rankedPicks.map(card).join('')
-            : `<div class="box empty">${stage === 'LAUNCH' ? '目前沒有符合「發動前試單／突破確認／回踩加碼」的股票。若最新資料仍在補掃，這不代表全市場為0。' : stage === 'ENTRY' ? '目前沒有符合正式可進場條件的股票。' : stage === 'PREATTACK' ? '目前沒有符合攻擊前哨條件的股票。' : '目前這個階段沒有候選股。'}</div>`);
+            : `<div class="box empty">${stage === 'LAUNCH' ? '目前沒有符合「發動前試單／突破確認／回踩加碼」的股票。若最新資料仍在補掃，這不代表全市場為0。' : stage === 'ENTRY' ? '目前沒有符合正式可進場條件的股票。' : stage === 'PREATTACK' ? '目前沒有符合發動中條件的股票。' : '目前這個階段沒有候選股。'}</div>`);
           if (stage === 'LAUNCH' && rankedPicks.length) {
             liveBasePicks = rankedPicks.slice(0, 100);
             await refreshSimpleQuotes();
