@@ -1038,7 +1038,7 @@ h1 {
 
               <div class="risk-note"><b>2｜看懂每天何時更新</b><br>📅 <b>選股模型</b>：交易日台灣時間 <b>晚上 9:00 開始分批更新</b>，以已取得的最新完整日 K 計算 MA10／MA20／MA60、KD、MACD、量價與其他既有模型；資料來源未就緒、休市或額度保護啟動時，可能沿用較早的模型快照，並不是 9:00 當下全部股票瞬間完成。<br>⚡ <b>盤中即時報價</b>：只在「📌 已買進」頁更新本人已買進股票，交易時段約 <b>每 2 分鐘</b>取一次；其他候選區不盤中抓價、不盤中升降級。<br>🌙 <b>休市與盤後</b>：不持續抓取盤中即時價格，顯示最後可用的模型與資料時間。</div>
 
-              <div class="risk-note"><b>3｜四個區域要怎麼看</b><br>🌱 <b>發動前</b>：底部整理、均線轉強、接近突破，但還沒有真正發動。<br>🔥 <b>發動中</b>：已出現第一根突破／起漲，或仍在發動後早期追蹤，但還沒有完成正式進場確認；這一區就是避免「發動前消失、進場雷達尚未接手」的交棒區。<br>🎯 <b>進場雷達</b>：已進入正式進場條件或高確認候選，再依風險與位置判斷是否分批。<br>📌 <b>已買進</b>：保留自己的持股，盤中優先更新價格、漲跌及損益，搭配上次模型快照檢視續抱、警戒與出場風險。</div>
+              <div class="risk-note"><b>3｜三個區域要怎麼看</b><br>🌱 <b>發動前</b>：底部整理、均線轉強、接近突破，但還沒有真正發動。<br>🎯 <b>進場雷達</b>：一旦確認已開始起漲／突破，就直接併入進場雷達，不另外設「發動中」；再由同一套模型依量價、位置、MA20乖離、KD與風險條件分到「優先查看／等待確認／位置偏高／風險警戒」等欄位。<br>📌 <b>已買進</b>：保留自己的持股，盤中優先更新價格、漲跌及損益，搭配上次模型快照檢視續抱、警戒與出場風險。</div>
 
               <div class="risk-note"><b>4｜進場雷達先看風險，不把舊訊號當即時價</b><br>🟠 <b>可小量觀察／試單條件</b>：僅表示最近模型快照符合部分條件，隔日下單前要自行核對市場現價與成交量。<br>🟡 <b>近買點／等確認</b>：必要條件還沒齊全，不追。<br>🔵 <b>位置偏高／等回踩</b>：即使趨勢強，也要控制距 MA20 的乖離。<br>🔴 <b>明確不能買</b>：長上影突破失敗、跌破支撐、均線結構破壞或明顯轉弱。<br><b>提醒：</b>沒有盤中逐檔重新確認，候選的顏色與「可試單」文字不能視為即時買進指令。</div>
 
@@ -1058,7 +1058,6 @@ h1 {
           <div class="nav-label">簡單看三區</div>
           <div class="tabs primary-tabs">
             <button class="tab on" data-stage="LAUNCH">🟠 發動前</button>
-            <button class="tab" data-stage="PREATTACK">🔥 發動中</button>
             <button class="tab" data-stage="ENTRY">🎯 進場雷達</button>
             <button class="tab" data-stage="HOLDING">📌 已買進</button>
             <button class="refresh" id="refresh">重新整理</button>
@@ -2675,9 +2674,9 @@ h1 {
       // Core MA10/MA20/MA60 model, holdings, LINE, API source and refresh cadence are outside this lock.
       const RADAR_CLASSIFICATION_LOCK = Object.freeze({
         locked:true,
-        baseline:'2026-10-09-scan-self-check-v4',
+        baseline:'2026-10-09-active-merged-entry-v5',
         scope:'frontend-classification-only',
-        rules:'prelaunch-active-entry-holding',
+        rules:'prelaunch-entry-holding-with-internal-active-handoff',
       });
 
       const pullbackWatchState = (item, quote = null) => {
@@ -3048,6 +3047,8 @@ h1 {
         const learned=String(m?.scan_intelligence?.effective_lifecycle||'');
         const watch=pullbackWatch.get(String(item?.stock_id||''));
         return learned==='ENTRY' ||
+          learned==='ACTIVE' ||
+          m.first_breakout20===true ||
           m?.bottom_start?.confirmed===true ||
           ['formal_candidate','starter'].includes(entryState) ||
           mc.breakout_detected_raw===true ||
@@ -3494,7 +3495,7 @@ h1 {
             }, 0);
           }
           const launchFiltered = stage === 'LAUNCH' ? allPicks.filter(item => launchQualityState(item).keep) : allPicks;
-          const picks = stage === 'ENTRY' ? allPicks.filter(item => actionableSignals.has(tradeSignal(item).className)) : stage === 'PREATTACK' ? allPicks.filter(isActiveLaunchItem) : launchFiltered;
+          const picks = stage === 'ENTRY' ? allPicks.filter(item => actionableSignals.has(tradeSignal(item).className) || isActiveLaunchItem(item)) : stage === 'PREATTACK' ? allPicks.filter(isActiveLaunchItem) : launchFiltered;
           const stageRank = { C: 3, B: 2, A: 1, WATCH: 0 };
           const signalRank = { highwin: 12, v5buy: 10, first: 6, add: 5, early: 4, position: 3, attack: 2, scout: 1 };
           const rankedPicks = [...picks].sort((a, b) => {
@@ -3540,7 +3541,7 @@ h1 {
           }
           stableListRender(rankedPicks.length
             ? rankedPicks.map(card).join('')
-            : `<div class="box empty">${stage === 'LAUNCH' ? '目前沒有符合「發動前試單／突破確認／回踩加碼」的股票。若最新資料仍在補掃，這不代表全市場為0。' : stage === 'ENTRY' ? '目前沒有符合正式可進場條件的股票。' : stage === 'PREATTACK' ? '目前沒有符合發動中條件的股票。' : '目前這個階段沒有候選股。'}</div>`);
+            : `<div class="box empty">${stage === 'LAUNCH' ? '目前沒有符合「發動前試單／突破確認／回踩加碼」的股票。若最新資料仍在補掃，這不代表全市場為0。' : stage === 'ENTRY' ? '目前沒有符合正式可進場條件的股票。' : stage === 'PREATTACK' ? '目前沒有需要轉入進場雷達的起漲候選。' : '目前這個階段沒有候選股。'}</div>`);
           if (stage === 'LAUNCH' && rankedPicks.length) {
             liveBasePicks = rankedPicks.slice(0, 100);
             await refreshSimpleQuotes();
@@ -4209,6 +4210,7 @@ h1 {
           const entryState=String(item?.metrics?.trade_lifecycle?.entry?.state||'');
           if (entryState==='formal_candidate') return 120;
           if (entryState==='starter') return 110;
+          if (String(item?.metrics?.scan_intelligence?.effective_lifecycle||'')==='ACTIVE' || item?.metrics?.first_breakout20===true) return 105;
           if (item?.metrics?.ma_cluster?.breakout_first_bar === true || item?.metrics?.ma_cluster?.breakout_detected_raw === true) return 105;
           if (item?.metrics?.ma_cluster?.watch_ready === true) return 95;
           if (item?.metrics?.launch_sequence?.second_buy_candidate === true || item?.metrics?.ma_cluster?.launch_sequence?.second_buy_candidate === true) return 90;
