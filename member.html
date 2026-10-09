@@ -2880,6 +2880,16 @@ h1 {
           const level = action.key === 'breakout' && action.className === 'first' ? 2
             : action.key === 'pre' && action.className === 'scout' ? 1 : 0;
           if (!level) continue;
+          // 同步沿用進場雷達「優先查看」的保守量價／均線／位置過濾，
+          // 在發動前分頁也能提醒，不額外查詢進場雷達 API。
+          const m = item.metrics || {}, mc = m.ma_cluster || {};
+          const close = Number(m.close), ma20 = Number(m.ma20);
+          const pos = Number(m.position_1y_pct), k = Number(m.daily_k), lots = Number(m.current_volume_lots);
+          const strong = action.active_launch_fallback !== true && Number(item.score) >= 75
+            && lots >= 1000 && mc.all_rising === true && mc.above_all_mas === true
+            && close > 0 && ma20 > 0 && close >= ma20 && (close / ma20 - 1) * 100 <= 5
+            && Number.isFinite(pos) && pos < 80 && Number.isFinite(k) && k <= 80;
+          if (!strong) continue;
           const previous = buyNoticeState.seen[id];
           if (buyNoticeState.initialized && (!previous || previous.day !== day || level > previous.level)) {
             changes.push({ id, name:String(item.stock_name || ''), day, level });
@@ -3581,6 +3591,7 @@ h1 {
           }
           if (stage === 'LAUNCH') {
             const actionRows = rankedPicks.map(item => ({item,action:simpleActionState(item)})).filter(row=>row.action);
+            updateBuySignalNotice(actionRows);
             const pre = actionRows.filter(row=>row.action.key==='pre').length;
             const breakout = actionRows.filter(row=>row.action.key==='breakout').length;
             const add = actionRows.filter(row=>row.action.key==='add').length;
