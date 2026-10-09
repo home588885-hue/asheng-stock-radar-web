@@ -2665,7 +2665,7 @@ h1 {
       // Core MA10/MA20/MA60 model, holdings, LINE, API source and refresh cadence are outside this lock.
       const RADAR_CLASSIFICATION_LOCK = Object.freeze({
         locked:true,
-        baseline:'2026-10-09-four-stage-lifecycle-v3',
+        baseline:'2026-10-09-scan-self-check-v4',
         scope:'frontend-classification-only',
         rules:'prelaunch-active-entry-holding',
       });
@@ -3035,8 +3035,10 @@ h1 {
         const mc=m.ma_cluster||{};
         const seq=m.launch_sequence||mc.launch_sequence||{};
         const entryState=String(m?.trade_lifecycle?.entry?.state||'');
+        const learned=String(m?.scan_intelligence?.effective_lifecycle||'');
         const watch=pullbackWatch.get(String(item?.stock_id||''));
-        return m?.bottom_start?.confirmed===true ||
+        return learned==='ENTRY' ||
+          m?.bottom_start?.confirmed===true ||
           ['formal_candidate','starter'].includes(entryState) ||
           mc.breakout_detected_raw===true ||
           mc.breakout_first_bar===true ||
@@ -3051,14 +3053,17 @@ h1 {
         const mc=m.ma_cluster||{};
         const seq=m.launch_sequence||mc.launch_sequence||{};
         const entryState=String(m?.trade_lifecycle?.entry?.state||'');
+        const learned=String(m?.scan_intelligence?.effective_lifecycle||'');
         const days=Number(seq.days_since_first);
         const started =
+          learned==='ACTIVE' ||
           m.first_breakout20===true ||
           mc.breakout_detected_raw===true ||
           mc.breakout_first_bar===true ||
           entryState==='starter' ||
           (Number.isFinite(days)&&days>=0&&days<=3);
         const formal =
+          learned==='ENTRY' ||
           entryState==='formal_candidate' ||
           m?.v5?.entry_confirmed===true;
         return started && !formal && !holdings.has(String(item?.stock_id||''));
@@ -3097,6 +3102,11 @@ h1 {
         // 發動前是「低位等發動」，高位階／過熱／離月線太遠都不該留。
         if ((Number.isFinite(pos1y)&&pos1y>=85) || (ext20!=null&&ext20>10) || (Number.isFinite(k)&&k>80)) {
           return { keep:false, rank:0, className:'high', label:'🔵 位置偏高｜不列發動前' };
+        }
+
+        const learned=String(m?.scan_intelligence?.effective_lifecycle||'');
+        if (learned==='PRELAUNCH' && m?.scan_intelligence?.structure_healthy===true) {
+          return { keep:true, rank:78, className:'retained-prelaunch', label:'🟠 發動前｜掃描自動保留' };
         }
 
         // 底部型態可以保留，但沒有 MA10/20/60 全轉強時要明確寫成等待三線轉強，
