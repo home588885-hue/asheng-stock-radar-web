@@ -1042,6 +1042,7 @@ h1 {
 
               <div class="risk-note"><b>4｜進場雷達先看風險，不把舊訊號當即時價</b><br>🟠 <b>可小量觀察／試單條件</b>：僅表示最近模型快照符合部分條件，隔日下單前要自行核對市場現價與成交量。<br>🟡 <b>近買點／等確認</b>：必要條件還沒齊全，不追。<br>🔵 <b>位置偏高／等回踩</b>：即使趨勢強，也要控制距 MA20 的乖離。<br>🔴 <b>明確不能買</b>：長上影突破失敗、跌破支撐、均線結構破壞或明顯轉弱。<br><b>提醒：</b>沒有盤中逐檔重新確認，候選的顏色與「可試單」文字不能視為即時買進指令。</div>
 
+              <div class="risk-note"><b>4A｜🔔 新買點提醒怎麼看</b><br>雷達只從原本的「進場雷達」高品質快照比較訊號變化，不新增行情請求。首次開啟先記錄基準，之後遇到新 🟠 小量試單候選或升級 🟢 突破確認候選才顯示站內提醒，同一股票、同一模型日與級別不重複提醒。<br><b>提醒不是盤中即時推播：</b>交易日晚上 9 點起分批產生新模型；開著網頁時，夜間約每 5 分鐘檢查既有掃描提交，或重新整理時發現變化。沒有開啟網頁不會跳手機通知；提醒只在本裝置瀏覽器保留比對紀錄。下單前務必核對當天股價、成交量及風險。</div>
               <div class="risk-note"><b>5｜已買進的股票，收盤前怎麼管理</b><br><b>13:00 起</b>進入「📌 已買進」，系統開始低頻取樣今日成交價與累積成交量。<br>以 <b>12 分鐘存活＋MA20＋量能</b>一起看：守住 MA20 且量價正常 → 🟢續抱；量縮但守線 → 🟡續抱觀察；跌破 MA20 或放量轉弱 → 🟠警戒／減碼；跌破 MA20 又明顯放量 → 🔴出清警戒。<br>這是收盤前處理提示，不會自動下單；KD、MACD 等完整模型仍等晚上 9 點更新。</div>
 
               <div class="risk-note"><b>6｜買進與賣出後要做的事</b><br>買進：在股票卡上點「我已買進」，輸入成本與數量，股票就會進入自己的持股清單。<br>持股平常盤中不持續抓價；交易日 13:00 起才納入收盤前 12 分鐘量價確認。<br>分批賣出或全部賣出：到持股卡調整；已賣出的股票立即移出收盤前確認清單。持股清單屬於個人帳號，會員看不到管理員持股。</div>
@@ -1053,6 +1054,8 @@ h1 {
               <div class="risk-note">⚠️ 本雷達是研究與持股管理輔助工具，不保證獲利。13:00～13:29 的收盤前提示使用即時價與量能搭配最近完整日 K 模型，目的是協助持股管理，不是自動交易指令；實際下單仍請核對市場行情並自行評估風險。</div>
             </div>
           </details>
+
+        <section id="buySignalNotice" class="box" role="status" aria-live="polite" hidden></section>
 
         <section class="box control-panel">
           <div class="nav-label">簡單看三區</div>
@@ -2859,6 +2862,45 @@ h1 {
           </details>
         </section>`;
       };
+
+      // Only compare existing EOD radar snapshots; no new quote calls, market scans, or jobs.
+      const BUY_NOTICE_KEY = 'asheng-buy-alert-v1-' + portfolioId;
+      let buyNoticeState;
+      try { buyNoticeState = JSON.parse(localStorage.getItem(BUY_NOTICE_KEY) || 'null'); } catch (error) {}
+      if (!buyNoticeState || typeof buyNoticeState !== 'object') buyNoticeState = { initialized:false, seen:{} };
+      if (!buyNoticeState.seen || typeof buyNoticeState.seen !== 'object') buyNoticeState.seen = {};
+      const updateBuySignalNotice = focusRows => {
+        const notice = document.getElementById('buySignalNotice');
+        if (!notice || !Array.isArray(focusRows)) return;
+        const changes = [];
+        for (const row of focusRows) {
+          const item = row?.item || {}, action = row?.action || {};
+          const id = String(item.stock_id || ''), day = String(item.as_of || '');
+          if (!id || !/^20\d{2}-\d{2}-\d{2}$/.test(day) || holdings.has(id)) continue;
+          const level = action.key === 'breakout' && action.className === 'first' ? 2
+            : action.key === 'pre' && action.className === 'scout' ? 1 : 0;
+          if (!level) continue;
+          const previous = buyNoticeState.seen[id];
+          if (buyNoticeState.initialized && (!previous || previous.day !== day || level > previous.level)) {
+            changes.push({ id, name:String(item.stock_name || ''), day, level });
+          }
+          if (!previous || previous.day !== day || level > previous.level) {
+            buyNoticeState.seen[id] = { day, level };
+          }
+        }
+        buyNoticeState.initialized = true;
+        buyNoticeState.seen = Object.fromEntries(Object.entries(buyNoticeState.seen).slice(-600));
+        try { localStorage.setItem(BUY_NOTICE_KEY, JSON.stringify(buyNoticeState)); } catch (error) {}
+        if (!changes.length) return;
+        notice.hidden = false;
+        notice.innerHTML = '<b>🔔 新的盤後模型買點候選｜'+changes.length+' 檔</b>'
+          + '<div class="risk-note">僅依最近完整日 K 的既有選股快照變化提醒，不是盤中即時成交或下單指令。</div>'
+          + changes.slice(0,8).map(x => '<div class="risk-note">'
+            + (x.level === 2 ? '🟢 突破確認候選' : '🟠 小量試單候選')
+            + '｜<b>'+esc(x.id)+' '+esc(x.name)+'</b>｜模型日 '+esc(x.day)
+            + '｜下單前須核對今日股價、量能與風險</div>').join('')
+          + (changes.length>8?'<div class="risk-note">其餘 '+(changes.length-8)+' 檔請查看進場雷達。</div>':'');
+      };
       const renderEntrySections = rows => {
         rows=[...new Map((rows||[]).map(row=>[String(row?.item?.stock_id||''),row])).values()].filter(row=>row?.item?.stock_id);
 
@@ -3038,6 +3080,7 @@ h1 {
           entryBucketHtml('wait','🟡 等待確認','尚缺量價、位置或其他條件，並非可直接買進',waitRows,{open:!focusRows.length,tone:'near',preview:5})+
           entryBucketHtml('pullback','🔵 位置偏高｜等回踩','避免追高，觀察支撐與短均線',pullbackRows,{open:!focusRows.length&&!waitRows.length,tone:'high',preview:5})+
           entryBucketHtml('avoid','🔴 風險警戒｜先避開','已觸發風險或轉弱條件，不列買進候選',avoidRows,{open:!focusRows.length&&!waitRows.length&&!pullbackRows.length,tone:'blocked',preview:5});
+        updateBuySignalNotice(focusRows);
         stableListRender(outHtml);
         return { earlyRows, starterRows, completedRows, recalcRows, blockedRows, highRows,
           weakeningRows, queuedRows, nearRows, trackingRows, staleRows,
@@ -4796,9 +4839,16 @@ h1 {
       updateEntryPhase();
       setInterval(updateEntryPhase, 30000);
       let lastSeenExternalCommitAt = '';
+      let lastCommitProbeAt = 0;
       let externalCommitSyncBusy = false;
       const checkExternalScanCommit = async () => {
         if (document.hidden || externalCommitSyncBusy || moneyFlowSectorViewActive) return;
+        const market = taipeiMarketState();
+        // Probe only during the existing EOD scan window; never add daytime API polling.
+        if (!market.weekday || market.totalMinutes < 1255 || market.totalMinutes > 1330) return;
+        const now = Date.now();
+        if (now - lastCommitProbeAt < 290000) return;
+        lastCommitProbeAt = now;
         try {
           const { response, data } = await fetchScanStatusShared();
           if (!response?.ok || !data?.ok) return;
@@ -4818,7 +4868,7 @@ h1 {
           externalCommitSyncBusy = false;
         }
       };
-      setInterval(checkExternalScanCommit, 30000);
+      setInterval(checkExternalScanCommit, 300000);
       checkExternalScanCommit();
 
       const refreshEntryOnResume = () => {
@@ -4828,7 +4878,7 @@ h1 {
         lastEntryResumeAt = now;
         if (stage === 'ENTRY') {
           refreshLiveQuotes();
-          if (now - lastEntryPoolRefreshAt >= 30000) refreshV5MonitorPool();
+          if (now - lastEntryPoolRefreshAt >= 300000) refreshV5MonitorPool();
         } else if (stage === 'LAUNCH') {
           refreshSimpleQuotes();
         } else if (stage === 'HOLDING') {
