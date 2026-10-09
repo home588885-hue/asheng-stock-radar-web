@@ -3063,7 +3063,12 @@ h1 {
 
         // Existing mutually exclusive risk classification above is preserved.
         // Below only changes visual grouping and sorting. No candidate is silently discarded.
-        const rowScore = row => Number(row?.item?.score||0);
+        const rowScore = row => {
+          const feedback=row?.item?.metrics?.learning_feedback||{};
+          const bias=String(feedback.status||'').startsWith('validated_') && Number(feedback.validation_count)>=20
+            ?Math.max(-4,Math.min(4,Number(feedback.rank_bias)||0)):0;
+          return Number(row?.item?.score||0)+bias;
+        };
         const rowVolume = row => Number(row?.item?.metrics?.current_volume_lots||0);
         const sortEntryVisual = arr => [...arr].sort((a,b)=>
           rowScore(b)-rowScore(a) ||
