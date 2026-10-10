@@ -4997,7 +4997,9 @@ h1 {
               return quote ? intradayCard(item, quote) : card(item,{hideSignal:true});
             }).join('') + fallbackHtml);
             const freshCount = items.filter(item => String(item.as_of || '') === expectedSignalDataDate()).length;
-            $('#note').textContent = `📌 已買進 ${symbols.length} 檔｜⏱ 13:00～13:29 收盤前確認｜約3分鐘取樣量價｜模型 ${freshCount}/${items.length} 檔已到 ${expectedSignalDataDate()}｜晚上9點完整更新。`;
+            $('#note').textContent = marketBridgeReady()
+              ? `📌 已買進 ${symbols.length} 檔｜Cloudflare 盤中有效成交價與量｜約3分鐘取樣｜日K模型 ${freshCount}/${items.length} 檔｜晚上9點完整更新。`
+              : `📌 已買進 ${symbols.length} 檔｜⏱ 13:00～13:29 收盤前確認｜約3分鐘取樣量價｜模型 ${freshCount}/${items.length} 檔已到 ${expectedSignalDataDate()}｜晚上9點完整更新。`;
           } catch (error) {
             stableListRender(items.map(item => card(item,{hideSignal:true})).join('') + fallbackHtml);
             $('#note').textContent = `📌 持股 ${symbols.length} 檔已保留｜收盤前行情暫時未回；不補抓全天盤中報價，晚上9點再更新完整模型。`;
