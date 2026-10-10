@@ -4448,7 +4448,7 @@ h1 {
           stableListRender(rows.length ? rows.map(row => intradayCard(row.item, row.quote)).join('') : '<div class="box empty">目前沒有仍符合發動前條件的股票；只有明確轉弱、跌離發動區或位置過熱才會移出。</div>');
           const quoteTimes = rows.map(row => row.quote?.quote_time).filter(Boolean);
           const latestQuote = quoteTimes.length ? quoteTimes.sort().at(-1) : '-';
-          $('#note').textContent = `🌱 發動前｜目前 ${rows.length} 檔｜接近發動、盤中突破但尚未正式接棒者會持續保留｜今日報價 ${latestQuote}｜約30秒更新一次。`;
+          $('#note').textContent = `🌱 發動前｜目前 ${rows.length} 檔｜Cloudflare 有效成交報價 ${latestQuote}｜約3分鐘低頻更新｜日K模型不盤中重算。`;
         } catch (error) {
           if (navigationSeq !== renderNavToken || stage !== renderStage) return;
           stableListRender(liveBasePicks.filter(item=>launchQualityState(item).keep).map(item => intradayCard(item,null)).join(''));
