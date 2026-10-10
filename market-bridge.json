@@ -1,0 +1,4 @@
+{
+  "worker_url": "",
+  "note": "Set only after checking live Cloudflare /health; never put credentials in this public file"
+}
