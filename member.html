@@ -2603,6 +2603,16 @@ h1 {
       };
 
       const simpleActionState = (item, quote = null) => {
+        // 買進候選必須使用最近有效交易日模型；舊日K不得當成本日新買點。
+        // 已買進仍由原持股 MA20／停損／停利規則管理。
+        const stockId=String(item?.stock_id||'');
+        const expected=expectedSignalDataDate();
+        const modelDay=String(item?.as_of||'');
+        if(!holdings.has(stockId)&&modelDay!==expected){
+          return {key:'wait',rank:2,className:'wait',text:'⚪ 舊模型｜僅供觀察',
+            detail:'模型 '+(modelDay||'日期不明')+'｜最新有效交易日 '+expected+'；不得當成今日新買點，等完整模型補齊',
+            stale_model:true,keep_candidate:true};
+        }
         const base=baseSimpleActionState(item,quote);
         if(holdings.has(String(item.stock_id)))return base;
         const guard=entryCandleGuard(item,quote);
@@ -3077,6 +3087,7 @@ h1 {
           ...queuedRows,...trackingRows,...nearRows,...recalcRows
         ];
         const visuallyStrong = row => {
+          if(row.action?.stale_model===true)return false;
           const m=row.item?.metrics||{},mc=m.ma_cluster||{};
           const close=Number(m.close),ma20=Number(m.ma20),pos=Number(m.position_1y_pct);
           const k=Number(m.daily_k),lots=Number(m.current_volume_lots);
@@ -3095,7 +3106,7 @@ h1 {
         const banner=`<div class="entry-list-overview" data-stable-key="entry-overview">
           <strong>🎯 進場雷達｜${displayedTotal} 檔追蹤</strong>
           <span>⭐ 優先查看 ${focusRows.length}　🟡 待確認 ${waitRows.length}　🔵 等回踩 ${pullbackRows.length}　🔴 風險避開 ${avoidRows.length}</span>
-          <small>以最近完整日 K 快照分類，非盤中即時買點｜點股票名稱展開完整數據${staleRows.length?'｜另有 '+staleRows.length+' 檔過期快照未列入':''}</small>
+          <small>基準交易日 ${esc(expectedSignalDataDate())}｜舊模型僅觀察、不列新買點｜非盤中即時買進指令｜點股票名稱展開資料${staleRows.length?'｜另有 '+staleRows.length+' 檔過期快照未列入':''}</small>
         </div>`;
         const outHtml = banner+
           entryBucketHtml('focus','⭐ 優先查看','原模型條件相對成熟，仍須核對當日行情',focusRows,{open:true,tone:'focus',preview:6})+
