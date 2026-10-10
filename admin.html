@@ -5050,7 +5050,7 @@ h1 {
               if (liveTimer) { clearInterval(liveTimer); liveTimer = null; }
               return;
             }
-            if (closeWatchState().active) render(); // 只有13:00～13:29才發收盤前行情請求
+            if (marketBridgeReady() ? taipeiMarketState().open : closeWatchState().active) render(); // Cloudflare open session, legacy final 30 minutes
           }, LOCKED_SETTINGS.holdingQuoteRefreshMs);
         };
         holdingVisibilityControl = () => {
