@@ -1038,6 +1038,7 @@ h1 {
 
               <div class="risk-note"><b>2｜看懂每天何時更新</b><br>📅 <b>選股模型</b>：交易日台灣時間 <b>晚上 9:00 開始分批更新</b>，以最新完整日 K 計算 MA10／MA20／MA60、KD、MACD、量價與既有風險模型；不是 9:00 當下所有股票同時完成。<br>⏱ <b>已買進收盤前確認</b>：平常盤中不持續抓報價，只在交易日 <b>13:00～13:29</b> 對已買進股票約每 <b>3 分鐘</b>取樣一次，觀察 MA20、價格與量能，並做 12 分鐘存活確認。<br>🌙 <b>13:30 後</b>停止盤中抓價，等待晚上 9 點完整模型更新。</div>
 
+              <div class="risk-note"><b>2A｜連假後第一個開盤日怎麼挑</b><br>用最近有效交易日的完整日K研究隔天候選，不要求休市當天出現不存在的新K棒。例：2026/10/09國慶補假，10/12週一盤前的有效基準是10/08。優先查看只列出基準日符合原模型、至少1,000張且距MA20不超過5%的候選；較舊快照只能列觀察，不得當作新買點。系統沒有全天盤中重掃，開盤後必須手動核對當日實際成交價與量能。若完整日K掃描覆蓋不足或沒有合格候選，寧可觀察、不能用過期名單冒充全市場買點。休市日只讀快照，不另增掃描。</div>
               <div class="risk-note"><b>3｜三個區域要怎麼看</b><br>🌱 <b>發動前</b>：底部整理、均線轉強、接近突破，但還沒有真正發動。<br>🎯 <b>進場雷達</b>：確認起漲／突破後併入進場雷達，再依量價、位置、MA20乖離、KD與風險條件排序；候選區不做全天盤中報價。<br>📌 <b>已買進</b>：保留自己的持股；13:00 起才開啟收盤前量價確認，重點是今天該續抱、警戒、減碼或進入出清警戒。</div>
 
               <div class="risk-note"><b>4｜進場雷達先看風險，不把舊訊號當即時價</b><br>🟠 <b>可小量觀察／試單條件</b>：僅表示最近模型快照符合部分條件，隔日下單前要自行核對市場現價與成交量。<br>🟡 <b>近買點／等確認</b>：必要條件還沒齊全，不追。<br>🔵 <b>位置偏高／等回踩</b>：即使趨勢強，也要控制距 MA20 的乖離。<br>🔴 <b>明確不能買</b>：長上影突破失敗、跌破支撐、均線結構破壞或明顯轉弱。<br><b>提醒：</b>沒有盤中逐檔重新確認，候選的顏色與「可試單」文字不能視為即時買進指令。</div>
@@ -1914,7 +1915,7 @@ h1 {
       };
       const refreshGlobalHeaderSummary = async () => {
         try {
-          const query = new URLSearchParams({ limit:'1', fresh_hours:'96', mode:'launch' });
+          const query = new URLSearchParams({ limit:'1', fresh_hours:'144', mode:'launch' });
           const joiner = API.includes('?') ? '&' : '?';
           const result = await fetchJsonWithTimeout(API + joiner + query.toString(), { cache:'no-store' }, 10000);
           if (result.response.ok && result.data?.ok && isLockedRulePayload(result.data)) applyGlobalHeaderSummary(result.data);
@@ -2018,11 +2019,15 @@ h1 {
         const totalMinutes = Number(values.hour || 0) * 60 + Number(values.minute || 0);
         const weekday = values.weekday;
         const current = new Date(Date.UTC(year, month - 1, day));
+        // 台灣證交所已公布的 2026 年週末以外休市日；休市跨日不誤判「最新模型資料日」。
+        // 僅校正日期判斷，並不補掃歷史 K 線或偽稱全市場已更新。
+        const twse2026Closed = new Set(['2026-01-01','2026-02-12','2026-02-13','2026-02-16','2026-02-17','2026-02-18','2026-02-19','2026-02-20','2026-02-27','2026-04-03','2026-04-06','2026-05-01','2026-06-19','2026-09-25','2026-09-28','2026-10-09','2026-10-26','2026-12-25']);
+        const isClosedSession = date => date.getUTCDay() === 0 || date.getUTCDay() === 6 || twse2026Closed.has(date.toISOString().slice(0,10));
         const moveBackToTradingDay = date => {
-          while (date.getUTCDay() === 0 || date.getUTCDay() === 6) date.setUTCDate(date.getUTCDate() - 1);
+          while (isClosedSession(date)) date.setUTCDate(date.getUTCDate() - 1);
           return date;
         };
-        if (weekday === 'Sat' || weekday === 'Sun') moveBackToTradingDay(current);
+        if (isClosedSession(current)) moveBackToTradingDay(current);
         else if (totalMinutes < 815) {
           current.setUTCDate(current.getUTCDate() - 1);
           moveBackToTradingDay(current);
@@ -2888,7 +2893,7 @@ h1 {
         for (const row of focusRows) {
           const item = row?.item || {}, action = row?.action || {};
           const id = String(item.stock_id || ''), day = String(item.as_of || '');
-          if (!id || !/^20\d{2}-\d{2}-\d{2}$/.test(day) || holdings.has(id)) continue;
+          if (!id || !/^20\d{2}-\d{2}-\d{2}$/.test(day) || day !== expectedSignalDataDate() || holdings.has(id)) continue;
           const level = action.key === 'breakout' && action.className === 'first' ? 2
             : action.key === 'pre' && action.className === 'scout' ? 1 : 0;
           if (!level) continue;
@@ -3086,7 +3091,7 @@ h1 {
           const close=Number(m.close),ma20=Number(m.ma20),pos=Number(m.position_1y_pct);
           const k=Number(m.daily_k),lots=Number(m.current_volume_lots);
           return row.action?.active_launch_fallback!==true &&
-            row.item?.as_of && Number(row.item?.score)>=75 && lots>=1000 &&
+            String(row.item?.as_of||'')===expectedSignalDataDate() && Number(row.item?.score)>=75 && lots>=1000 &&
             mc.all_rising===true && mc.above_all_mas===true &&
             close>0 && ma20>0 && close>=ma20 && (close/ma20-1)*100<=5 &&
             Number.isFinite(pos)&&pos<80 && Number.isFinite(k)&&k<=80;
@@ -3454,7 +3459,7 @@ h1 {
             for (let attempt = 0; attempt < 2; attempt++) {
               try {
                 const limit = attempt === 0 ? '250' : '100';
-                const result = await fetchJsonWithTimeout(API + '&' + new URLSearchParams({ limit, fresh_hours: '96', mode: 'launch' }).toString(), { cache: 'no-store' }, attempt === 0 ? 15000 : 12000);
+                const result = await fetchJsonWithTimeout(API + '&' + new URLSearchParams({ limit, fresh_hours:'144', mode: 'launch' }).toString(), { cache: 'no-store' }, attempt === 0 ? 15000 : 12000);
                 response = result.response;
                 launchData = result.data;
                 if (response.ok && launchData.ok) break;
@@ -3507,7 +3512,7 @@ h1 {
             };
           } else if (stage === 'ENTRY') {
             const fetchStage = async targetStage => {
-              const query = new URLSearchParams({ limit: '100', fresh_hours: '96', stage: targetStage });
+              const query = new URLSearchParams({ limit: '100', fresh_hours:'144', stage: targetStage });
               const result = await fetchJsonWithTimeout(API + '&' + query.toString(), { cache: 'no-store' }, 10000);
               const response = result.response;
               const body = result.data;
@@ -3517,13 +3522,13 @@ h1 {
             const results = await Promise.all(['A', 'B', 'C'].map(fetchStage));
             data = { ...results[0], picks: results.flatMap(result => result.picks || []) };
           } else if (stage === 'PREATTACK') {
-            const query = new URLSearchParams({ limit: '100', fresh_hours: '96', mode: 'launch' });
+            const query = new URLSearchParams({ limit: '100', fresh_hours:'144', mode: 'launch' });
             const result = await fetchJsonWithTimeout(API + '&' + query.toString(), { cache: 'no-store' }, 10000);
             const response = result.response;
             data = result.data;
             if (!response.ok || !data.ok || !isLockedRulePayload(data)) throw new Error('模型版本鎖定保護：拒絕不同選股版本');
           } else {
-            const query = new URLSearchParams({ limit: '80', fresh_hours: '96' });
+            const query = new URLSearchParams({ limit: '80', fresh_hours:'144' });
             if (stage && stage !== 'ENTRY' && stage !== 'PREATTACK') query.set('stage', stage);
             const result = await fetchJsonWithTimeout(API + '&' + query.toString(), { cache: 'no-store' }, 10000);
             const response = result.response;
@@ -4488,9 +4493,13 @@ h1 {
         }
         const market = taipeiMarketState();
         box.className = 'entry-phase on ' + (market.open ? 'observe' : 'closed');
-        box.textContent = market.open
-          ? '📘 進場雷達｜最近完整日K模型快照｜盤中不抓候選股報價，請核對當下市場行情'
-          : '📘 進場雷達｜交易日晚上9點起分批更新模型｜目前顯示最後成功更新的候選快照';
+        const baseDay = expectedSignalDataDate();
+        const isPriorDay = baseDay.replace(/-/g,'') !== todayQuoteDate();
+        box.textContent = isPriorDay
+          ? '📅 開盤前備戰｜最近有效完整交易日 '+baseDay+'｜只看該日有效候選，舊模型不當新買點；開盤後自行核對股價與成交量。資料仍分批補掃，沒有通過條件就不強買。'
+          : market.open
+            ? '📘 進場雷達｜最近完整日K模型快照｜盤中不抓候選股報價，請核對當下市場行情'
+            : '📘 進場雷達｜交易日晚上9點起分批更新模型｜目前顯示最後成功更新的候選快照';
       };
 
       async function refreshLiveQuotes() {
@@ -4624,8 +4633,8 @@ h1 {
 
       const entrySourceUrl = (base, params) => base + (String(base).includes('?') ? '&' : '?') + params.toString();
       const loadEntrySourcePair = async () => {
-        const paramsV5 = new URLSearchParams({ limit:'100', fresh_hours:'96', mode:'monitor' });
-        const paramsLaunch = new URLSearchParams({ limit:'100', fresh_hours:'96', mode:'launch' });
+        const paramsV5 = new URLSearchParams({ limit:'100', fresh_hours:'144', mode:'monitor' });
+        const paramsLaunch = new URLSearchParams({ limit:'100', fresh_hours:'144', mode:'launch' });
         const settled = await Promise.allSettled([
           fetchJsonWithTimeout(entrySourceUrl(V5_API, paramsV5), { cache:'no-store' }, 15000),
           fetchJsonWithTimeout(entrySourceUrl(API, paramsLaunch), { cache:'no-store' }, 15000),
@@ -4706,7 +4715,7 @@ h1 {
             return;
           }
           const fetchStage = async targetStage => {
-            const query = new URLSearchParams({ limit: '100', fresh_hours: '96', stage: targetStage });
+            const query = new URLSearchParams({ limit: '100', fresh_hours:'144', stage: targetStage });
             const response = await memberFetch(API + '&' + query.toString(), { cache: 'no-store' });
             const body = await response.json();
             if (!response.ok || !body.ok) throw new Error('候選股資料暫時讀取失敗');
