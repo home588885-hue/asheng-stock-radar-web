@@ -1046,6 +1046,7 @@ h1 {
               <div class="risk-note"><b>5｜已買進的股票，收盤前怎麼管理</b><br><b>13:00 起</b>進入「📌 已買進」，系統開始低頻取樣今日成交價與累積成交量。<br>以 <b>12 分鐘存活＋MA20＋量能</b>一起看：守住 MA20 且量價正常 → 🟢續抱；量縮但守線 → 🟡續抱觀察；跌破 MA20 或放量轉弱 → 🟠警戒／減碼；跌破 MA20 又明顯放量 → 🔴出清警戒。<br>這是收盤前處理提示，不會自動下單；KD、MACD 等完整模型仍等晚上 9 點更新。</div>
 
               <div class="risk-note"><b>5A｜持股停損及20%分批停利</b><br>只用既有持股成本與近期價格。虧損達4%且短線弱→暫停加碼；虧損6%且跌破MA10／支撐→評估減碼；虧損達8%→盤中高風險警戒，完整日K確認後評估退出；獲利20%→評估先停利約三分之一。既有MA20三日出場、嚴重轉弱強警示、獲利回吐保護都保留。手動減碼約四分之一以上，本裝置不再重複20%提示；跨裝置尚未同步。這些新百分比是研究型提示，不會自動下單，也不保證價格成交。</div>
+              <div class="risk-note"><b>5B｜已買進何時可以加碼</b><br>分兩種：①回踩MA20守住、量價轉強；②突破前高續強。加碼門檻：MA10／20／60維持多頭、成本獲利0%～未滿12%、距MA20不超過5%、日量至少1,000張、20日均量至少500張，且量比合理；強勢突破仍須避免KD過熱。盤中只顯示黃色觀察，完整模型確認才顯示綠色可加碼。最多只建議追加一筆，追加股數約不超過本裝置初始觀察持股的三分之一；同裝置偵測已加碼即停止重複提示。若停損、MA20警示、20%停利或獲利回吐保護先發生，先處理風險，絕不加碼。加碼條件為研究型風控建議，尚未完成獨立回測，並非買進保證。</div>
               <div class="risk-note"><b>6｜買進與賣出後要做的事</b><br>買進：在股票卡上點「我已買進」，輸入成本與數量，股票就會進入自己的持股清單。<br>持股平常盤中不持續抓價；交易日 13:00 起才納入收盤前 12 分鐘量價確認。<br>分批賣出或全部賣出：到持股卡調整；已賣出的股票立即移出收盤前確認清單。持股清單屬於個人帳號，會員看不到管理員持股。</div>
 
               <div class="risk-note"><b>7｜不要混淆三種時間</b><br><b>技術模型基準</b>：最後一次完整日 K 的模型日期。<br><b>收盤前量價更新</b>：只有已買進股票在 13:00～13:29 取樣，用來做 12 分鐘存活與量能提示，不代表整套模型盤中重算。<br><b>系統最新掃描</b>：晚上 9 點分批完成的新模型快照時間。若資料日較舊，就以畫面標示為準，不把舊資料當成今日確認。</div>
@@ -3839,6 +3840,63 @@ h1 {
         try { localStorage.setItem(key, JSON.stringify(rec)); } catch (error) {}
         return true;
       };
+      // 已買進加碼守門 v1：僅用既有模型／持股／收盤前報價，絕不改選股核心或自動交易。
+      const HOLDING_ADD_ONCE_PREFIX = 'asheng-add-once-v1-';
+      const holdingAddPlan = (item, quote = null, signals = {}) => {
+        const stock = String(item?.stock_id || '');
+        const holding = holdings.get(stock);
+        const account = String(portfolioId || '');
+        const qty = Number(holding?.quantity);
+        const boughtDate = String(holding?.bought_at || '').slice(0,10);
+        if (!holding || !account || !stock || !(qty > 0)) return null;
+        const key = HOLDING_ADD_ONCE_PREFIX + account + '-' + stock;
+        let rec = null;
+        try { rec = JSON.parse(localStorage.getItem(key) || 'null'); } catch (error) {}
+        if (!rec || rec.boughtDate !== boughtDate || !Number.isFinite(Number(rec.lastQty))) {
+          rec = { boughtDate, baseQty:qty, lastQty:qty, added:false };
+        } else {
+          if (qty > Number(rec.lastQty)) rec.added = true;
+          rec.lastQty = qty;
+        }
+        try { localStorage.setItem(key, JSON.stringify(rec)); } catch (error) {}
+        if (!signals.addReady && !signals.strongAddReady) return null;
+        const blocked = (reason) => ({ eligible:false, reason, live:validTodayQuote(quote) });
+        if (!boughtDate) return blocked('買進日期不足，暫不判斷首次加碼');
+        if (rec.added) return blocked('本裝置已觀察到本筆持股增加，先管理既有部位');
+        const plan = holdingRiskPlan(item, quote);
+        if (!plan) return blocked('模型或買進成本資訊未達近期確認條件');
+        const metrics = item?.metrics || {};
+        const hm = metrics.holding_management || {};
+        const ma10 = Number(metrics.ma10);
+        const ma20 = Number(metrics.ma20);
+        const ma60 = Number(metrics.ma60);
+        const price = plan.price;
+        const dayK = Number(metrics.daily_k);
+        const priceGap = ma20 > 0 ? (price / ma20 - 1) * 100 : null;
+        const live = plan.live;
+        const modelDay = new Date(String(item.as_of || '').slice(0,10)+'T00:00:00Z');
+        const today = todayQuoteDate();
+        const currentDay = new Date(today.slice(0,4)+'-'+today.slice(4,6)+'-'+today.slice(6,8)+'T00:00:00Z');
+        const age = (currentDay.getTime() - modelDay.getTime()) / 86400000;
+        if (!(age >= 0 && age <= 4)) return blocked('模型資料較舊，暫停新的加碼判斷');
+        if (!(ma10 > 0 && ma20 > 0 && ma60 > 0 && ma20 >= ma60 && ma10 >= ma20 * .995 && price >= ma20 && price >= ma10*.995)) return blocked('均線尚未同步轉強，或尚未站穩月線');
+        if (hm.strong_breakdown === true || hm.exit_ready === true || hm.effective_prev_low_break === true || Number(hm.below_ma20_days || 0)>0) return blocked('持股已有風險警戒，不加碼');
+        if (plan.pnl < 0) return blocked('仍在成本下方，避免攤平虧損');
+        if (plan.pnl >= 12 || plan.takeTwenty) return blocked('獲利位置偏高或已進入分批停利區，不追價');
+        if (!(priceGap >= 0 && priceGap <= 5)) return blocked('距 MA20 超過5%或價格位置不佳，等回踩');
+        const avg20 = Number(metrics.avg_volume_20_lots || 0);
+        const lots = live ? Number(quote?.volume_lots) : Number(metrics.current_volume_lots);
+        const ratio = live && avg20 > 0
+          ? lots / Math.max(1, avg20 * marketFraction(quote?.quote_time))
+          : Number(hm.day_volume_ratio);
+        if (!(avg20 >= 500 && lots >= 1000 && Number.isFinite(ratio) && ratio >= .8 && ratio <= 2.2)) return blocked('量能或流動性不足／過熱，暫緩加碼');
+        const strongPrice = Number(signals.strongAddTrigger);
+        const strong = signals.strongAddReady === true && strongPrice > 0 && price >= strongPrice * 1.003 && ratio >= 1 && dayK <= 85;
+        const pullback = signals.addReady === true && price <= ma20 * 1.03 && ratio <= 2;
+        if (!strong && !pullback) return blocked('回踩或突破的確認條件尚未完成');
+        return { eligible:true, live, kind:strong?'突破續強':'回踩守住', pnl:plan.pnl, price, priceGap,
+          ratio, referenceDate:plan.observationDate, suggestedQty:Math.max(1,Math.floor(Number(rec.baseQty || qty) / 3)) };
+      };
       const actionDecision = (item, quote = null) => {
         const metrics = item.metrics || {};
         const holding = holdings.get(String(item.stock_id));
@@ -3896,6 +3954,7 @@ h1 {
           if (strongBreak) return { className:'live-late', title:'🔴 強警示｜結構快速轉弱', detail:'長黑＋爆量＋MA20下方＋籌碼偏弱', extra:'這是背景強風控，需優先檢查是否提早處理，不必機械等滿3天' };
           if (exitReady) return { className:'live-late', title:'🔴 出清股票', detail:`已連續 ${belowDays} 個交易日收盤跌破 MA20 ${num(ma20,2)}，仍未拉回`, extra:pnl == null ? '依3日規則出清' : `成本 ${num(avgCost,2)}｜目前損益 ${pnl>=0?'+':''}${num(pnl,1)}%` };
 
+          const addPlanTracking = holdingAddPlan(item, quote, {addReady:false, strongAddReady:false});
           const riskPlan = holdingRiskPlan(item, quote);
           if (riskPlan?.stopHard) return {
             className:riskPlan.live?'live-warm':'live-late',
@@ -3936,8 +3995,14 @@ h1 {
           if (shortBreak) return { className:heavyBreak?'live-warm':'live-wait', title:heavyBreak?'🟠 短線轉弱｜放量收破昨日低點':'🟡 短線轉弱｜收破昨日低點', detail:'仍在MA20上方，先停止加碼，不直接出清', extra:heavyBreak?'量能放大，優先觀察MA20是否守住':'若隔日收復昨日低點，警示解除' };
           if (recovered) return { className:'live-launch', title:'🟢 警示解除', detail:'前一日短線跌破已收復', extra:'重新回到MA20趨勢管理；要加碼仍需回踩守住＋量價轉強' };
           if (livePrevLowBreak) return { className:'live-warm', title:'🟠 盤中跌破昨日低點｜等收盤確認', detail:`昨日低點 ${num(prevLow,2)}，目前盤中低於有效跌破門檻`, extra:'盤中只警示，收盤確認後才正式升級短線轉弱' };
-          if (strongAddReady) return { className:'live-launch', title:hm.strong_add_ready===true?'🟢 強勢加碼｜收盤確認':'🟢 強勢加碼候選｜突破續強', detail:`站上前高／突破位 ${num(strongAddTrigger,2)}，量價續強且距MA20約 ${num(ext20,1)}%`, extra:`量比約 ${Number.isFinite(liveVolumeRatio)?num(liveVolumeRatio,2):num(hm.day_volume_ratio,2)}x｜只加第二筆，不追過熱、不一次加滿` };
-          if (addReady) return { className:'live-launch', title:hm.add_ready===true?'🟢 可加碼':'🟢 可加碼候選｜等收盤確認', detail:`回踩 MA20 ${num(ma20,2)} 守住，量價有跟上`, extra:`量比約 ${Number.isFinite(liveVolumeRatio)?num(liveVolumeRatio,2):'-'}x｜分批加一筆，不一次加滿` };
+          const addPlan = holdingAddPlan(item, quote, {addReady, strongAddReady, strongAddTrigger});
+          if (addPlan?.eligible) return {
+            className:addPlan.live?'live-wait':'live-launch',
+            title:addPlan.live?'🟡 加碼觀察｜等待收盤確認':'🟢 可加碼｜'+addPlan.kind,
+            detail:addPlan.kind+'｜成本獲利 '+num(addPlan.pnl,1)+'%｜距MA20 +'+num(addPlan.priceGap,1)+'%｜量比 '+num(addPlan.ratio,2)+'x',
+            extra:(addPlan.live?'僅盤中候選；待完整日K確認。':'依 '+addPlan.referenceDate+' 模型評估。')+' 僅考慮追加一筆，參考上限約 '+Number(addPlan.suggestedQty).toLocaleString('zh-TW')+' 股（本裝置觀察基準）；不得攤平或追價，非自動下單'
+          };
+          if (addPlan && !addPlan.eligible) return { className:'live-wait', title:'🔵 加碼暫緩｜維持既有持股', detail:addPlan.reason, extra:'原持股仍依MA20、停損與獲利保護規則管理，不因加碼條件未過就自動賣出' };
           return { className:'live-launch', title:'🟢 續抱', detail:`目前守在 MA20 ${Number.isFinite(ma20)?num(ma20,2):'-'} 上方`, extra:'若有效收破昨日低點先停止加碼；回踩MA20守住＋量價轉強才標示可加碼' };
         }
         if (bottomState) return bottomState;
@@ -3957,7 +4022,7 @@ h1 {
         const title = action.title;
         const main = /出清股票|停損確認/.test(title) ? '出清' : /獲利回吐保護|停損減碼｜|20%分批停利｜/.test(title) ? '減碼' : /強警示|短線轉弱|MA20下方|第3天觀察|盤中跌破|獲利保護觀察|停損警戒|停損預警|停損減碼觀察|20%分批停利觀察/.test(title) ? '警戒' : title.includes('可加碼') ? '可加碼' : '續抱';
         const rulesTitle = { '續抱':'續抱理由', '可加碼':'加碼理由', '減碼':'減碼原因', '警戒':'警戒原因', '出清':'出清原因' }[main];
-        const reminder = /停損確認|停損警戒/.test(title) ? action.detail + '。先核對現價與成本，盤中警戒並非正式成交。' : /停損減碼|停損預警/.test(title) ? action.detail + '。暫停加碼，評估是否降低風險。' : /20%分批停利/.test(title) ? action.detail + '。評估停利約三分之一，餘部依MA20管理。' : title.includes('獲利回吐保護') ? action.detail + '。先評估減碼約三分之一，非自動下單；此條件仍在驗證。' : title.includes('獲利保護觀察') ? action.detail + '。盤中僅觀察，等待收盤確認。' : title.includes('強警示') ? '結構快速轉弱，請優先檢查持股。' : main === '出清' ? '出場訊號已確認，請處理持股。' : title.includes('第3天觀察') ? '觀察中，等待本日收盤確認。' : main === '警戒' ? '暫停加碼，先觀察後續修復。' : title.includes('候選') ? '加碼候選，等待收盤確認。' : main === '可加碼' ? '採分批節奏，不一次加滿。' : '按原持股計畫管理，避免追價。';
+        const reminder = title.includes('加碼觀察') ? action.detail + '。盤中先續抱，等待完整日K確認才考慮加碼。' : title.includes('加碼暫緩') ? action.detail + '。先管理原部位，不追價。' : /停損確認|停損警戒/.test(title) ? action.detail + '。先核對現價與成本，盤中警戒並非正式成交。' : /停損減碼|停損預警/.test(title) ? action.detail + '。暫停加碼，評估是否降低風險。' : /20%分批停利/.test(title) ? action.detail + '。評估停利約三分之一，餘部依MA20管理。' : title.includes('獲利回吐保護') ? action.detail + '。先評估減碼約三分之一，非自動下單；此條件仍在驗證。' : title.includes('獲利保護觀察') ? action.detail + '。盤中僅觀察，等待收盤確認。' : title.includes('強警示') ? '結構快速轉弱，請優先檢查持股。' : main === '出清' ? '出場訊號已確認，請處理持股。' : title.includes('第3天觀察') ? '觀察中，等待本日收盤確認。' : main === '警戒' ? '暫停加碼，先觀察後續修復。' : title.includes('候選') ? '加碼候選，等待收盤確認。' : main === '可加碼' ? '採分批節奏，不一次加滿。' : '按原持股計畫管理，避免追價。';
         return { action, main, rulesTitle, reminder };
       };
       const HOLDING_CLOSE_WATCH_PREFIX = 'asheng-holding-close-watch-';
@@ -4093,7 +4158,7 @@ h1 {
         const profitNote = profitGuard
           ? '<div class="holding-rule-line"><b>獲利回吐保護（研究中）：</b>本裝置觀察最高獲利 ' + (profitGuard.maxGain >= 0 ? '+' : '') + num(profitGuard.maxGain,1) + '%｜目前 ' + (profitGuard.currentGain >= 0 ? '+' : '') + num(profitGuard.currentGain,1) + '%｜自觀察高點回落 ' + num(profitGuard.retreat,1) + '%。A：曾獲利 ≥5%、回落後跌破MA10；B：曾獲利 ≥10%、回落 ≥2% 且放量轉弱。盤中先警戒、收盤模型確認才建議評估減碼約1/3；MA20原出場與獲利20%分批停利不變。最高價僅本裝置啟用後觀察，不代表買入以來最高點。</div>'
           : '<div class="holding-rule-line"><b>獲利回吐保護（研究中）：</b>待有效近期報價與成本資料；僅本裝置啟用後追蹤觀察高點，沒有歷史最高價時不追補。</div>';
-        return `<details class="card-details holding-rules-details"><summary>📋 ${rulesTitle}與持股規則</summary><div class="holding-analysis holding-rules-body"><dl class="holding-rule-grid">${fields.map(([label,value]) => `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl><div class="holding-rule-line"><b>短線判斷：</b>${esc(short)}。有效跌破採 0.4%；同時量比 ≥ 1.2x 升級放量警戒，隔日收復解除。</div><div class="holding-rule-line"><b>加碼條件：</b>兩條路：①回踩 MA20 守住＋量價轉強，量比 ≥ 0.8x、當日量 ≥ 1,000 張；②突破前高／突破位後續強，量比 1.0～2.2x、距 MA20 ≤ 8%、日K ≤ 85。兩種都只分批加一筆，不攤平、不追過熱。</div><div class="holding-rule-line"><b>出場條件：</b>連續 3 個交易日收盤低於 MA20 且未收回，標示「出清股票」。</div>${strongNote}${riskNote}${profitNote}<div class="holding-rule-line"><b>核心規則：</b>昨日低點管短線節奏，MA20 管主要趨勢。</div></div></details>`;
+        return `<details class="card-details holding-rules-details"><summary>📋 ${rulesTitle}與持股規則</summary><div class="holding-analysis holding-rules-body"><dl class="holding-rule-grid">${fields.map(([label,value]) => `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl><div class="holding-rule-line"><b>短線判斷：</b>${esc(short)}。有效跌破採 0.4%；同時量比 ≥ 1.2x 升級放量警戒，隔日收復解除。</div><div class="holding-rule-line"><b>加碼條件：</b>兩條路：①回踩MA20守住＋量價轉強，量比約0.8～2x；②突破前高／突破位後續強，量比約1～2.2x、日K≤85。共同限制：MA10／20／60多頭、距MA20≤5%、成本損益0～未滿12%、日量至少1,000張、20日均量至少500張。盤中僅觀察、模型確認才評估；追加一筆不超過原先觀察持股約1/3，偵測加碼後停止重複提示，嚴禁虧損攤平。</div><div class="holding-rule-line"><b>出場條件：</b>連續 3 個交易日收盤低於 MA20 且未收回，標示「出清股票」。</div>${strongNote}${riskNote}${profitNote}<div class="holding-rule-line"><b>核心規則：</b>昨日低點管短線節奏，MA20 管主要趨勢。</div></div></details>`;
       };
 
       const recoveryPattern = (item, quote) => {
