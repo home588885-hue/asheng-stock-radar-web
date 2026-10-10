@@ -5055,7 +5055,7 @@ h1 {
         };
         holdingVisibilityControl = () => {
           manageHoldingQuoteTimer();
-          if (holdingStillCurrent() && !document.hidden && closeWatchState().active
+          if (holdingStillCurrent() && !document.hidden && (marketBridgeReady() ? taipeiMarketState().open : closeWatchState().active)
               && !holdingQuoteRefreshing && Date.now() - lastHoldingQuoteRequestAt >= 150000) {
             render(); // 13:00後回到前景，距上次超過150秒才補抓，避免重複請求
           }
