@@ -3382,6 +3382,15 @@ h1 {
         return `<div class="stock-time-info"><span class="model-time">技術模型基準：${md ? esc(md) + ' 收盤資料' : '待模型資料'}</span><span class="scan-time">系統最新重算：${esc(scan || '待重算資料')}</span><span class="quote-time">即時成交更新：${esc(live || '尚無今日有效成交時間')}</span></div>`;
       };
 
+      // Admin only: link to TWSE's own real-time quote page. No MIS API scraping,
+      // no Cloudflare relay, and no Supabase quote request for this separate link.
+      const twseOfficialQuoteLink = symbol => {
+        const id = String(symbol || '').trim();
+        if (!/^[0-9A-Z]{2,12}$/i.test(id)) return '';
+        const url = 'https://mis.twse.com.tw/stock/fibest.jsp?stock=' + encodeURIComponent(id);
+        return '<a href="' + url + '" target="_blank" rel="noopener noreferrer" style="text-decoration:underline" title="另開證交所官方即時行情；不會自動回填雷達買點">📊 證交所即時行情 ↗</a>';
+      };
+
       function card(item, options = {}) {
         const metrics = item.metrics || {};
         const displayQuote = bestTodayQuote(options.quote, item?.stock_id);
@@ -3470,7 +3479,7 @@ h1 {
         const hiddenModelHtml = `${launchQualityHtml}${precisionHtml}${warrant ? `<div class="signal-note">${warrant}</div>` : ''}${bottomHtml}${launchHtml}${launchSequenceHtml}${holding ? '' : guideHtml}`;
         const detailHtml = `<details class="card-details"><summary>完整判斷與數據</summary><div class="detail-body">${hiddenModelHtml}${v5Html}${chipHtml}${holding ? '' : liquidityHtml}${playbookHtml}<div class="metrics"><span class="pill">3年位階 ${num(metrics.position_3y_pct)}%</span><span class="pill">週K ${num(metrics.weekly_k)}｜${gradeText(weeklyKGrade(metrics.weekly_k))}</span><span class="pill">月K ${num(metrics.monthly_k)}｜${gradeText(monthlyKGrade(metrics.monthly_k))}</span><span class="pill">${backtestSignal(item)}</span>${metrics.backtest ? `<span class="pill">5日 ${num(metrics.backtest.win_rate_5d_pct)}%</span><span class="pill">20日 ${num(metrics.backtest.win_rate_20d_pct)}%</span>` : ''}</div><div class="why">${reasons}</div>${cautions ? `<div class="warn">${cautions}</div>` : ''}</div></details>`;
         const actionHtml = options.hideSignal ? '' : `<div class="trade-signal ${signal.className}">${esc(memberFacingText(signal.text))}<small style="display:block;margin-top:4px;font-weight:500">${esc(memberFacingText(signal.detail || ''))}</small></div>`;
-        return `<article class="card" data-stock-id="${esc(item.stock_id)}"><div class="top"><div><div class="name">${esc(item.stock_id)} ${esc(item.stock_name)}</div><div class="meta">${esc(item.market)}${item.industry ? '・' + esc(item.industry) : ''}${timeInfoStages() ? '' : '｜資料日 ' + esc(item.as_of || '-')}</div></div><div class="badge ${esc(item.stage)}">模型 ${Number(item.score || 0)}分</div></div>${companyProfileHtml(item)}${volumePriceHtml(item, displayQuote)}${pullbackWatchHtml(item, displayQuote)}${holding ? holdingTodayHtml : actionHtml + quickHtml + deviationWarningHtml + riskSummary}${holdingHtml}${holdingStatusHtml}${detailHtml}${timeInfoStages() ? timeInfoHtml(item, displayQuote) : '<div class="time">背景模型掃描：' + updated + '</div>'}</article>`;
+        return `<article class="card" data-stock-id="${esc(item.stock_id)}"><div class="top"><div><div class="name">${esc(item.stock_id)} ${esc(item.stock_name)}</div><div class="meta">${esc(item.market)}${item.industry ? '・' + esc(item.industry) : ''}${timeInfoStages() ? '' : '｜資料日 ' + esc(item.as_of || '-')}｜${twseOfficialQuoteLink(item.stock_id)}</div></div><div class="badge ${esc(item.stage)}">模型 ${Number(item.score || 0)}分</div></div>${companyProfileHtml(item)}${volumePriceHtml(item, displayQuote)}${pullbackWatchHtml(item, displayQuote)}${holding ? holdingTodayHtml : actionHtml + quickHtml + deviationWarningHtml + riskSummary}${holdingHtml}${holdingStatusHtml}${detailHtml}${timeInfoStages() ? timeInfoHtml(item, displayQuote) : '<div class="time">背景模型掃描：' + updated + '</div>'}</article>`;
       }
 
       async function load() {
