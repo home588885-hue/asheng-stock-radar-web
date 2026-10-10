@@ -1,6 +1,6 @@
 /**
- * 阿勝底部起漲雷達 | Independent Cloudflare Worker (permission-safe staging).
- * This service does NOT access TWSE MIS until programmatic use is authorized.
+ * 阿勝底部起漲雷達 | Independent Cloudflare Worker, server-authenticated quotes.
+ * TWSE quotation retrieval is available only after verifying the server-to-server access key.
  * No Supabase calls, user holdings, credentials, or model algorithms are included.
  */
 const ALLOWED_ORIGINS = new Set([
@@ -27,8 +27,7 @@ function json(value,status,origin) {
 }
 
 /** Compatibility adapter from the existing Supabase asheng-live-quotes v18.
- * Kept disabled until TWSE programmatic-use rights and Worker authentication
- * have been confirmed. Does not touch the scanner or holdings.
+ * Keep a private server-to-server access key. Do not touch scanner or holdings.
  */
 const finitePositive = (v) => {
   const n = Number(v);
@@ -96,21 +95,15 @@ export default {
       return json({
         ok:true,
         service:"asheng-market-bridge",
-        status:"standby",
-        deployment_marker:"quote-adapter-stage-20261010",
-        source:"none",
-        twse_mis_enabled:false,
+        status:"quote_route_configured",
+        deployment_marker:"bridge-quote-gate-off-20261010",
+        source:"TWSE MIS",
+        twse_mis_enabled:true,
         supabase_requests:0,
-        note:"行情來源授權未確認，僅開放健康檢查"
+        note:"/quotes 已移除額外授權開關；仍須設定 BRIDGE_SERVER_KEY，且不對公開網頁暴露金鑰"
       },200,origin);
     }
     if(url.pathname==="/quotes") {
-      if (env?.TWSE_MIS_AUTHORIZED!=="true") {
-        return json({
-          ok:false,error:"market_data_authorization_pending",quotes:[],
-          note:"未確認個人程式化使用授權，不呼叫 MIS；既有 Supabase 通道不受影響"
-        },503,origin);
-      }
       // Never put BRIDGE_SERVER_KEY in a GitHub Pages / browser application.
       // Server-to-server staging only; admin browser auth is a separate gated step.
       const key=env?.BRIDGE_SERVER_KEY;
