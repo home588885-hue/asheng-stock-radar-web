@@ -142,8 +142,9 @@ export default {
         deployment_marker:"admin-auth-market-bridge-20261010",
         source:"TWSE MIS",
         twse_mis_enabled:true,
-        supabase_requests:0,
-        note:"/quotes 僅限已登入且已開通管理員，驗證沿用既有帳號，不使用公開金鑰"
+        supabase_quote_requests:0,
+        admin_auth_check:"existing_supabase_member_api",
+        note:"報價走 Cloudflare，僅管理員；身分驗證仍低頻呼叫 Supabase，不含持股清單"
       },200,origin);
     }
     if(url.pathname==="/quotes") {
