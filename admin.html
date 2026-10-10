@@ -2884,7 +2884,9 @@ h1 {
       const entrySnapshotState = (item, baseAction, quote = null) => {
         if (!baseAction) return null;
         const quoteValid = marketBridgeReady() && validTodayQuote(quote);
-        return {...baseAction, phase:'candidate', buyable:false, trialable:false,
+        const firstBreakoutNow = quoteValid && baseAction.intraday_early_launch === true;
+        const watchBreakoutNow = quoteValid && baseAction.intraday_early_watch === true;
+        return {...baseAction, phase:firstBreakoutNow?'starter':watchBreakoutNow?'observe':'candidate', buyable:false, trialable:firstBreakoutNow,
           live_quote_verified:quoteValid,
           detail:(quoteValid ? 'Cloudflare 盤中成交價＋既有日K模型條件｜'
             : '最近完整交易日日K候選，非盤中即時買點｜')
