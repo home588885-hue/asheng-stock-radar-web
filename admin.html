@@ -1761,7 +1761,7 @@ h1 {
       window.getLiveQuotes = async items => {
         // 網頁在背景或非交易時段，禁止發出新的即時行情請求。
         const candidatesViaBridge = marketBridgeReady() && ['LAUNCH','ENTRY'].includes(stage);
-        const quoteWindow = candidatesViaBridge ? taipeiMarketState().open : closeWatchState().active;
+        const quoteWindow = marketBridgeReady() ? taipeiMarketState().open : closeWatchState().active;
         if (document.hidden || !quoteWindow) return { ok:true, quotes:[] };
         const unique = [];
         const seen = new Set();
