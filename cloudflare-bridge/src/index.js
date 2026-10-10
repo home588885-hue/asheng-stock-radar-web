@@ -1,6 +1,6 @@
 /**
  * 阿勝底部起漲雷達 | Independent Cloudflare Worker, server-authenticated quotes.
- * TWSE quotation retrieval is available only after verifying the server-to-server access key.
+ * Only an authenticated admin can request quotes. Existing Supabase model services are unchanged.
  * No Supabase calls, user holdings, credentials, or model algorithms are included.
  */
 const ALLOWED_ORIGINS = new Set([
@@ -16,7 +16,7 @@ function makeHeaders(origin) {
   if (ALLOWED_ORIGINS.has(origin)) {
     h.set("Access-Control-Allow-Origin",origin);
     h.set("Access-Control-Allow-Methods","GET,OPTIONS");
-    h.set("Access-Control-Allow-Headers","Content-Type");
+    h.set("Access-Control-Allow-Headers","Content-Type,Authorization");
   }
   return h;
 }
@@ -27,7 +27,7 @@ function json(value,status,origin) {
 }
 
 /** Compatibility adapter from the existing Supabase asheng-live-quotes v18.
- * Keep a private server-to-server access key. Do not touch scanner or holdings.
+ * Validate existing Supabase admin sessions; do not touch scanner or holdings.
  */
 const finitePositive = (v) => {
   const n = Number(v);
@@ -82,6 +82,49 @@ async function readTwseQuotes(items) {
   return {ok:true,source:"TWSE MIS",today,quotes};
 }
 
+
+const MEMBER_API_ME = "https://qexbtubfoyfsllaiecvv.supabase.co/functions/v1/asheng-member-api?action=me";
+const checkedAdmins = new Map();
+const ADMIN_CACHE_MS = 5 * 60 * 1000;
+// The visitor's Supabase bearer token is verified by the existing admin API.
+// No admin password, server secret or service-role key is embedded in the browser.
+async function isAuthenticatedAdmin(request) {
+  const auth = request.headers.get("Authorization") || "";
+  const match = /^Bearer\s+([A-Za-z0-9._-]+)$/.exec(auth);
+  if (!match) return false;
+  const token = match[1];
+  let expiresAt = Date.now() + ADMIN_CACHE_MS;
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return false;
+    const claims = JSON.parse(atob(parts[1].replace(/-/g,"+").replace(/_/g,"/")));
+    if (!Number.isFinite(claims.exp) || claims.exp * 1000 <= Date.now() + 10000) return false;
+    expiresAt = Math.min(expiresAt, claims.exp*1000 - 10000);
+  } catch { return false; }
+  const data = new TextEncoder().encode(token);
+  const digest = [...new Uint8Array(await crypto.subtle.digest("SHA-256",data))]
+    .map(n=>n.toString(16).padStart(2,"0")).join("");
+  const cached = checkedAdmins.get(digest);
+  if (cached && cached > Date.now()) return true;
+  try {
+    const response = await fetch(MEMBER_API_ME, {
+      headers: { Authorization: "Bearer " + token, Accept: "application/json" },
+      signal: AbortSignal.timeout(5000)
+    });
+    if (!response.ok) return false;
+    const result = await response.json();
+    const allowed = result?.ok === true &&
+      result?.membership?.role === "admin" && result?.access?.active === true;
+    if (!allowed) return false;
+    if (checkedAdmins.size >= 128) {
+      for(const [key,time] of checkedAdmins) if(time <= Date.now()) checkedAdmins.delete(key);
+      if(checkedAdmins.size >= 128) checkedAdmins.delete(checkedAdmins.keys().next().value);
+    }
+    checkedAdmins.set(digest,expiresAt);
+    return true;
+  } catch { return false; }
+}
+
 export default {
   async fetch(request, env) {
     const url=new URL(request.url);
@@ -96,19 +139,16 @@ export default {
         ok:true,
         service:"asheng-market-bridge",
         status:"quote_route_configured",
-        deployment_marker:"bridge-quote-gate-off-20261010",
+        deployment_marker:"admin-auth-market-bridge-20261010",
         source:"TWSE MIS",
         twse_mis_enabled:true,
         supabase_requests:0,
-        note:"/quotes 已移除額外授權開關；仍須設定 BRIDGE_SERVER_KEY，且不對公開網頁暴露金鑰"
+        note:"/quotes 僅限已登入且已開通管理員，驗證沿用既有帳號，不使用公開金鑰"
       },200,origin);
     }
     if(url.pathname==="/quotes") {
-      // Never put BRIDGE_SERVER_KEY in a GitHub Pages / browser application.
-      // Server-to-server staging only; admin browser auth is a separate gated step.
-      const key=env?.BRIDGE_SERVER_KEY;
-      if (!key || request.headers.get("x-bridge-server-key")!==key) {
-        return json({ok:false,error:"server_auth_required",quotes:[]},401,origin);
+      if (!(await isAuthenticatedAdmin(request))) {
+        return json({ok:false,error:"admin_auth_required",quotes:[]},401,origin);
       }
       const items=parseSymbols(url.searchParams.get("symbols")||"");
       if (!items) return json({ok:false,error:"invalid_symbols",quotes:[]},400,origin);
