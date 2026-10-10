@@ -39,6 +39,7 @@ export default {
         ok:true,
         service:"asheng-market-bridge",
         status:"standby",
+        deployment_marker:"github-connect-check-20261010",
         source:"none",
         twse_mis_enabled:false,
         supabase_requests:0,
