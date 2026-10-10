@@ -1724,6 +1724,11 @@ h1 {
         const cached = liveQuoteCache.get(String(stockId || quote?.stock_id || ''));
         return validTodayQuote(cached) ? { ...cached, cached_last_trade:true } : null;
       };
+      // Reuse today's valid holding quotes when tabs are switched, and cool down failed
+      // requests for 30 seconds. Keep the existing ~3 minute sampling cadence unchanged.
+      const liveQuoteRequestAt = new Map();
+      const LIVE_QUOTE_REUSE_MS = 150000;
+      const LIVE_QUOTE_FAILURE_BACKOFF_MS = 30000;
       window.getLiveQuotes = async items => {
         // 網頁在背景或非交易時段，禁止發出新的即時行情請求。
         if (document.hidden || !closeWatchState().active) return { ok:true, quotes:[] };
@@ -1735,10 +1740,20 @@ h1 {
           seen.add(id);
           unique.push({ stock_id:id, market:item?.market || 'tse' });
         }
+        // Do not spend additional Supabase requests on recently queried holdings.
+        // Missing trades use only a short failure backoff; no stale price is invented.
+        const now = Date.now();
+        const pending = unique.filter(item => {
+          const last = liveQuoteRequestAt.get(item.stock_id) || 0;
+          if (!last) return true;
+          const cached = liveQuoteCache.get(item.stock_id);
+          const wait = validTodayQuote(cached) ? LIVE_QUOTE_REUSE_MS : LIVE_QUOTE_FAILURE_BACKOFF_MS;
+          return now - last >= wait;
+        });
         const chunks = [];
-        for (let i = 0; i < unique.length; i += 30) chunks.push(unique.slice(i, i + 30));
-        if (!chunks.length) return { ok:true, quotes:[] };
+        for (let i = 0; i < pending.length; i += 30) chunks.push(pending.slice(i, i + 30));
         const results = await Promise.all(chunks.map(async chunk => {
+          for (const item of chunk) liveQuoteRequestAt.set(item.stock_id, Date.now());
           try {
             const symbols = chunk.map(item => `${item.stock_id}:${item.market || 'tse'}`).join(',');
             return await fetchLiveQuoteChunk(symbols);
@@ -1849,12 +1864,15 @@ h1 {
           const primary = await fetchJsonWithTimeout(ANALYZER_API + '?' + suffix, options, timeoutMs);
           if (primary.response.ok && primary.data?.ok) return primary;
         } catch (error) {}
+        // Do not retry the identical analyzer endpoint as its own fallback.
+        if (ANALYZER_FALLBACK_API === ANALYZER_API) throw new Error('analyzer_response_unavailable');
         return fetchJsonWithTimeout(ANALYZER_FALLBACK_API + '?' + suffix, options, timeoutMs);
       };
       const fetchLiveQuoteChunk = async symbols => {
         if (document.hidden || !taipeiMarketState().open) return [];
         const suffix = '?' + new URLSearchParams({ symbols }).toString();
-        for (const base of [LIVE_API, LIVE_FALLBACK_API]) {
+        // Primary/fallback currently point to the same Edge Function: never double-call it.
+        for (const base of new Set([LIVE_API, LIVE_FALLBACK_API])) {
           if (document.hidden) return []; // 防止切背景後補送備援請求
           try {
             const response = await fetch(base + suffix, { cache:'no-store' });
@@ -1866,7 +1884,8 @@ h1 {
       };
       const fetchScanStatusShared = async () => {
         const stamp = '&_=' + Date.now();
-        for (const base of [SCAN_STATUS_API, SCAN_STATUS_FALLBACK_API]) {
+        // Avoid duplicate status probes when both endpoints are identical.
+        for (const base of new Set([SCAN_STATUS_API, SCAN_STATUS_FALLBACK_API])) {
           try {
             const response = await fetch(base + stamp, { cache:'no-store' });
             const data = await response.json();
