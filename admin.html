@@ -1672,8 +1672,23 @@ h1 {
         'https://qexbtubfoyfsllaiecvv.supabase.co/functions/v1/asheng-pullback-watch';
       // Cloudflare's verified workers.dev origin is configured only after live /health check.
       // Never accept an arbitrary query-string or localStorage URL: it would leak login JWTs.
-      const MARKET_BRIDGE_URL = '';
+      let MARKET_BRIDGE_URL = '';
       const marketBridgeReady = () => !!MARKET_BRIDGE_URL;
+      const configureCloudflareMarketBridge = async () => {
+        try {
+          const response = await fetch('./market-bridge.json', {cache:'no-store',signal:AbortSignal.timeout(4000)});
+          if (!response.ok) return;
+          const config = await response.json();
+          const url = String(config?.worker_url || '').replace(/\/$/, '');
+          if (!/^https:\/\/asheng-market-bridge\.[a-z0-9-]+\.workers\.dev$/i.test(url)) return;
+          const check = await fetch(url + '/health',{cache:'no-store',signal:AbortSignal.timeout(5000)});
+          if (!check.ok) return;
+          const status = await check.json();
+          if (status?.service === 'asheng-market-bridge'
+              && status?.deployment_marker === 'admin-auth-market-bridge-20261010')
+            MARKET_BRIDGE_URL = url;
+        } catch (error) {}
+      };
       const LIVE_API = SHARED_DATA_HUB + '/asheng-live-quotes';
       const LIVE_FALLBACK_API =
         'https://qexbtubfoyfsllaiecvv.supabase.co/functions/v1/asheng-live-quotes';
@@ -5245,6 +5260,7 @@ h1 {
       document.addEventListener('visibilitychange', checkLatestPageBuild);
       window.addEventListener('focus', checkLatestPageBuild);
       (async () => {
+        await configureCloudflareMarketBridge();
         load();
         loadHoldings();
       })();
