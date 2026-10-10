@@ -1915,7 +1915,7 @@ h1 {
             if (response.ok && data?.ok && Array.isArray(data.quotes)) return data.quotes;
           } catch (error) {}
           // Never fall back to old Supabase for a candidate pool. Holdings retain existing emergency fallback.
-          if (stage !== 'HOLDING') return [];
+          return []; // Worker unavailable: leave quote unavailable rather than consuming Supabase quote budget.
         }
         // Primary/fallback currently point to the same Edge Function: never double-call it.
         for (const base of new Set([LIVE_API, LIVE_FALLBACK_API])) {
