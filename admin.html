@@ -4984,7 +4984,7 @@ h1 {
           }
           holdingQuoteRefreshing = true;
           try {
-            const quoteOpen = !document.hidden && closeWatchState().active;
+            const quoteOpen = !document.hidden && (marketBridgeReady() ? taipeiMarketState().open : closeWatchState().active);
             if (quoteOpen) lastHoldingQuoteRequestAt = Date.now();
             const payload = quoteOpen
               ? await window.getLiveQuotes(items.map(item => ({ stock_id:String(item.stock_id), market:String(item.market || '') })))
