@@ -1670,6 +1670,10 @@ h1 {
       const HOLDINGS_API = MEMBER_API + '?action=holdings';
       const PULLBACK_WATCH_API =
         'https://qexbtubfoyfsllaiecvv.supabase.co/functions/v1/asheng-pullback-watch';
+      // Cloudflare's verified workers.dev origin is configured only after live /health check.
+      // Never accept an arbitrary query-string or localStorage URL: it would leak login JWTs.
+      const MARKET_BRIDGE_URL = '';
+      const marketBridgeReady = () => !!MARKET_BRIDGE_URL;
       const LIVE_API = SHARED_DATA_HUB + '/asheng-live-quotes';
       const LIVE_FALLBACK_API =
         'https://qexbtubfoyfsllaiecvv.supabase.co/functions/v1/asheng-live-quotes';
@@ -1734,21 +1738,38 @@ h1 {
         const cached = liveQuoteCache.get(String(stockId || quote?.stock_id || ''));
         return validTodayQuote(cached) ? { ...cached, cached_last_trade:true } : null;
       };
+      // Reuse today's valid holding quotes when tabs are switched, and cool down failed
+      // requests for 30 seconds. Keep the existing ~3 minute sampling cadence unchanged.
+      const liveQuoteRequestAt = new Map();
+      const LIVE_QUOTE_REUSE_MS = 150000;
+      const LIVE_QUOTE_FAILURE_BACKOFF_MS = 30000;
       window.getLiveQuotes = async items => {
         // 網頁在背景或非交易時段，禁止發出新的即時行情請求。
-        if (document.hidden || !closeWatchState().active) return { ok:true, quotes:[] };
+        const candidatesViaBridge = marketBridgeReady() && ['LAUNCH','ENTRY'].includes(stage);
+        const quoteWindow = candidatesViaBridge ? taipeiMarketState().open : closeWatchState().active;
+        if (document.hidden || !quoteWindow) return { ok:true, quotes:[] };
         const unique = [];
         const seen = new Set();
         for (const item of (items || [])) {
           const id = String(item?.stock_id || '');
-          if (!id || seen.has(id) || !holdings.has(id)) continue;
+          if (!id || seen.has(id) || (!candidatesViaBridge && !holdings.has(id))) continue;
           seen.add(id);
           unique.push({ stock_id:id, market:item?.market || 'tse' });
         }
+        // Do not spend additional Supabase requests on recently queried holdings.
+        // Missing trades use only a short failure backoff; no stale price is invented.
+        const now = Date.now();
+        const pending = unique.filter(item => {
+          const last = liveQuoteRequestAt.get(item.stock_id) || 0;
+          if (!last) return true;
+          const cached = liveQuoteCache.get(item.stock_id);
+          const wait = validTodayQuote(cached) ? LIVE_QUOTE_REUSE_MS : LIVE_QUOTE_FAILURE_BACKOFF_MS;
+          return now - last >= wait;
+        });
         const chunks = [];
-        for (let i = 0; i < unique.length; i += 30) chunks.push(unique.slice(i, i + 30));
-        if (!chunks.length) return { ok:true, quotes:[] };
+        for (let i = 0; i < pending.length; i += 30) chunks.push(pending.slice(i, i + 30));
         const results = await Promise.all(chunks.map(async chunk => {
+          for (const item of chunk) liveQuoteRequestAt.set(item.stock_id, Date.now());
           try {
             const symbols = chunk.map(item => `${item.stock_id}:${item.market || 'tse'}`).join(',');
             return await fetchLiveQuoteChunk(symbols);
@@ -1859,12 +1880,30 @@ h1 {
           const primary = await fetchJsonWithTimeout(ANALYZER_API + '?' + suffix, options, timeoutMs);
           if (primary.response.ok && primary.data?.ok) return primary;
         } catch (error) {}
+        // Do not retry the identical analyzer endpoint as its own fallback.
+        if (ANALYZER_FALLBACK_API === ANALYZER_API) throw new Error('analyzer_response_unavailable');
         return fetchJsonWithTimeout(ANALYZER_FALLBACK_API + '?' + suffix, options, timeoutMs);
       };
       const fetchLiveQuoteChunk = async symbols => {
         if (document.hidden || !taipeiMarketState().open) return [];
         const suffix = '?' + new URLSearchParams({ symbols }).toString();
-        for (const base of [LIVE_API, LIVE_FALLBACK_API]) {
+        if (marketBridgeReady()) {
+          try {
+            const { data: session } = await authClient.auth.getSession();
+            const token = session?.session?.access_token;
+            if (!token) return [];
+            const response = await fetch(MARKET_BRIDGE_URL + '/quotes' + suffix, {
+              headers: { Authorization: 'Bearer ' + token, Accept:'application/json' },
+              cache:'no-store', signal:AbortSignal.timeout(10000)
+            });
+            const data = await response.json();
+            if (response.ok && data?.ok && Array.isArray(data.quotes)) return data.quotes;
+          } catch (error) {}
+          // Never fall back to old Supabase for a candidate pool. Holdings retain existing emergency fallback.
+          if (stage !== 'HOLDING') return [];
+        }
+        // Primary/fallback currently point to the same Edge Function: never double-call it.
+        for (const base of new Set([LIVE_API, LIVE_FALLBACK_API])) {
           if (document.hidden) return []; // 防止切背景後補送備援請求
           try {
             const response = await fetch(base + suffix, { cache:'no-store' });
@@ -1876,7 +1915,8 @@ h1 {
       };
       const fetchScanStatusShared = async () => {
         const stamp = '&_=' + Date.now();
-        for (const base of [SCAN_STATUS_API, SCAN_STATUS_FALLBACK_API]) {
+        // Avoid duplicate status probes when both endpoints are identical.
+        for (const base of new Set([SCAN_STATUS_API, SCAN_STATUS_FALLBACK_API])) {
           try {
             const response = await fetch(base + stamp, { cache:'no-store' });
             const data = await response.json();
@@ -2841,33 +2881,40 @@ h1 {
 
       // Entry radar is night-snapshot-only; the old intraday 12-minute gate is retired.
       // Never turn an EOD candidate into a live buy instruction based on a page timer.
-      const entrySnapshotState = (item, baseAction) => {
+      const entrySnapshotState = (item, baseAction, quote = null) => {
         if (!baseAction) return null;
+        const quoteValid = marketBridgeReady() && validTodayQuote(quote);
         return {...baseAction, phase:'candidate', buyable:false, trialable:false,
-          detail:'最近完整交易日日K候選，非盤中即時買點｜'+String(baseAction.detail||'請先確認當下市場行情')};
+          live_quote_verified:quoteValid,
+          detail:(quoteValid ? 'Cloudflare 盤中成交價＋既有日K模型條件｜'
+            : '最近完整交易日日K候選，非盤中即時買點｜')
+            +String(baseAction.detail||'請先確認當下市場行情')};
       };
 
       // Compact entry display only; this does not alter MA10/20/60 signals or eligibility.
       const entryCompactStock = (row, bucketLabel) => {
         const item=row.item||{}, m=item.metrics||{}, id=String(item.stock_id||'');
-        const score=Number(item.score), close=Number(m.close), ma20=Number(m.ma20);
+        const score=Number(item.score), q=marketBridgeReady()&&validTodayQuote(row.quote)?row.quote:null;
+        const close=Number(q?.price ?? m.close), ma20=Number(m.ma20);
         const dist=close>0&&ma20>0?(close/ma20-1)*100:null;
-        const vol=Number(m.current_volume_lots);
+        const vol=Number(q?.volume_lots ?? m.current_volume_lots);
         const rawAction=String(row.action?.text||'').replace(/^[^\\p{L}\\p{N}]+/u,'').split('｜')[0];
         const actionText=rawAction||bucketLabel;
         const tradeContext=(row.action?.phase==='blocked'||bucketLabel.includes('避開'))?'風險警示':
-           '盤後模型觀察，非即時買點';
+           q ? '今日成交 '+String(q.quote_time||'')+'｜日K模型未重算' : '盤後模型觀察，非即時買點';
         const originalAction=row.action||{};
         const safeDisplayAction={...originalAction,buyable:false,trialable:false,
           text:bucketLabel.includes('避開')?(originalAction.text||'🔴 風險警戒'):originalAction.text||'🟡 模型候選',
-          detail:(originalAction.detail||'模型條件待核對')+'｜盤中未逐檔更新報價，下單前請核對實際行情'};
-        const expanded=v5MonitorCard(item, null, safeDisplayAction);
+          detail:(originalAction.detail||'模型條件待核對') + (q
+            ? '｜已比對今日實際成交價與量；完整MA與KD模型仍以最近完整日K為準'
+            : '｜盤中尚無最新成交報價，下單前請核對實際行情')};
+        const expanded=v5MonitorCard(item, q, safeDisplayAction);
         return `<details class="entry-mini" data-stock-key="${esc(id)}">
           <summary class="entry-mini-summary">
             <span class="entry-mini-name"><strong>${esc(id)} ${esc(item.stock_name||'')}</strong><small>${esc(actionText)}</small></span>
             <span class="entry-mini-score">模型 ${Number.isFinite(score)?esc(num(score,0)):'-'} 分</span>
             <span class="entry-mini-expand">詳情 ▾</span>
-            <span class="entry-mini-metrics">模型收盤 <b>${close>0?esc(num(close,2)):'-'}</b>｜距MA20 ${dist==null?'-':(dist>=0?'+':'')+esc(num(dist,1))+'%'}｜成交量 ${Number.isFinite(vol)?esc(num(vol,0))+'張':'-'}</span>
+            <span class="entry-mini-metrics">${q?'今日成交':'模型收盤'} <b>${close>0?esc(num(close,2)):'-'}</b>｜距MA20 ${dist==null?'-':(dist>=0?'+':'')+esc(num(dist,1))+'%'}｜成交量 ${Number.isFinite(vol)?esc(num(vol,0))+'張':'-'}</span>
             <span class="entry-mini-date">模型基準 ${esc(item.as_of||'待更新')}｜${tradeContext}</span>
           </summary>
           <div class="entry-mini-full">${expanded}</div>
@@ -3363,6 +3410,15 @@ h1 {
         return `<div class="stock-time-info"><span class="model-time">技術模型基準：${md ? esc(md) + ' 收盤資料' : '待模型資料'}</span><span class="scan-time">系統最新重算：${esc(scan || '待重算資料')}</span><span class="quote-time">即時成交更新：${esc(live || '尚無今日有效成交時間')}</span></div>`;
       };
 
+      // Admin only: link to TWSE's own real-time quote page. No MIS API scraping,
+      // no Cloudflare relay, and no Supabase quote request for this separate link.
+      const twseOfficialQuoteLink = symbol => {
+        const id = String(symbol || '').trim();
+        if (!/^[0-9A-Z]{2,12}$/i.test(id)) return '';
+        const url = 'https://mis.twse.com.tw/stock/fibest.jsp?stock=' + encodeURIComponent(id);
+        return '<a href="' + url + '" target="_blank" rel="noopener noreferrer" style="text-decoration:underline" title="另開證交所官方即時行情；不會自動回填雷達買點">📊 證交所即時行情 ↗</a>';
+      };
+
       function card(item, options = {}) {
         const metrics = item.metrics || {};
         const displayQuote = bestTodayQuote(options.quote, item?.stock_id);
@@ -3451,7 +3507,7 @@ h1 {
         const hiddenModelHtml = `${launchQualityHtml}${precisionHtml}${warrant ? `<div class="signal-note">${warrant}</div>` : ''}${bottomHtml}${launchHtml}${launchSequenceHtml}${holding ? '' : guideHtml}`;
         const detailHtml = `<details class="card-details"><summary>完整判斷與數據</summary><div class="detail-body">${hiddenModelHtml}${v5Html}${chipHtml}${holding ? '' : liquidityHtml}${playbookHtml}<div class="metrics"><span class="pill">3年位階 ${num(metrics.position_3y_pct)}%</span><span class="pill">週K ${num(metrics.weekly_k)}｜${gradeText(weeklyKGrade(metrics.weekly_k))}</span><span class="pill">月K ${num(metrics.monthly_k)}｜${gradeText(monthlyKGrade(metrics.monthly_k))}</span><span class="pill">${backtestSignal(item)}</span>${metrics.backtest ? `<span class="pill">5日 ${num(metrics.backtest.win_rate_5d_pct)}%</span><span class="pill">20日 ${num(metrics.backtest.win_rate_20d_pct)}%</span>` : ''}</div><div class="why">${reasons}</div>${cautions ? `<div class="warn">${cautions}</div>` : ''}</div></details>`;
         const actionHtml = options.hideSignal ? '' : `<div class="trade-signal ${signal.className}">${esc(memberFacingText(signal.text))}<small style="display:block;margin-top:4px;font-weight:500">${esc(memberFacingText(signal.detail || ''))}</small></div>`;
-        return `<article class="card" data-stock-id="${esc(item.stock_id)}"><div class="top"><div><div class="name">${esc(item.stock_id)} ${esc(item.stock_name)}</div><div class="meta">${esc(item.market)}${item.industry ? '・' + esc(item.industry) : ''}${timeInfoStages() ? '' : '｜資料日 ' + esc(item.as_of || '-')}</div></div><div class="badge ${esc(item.stage)}">模型 ${Number(item.score || 0)}分</div></div>${companyProfileHtml(item)}${volumePriceHtml(item, displayQuote)}${pullbackWatchHtml(item, displayQuote)}${holding ? holdingTodayHtml : actionHtml + quickHtml + deviationWarningHtml + riskSummary}${holdingHtml}${holdingStatusHtml}${detailHtml}${timeInfoStages() ? timeInfoHtml(item, displayQuote) : '<div class="time">背景模型掃描：' + updated + '</div>'}</article>`;
+        return `<article class="card" data-stock-id="${esc(item.stock_id)}"><div class="top"><div><div class="name">${esc(item.stock_id)} ${esc(item.stock_name)}</div><div class="meta">${esc(item.market)}${item.industry ? '・' + esc(item.industry) : ''}${timeInfoStages() ? '' : '｜資料日 ' + esc(item.as_of || '-')}｜${twseOfficialQuoteLink(item.stock_id)}</div></div><div class="badge ${esc(item.stage)}">模型 ${Number(item.score || 0)}分</div></div>${companyProfileHtml(item)}${volumePriceHtml(item, displayQuote)}${pullbackWatchHtml(item, displayQuote)}${holding ? holdingTodayHtml : actionHtml + quickHtml + deviationWarningHtml + riskSummary}${holdingHtml}${holdingStatusHtml}${detailHtml}${timeInfoStages() ? timeInfoHtml(item, displayQuote) : '<div class="time">背景模型掃描：' + updated + '</div>'}</article>`;
       }
 
       async function load() {
@@ -3638,7 +3694,9 @@ h1 {
             liveBasePicks = rankedPicks.slice(0, 100);
             await refreshSimpleQuotes();
             if (liveTimer) clearInterval(liveTimer);
-            liveTimer = null; // 不再輪詢發動前候選報價
+            liveTimer = marketBridgeReady() && taipeiMarketState().open
+              ? setInterval(() => { if (stage === 'LAUNCH' && !document.hidden) refreshSimpleQuotes(); }, 180000)
+              : null; // 非交易時間及未通過連線驗證，維持不抓價
           }
         } catch (error) {
           if (navigationSeq !== navToken || stage !== requestedStage) return;
@@ -4328,7 +4386,7 @@ h1 {
         const renderNavToken = navigationSeq;
         const renderStage = stage;
         // 夜間模型快照：發動前不再盤中抓取候選股報價。
-        if (LOCKED_SETTINGS.nightlySnapshotOnly) {
+        if (LOCKED_SETTINGS.nightlySnapshotOnly && !(marketBridgeReady() && taipeiMarketState().open)) {
           const rows = liveBasePicks.filter(item => launchQualityState(item).keep);
           stableListRender(rows.length ? rows.map(item => card(item)).join('') : '<div class="box empty">目前沒有符合發動前條件的候選股。</div>');
           setCandidateSummary('cCount', rows.length, '目前畫面符合發動前條件');
@@ -4530,7 +4588,7 @@ h1 {
           return;
         }
         // 進場雷達/看盤模式維持晚間日 K 快照，不對非持股抓盤中價格。
-        if (LOCKED_SETTINGS.nightlySnapshotOnly) {
+        if (LOCKED_SETTINGS.nightlySnapshotOnly && !(marketBridgeReady() && taipeiMarketState().open)) {
           if (stage === 'ENTRY') {
             const rows = liveBasePicks.map(item => ({ item, quote:null, action:simpleActionState(item) }))
               .filter(row => row.action && (row.action.key !== 'wait' || row.action.keep_candidate))
@@ -4583,7 +4641,7 @@ h1 {
               .map(item => ({ item, quote: quoteMap.get(String(item.stock_id)) || null }))
               .map(row => {
                 const baseAction = simpleActionState(row.item,row.quote);
-                return { ...row, action: entrySnapshotState(row.item,baseAction) };
+                return { ...row, action: entrySnapshotState(row.item,baseAction,row.quote) };
               })
               .filter(row => row.action)
               .sort((a,b)=>b.action.rank-a.action.rank);
@@ -4700,7 +4758,8 @@ h1 {
             if (!v5Data && !launchData) {
               if (liveBasePicks.length) {
                 await refreshLiveQuotes();
-                liveTimer = null; // 不再輪詢未買進候選報價
+                liveTimer = marketBridgeReady() && taipeiMarketState().open
+                  ? setInterval(() => { if (stage === 'ENTRY' && !document.hidden) refreshLiveQuotes(); }, 180000) : null;
                 livePoolTimer = null; // 候選快照由夜間掃描更新
                 return;
               }
@@ -4721,7 +4780,8 @@ h1 {
             }
             await refreshLiveQuotes();
             lastEntryPoolRefreshAt = Date.now();
-            liveTimer = null; // 不再輪詢未買進候選報價
+            liveTimer = marketBridgeReady() && taipeiMarketState().open
+              ? setInterval(() => { if (stage === 'ENTRY' && !document.hidden) refreshLiveQuotes(); }, 180000) : null;
             livePoolTimer = null; // 候選快照由夜間掃描更新
             return;
           }
