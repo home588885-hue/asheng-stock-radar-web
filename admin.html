@@ -1014,7 +1014,7 @@ h1 {
     <div id="app" style="display:none">
       <div class="wrap">
         <h1>📈 阿勝底部起漲雷達｜管理員</h1>
-        <p class="lead">先看顏色，再看 MA20：🟡先等｜🔵小量試｜🟢分批進｜🔴先避開。買進後由系統接著判斷續抱、加碼、警戒與出場。</p>
+        <p class="lead">先看顏色，再看 MA20：🔴不能買｜🟡等確認｜🟠小量試單｜🟢正式買點。已買進依 S 模型判斷續抱、加碼、警戒與出場。</p>
 
         <section class="box">
           <div class="stats">
@@ -1028,33 +1028,21 @@ h1 {
         </section>
 
         <details class="box guide-panel">
-            <summary>📘 管理員使用說明｜3分鐘看懂雷達</summary>
+            <summary>📘 使用方法｜3 分鐘看懂雷達（2026/10/11 更新）</summary>
             <div class="guide-content">
               <figure class="shortcut-guide-figure">
                 <img src="https://qexbtubfoyfsllaiecvv.supabase.co/functions/v1/asheng-shortcut-guide-image?v=1" alt="將雷達加入手機主畫面後，捷徑名稱顯示「穩」的示意圖" width="1100" height="825" loading="lazy" decoding="async">
-                <figcaption>📱 加到手機主畫面後，捷徑名稱顯示「穩」。iPhone：分享 → 加入主畫面。</figcaption>
+                <figcaption>📱 管理員網址可加入手機主畫面，捷徑名稱「穩」；電腦可存為書籤。原會員選股頁已取消。</figcaption>
               </figure>
-              <div class="risk-note"><b>1｜第一次登入與手機捷徑</b><br>輸入 Email 和密碼，按「登入」；新帳號先申請，由管理員審核，不必另外按註冊或驗證信。<br>iPhone：瀏覽器「分享 → 加入主畫面」，捷徑顯示「穩」；Android／電腦可使用瀏覽器的安裝或建立捷徑功能。</div>
-
-              <div class="risk-note"><b>2｜看懂每天何時更新</b><br>📅 <b>選股模型</b>：交易日台灣時間 <b>晚上 9:00 開始分批更新</b>，以最新完整日 K 計算 MA10／MA20／MA60、KD、MACD、量價與既有風險模型；不是 9:00 當下所有股票同時完成。<br>⏱ <b>已買進收盤前確認</b>：平常盤中不持續抓報價，只在交易日 <b>13:00～13:29</b> 對已買進股票約每 <b>3 分鐘</b>取樣一次，觀察 MA20、價格與量能，並做 12 分鐘存活確認。<br>🌙 <b>13:30 後</b>停止盤中抓價，等待晚上 9 點完整模型更新。</div>
-
-              <div class="risk-note"><b>2A｜連假後第一個開盤日怎麼挑</b><br>用最近有效交易日的完整日K研究隔天候選，不要求休市當天出現不存在的新K棒。例：2026/10/09國慶補假，10/12週一盤前的有效基準是10/08。優先查看只列出基準日符合原模型、至少1,000張且距MA20不超過5%的候選；較舊快照只能列觀察，不得當作新買點。系統沒有全天盤中重掃，開盤後必須手動核對當日實際成交價與量能。若完整日K掃描覆蓋不足或沒有合格候選，寧可觀察、不能用過期名單冒充全市場買點。休市日只讀快照，不另增掃描。</div>
-              <div class="risk-note"><b>3｜三個區域要怎麼看</b><br>🌱 <b>發動前</b>：底部整理、均線轉強、接近突破，但還沒有真正發動。<br>🎯 <b>進場雷達</b>：確認起漲／突破後併入進場雷達，再依量價、位置、MA20乖離、KD與風險條件排序；候選區不做全天盤中報價。<br>📌 <b>已買進</b>：保留自己的持股；13:00 起才開啟收盤前量價確認，重點是今天該續抱、警戒、減碼或進入出清警戒。</div>
-
-              <div class="risk-note"><b>4｜進場雷達先看風險，不把舊訊號當即時價</b><br>🟠 <b>可小量觀察／試單條件</b>：僅表示最近模型快照符合部分條件，隔日下單前要自行核對市場現價與成交量。<br>🟡 <b>近買點／等確認</b>：必要條件還沒齊全，不追。<br>🔵 <b>位置偏高／等回踩</b>：即使趨勢強，也要控制距 MA20 的乖離。<br>🔴 <b>明確不能買</b>：長上影突破失敗、跌破支撐、均線結構破壞或明顯轉弱。<br><b>提醒：</b>沒有盤中逐檔重新確認，候選的顏色與「可試單」文字不能視為即時買進指令。</div>
-
-              <div class="risk-note"><b>4A｜🔔 新買點提醒怎麼看</b><br>雷達只從原本的「進場雷達」高品質快照比較訊號變化，不新增行情請求。首次開啟先記錄基準，之後遇到新 🟠 小量試單候選或升級 🟢 突破確認候選才顯示站內提醒，同一股票、同一模型日與級別不重複提醒。<br><b>提醒不是盤中即時推播：</b>交易日晚上 9 點起分批產生新模型；開著網頁時，夜間約每 5 分鐘檢查既有掃描提交，或重新整理時發現變化。沒有開啟網頁不會跳手機通知；提醒只在本裝置瀏覽器保留比對紀錄。下單前務必核對當天股價、成交量及風險。</div>
-              <div class="risk-note"><b>5｜已買進的股票，收盤前怎麼管理</b><br><b>13:00 起</b>進入「📌 已買進」，系統開始低頻取樣今日成交價與累積成交量。<br>以 <b>12 分鐘存活＋MA20＋量能</b>一起看：守住 MA20 且量價正常 → 🟢續抱；量縮但守線 → 🟡續抱觀察；跌破 MA20 或放量轉弱 → 🟠警戒／減碼；跌破 MA20 又明顯放量 → 🔴出清警戒。<br>這是收盤前處理提示，不會自動下單；KD、MACD 等完整模型仍等晚上 9 點更新。</div>
-
-              <div class="risk-note"><b>5A｜持股停損及20%分批停利</b><br>只用既有持股成本與近期價格。虧損達4%且短線弱→暫停加碼；虧損6%且跌破MA10／支撐→評估減碼；虧損達8%→盤中高風險警戒，完整日K確認後評估退出；獲利20%→評估先停利約三分之一。既有MA20三日出場、嚴重轉弱強警示、獲利回吐保護都保留。手動減碼約四分之一以上，本裝置不再重複20%提示；跨裝置尚未同步。這些新百分比是研究型提示，不會自動下單，也不保證價格成交。</div>
-              <div class="risk-note"><b>5B｜已買進何時可以加碼</b><br>分兩種：①回踩MA20守住、量價轉強；②突破前高續強。加碼門檻：MA10／20／60維持多頭、成本獲利0%～未滿12%、距MA20不超過5%、日量至少1,000張、20日均量至少500張，且量比合理；強勢突破仍須避免KD過熱。盤中只顯示黃色觀察，完整模型確認才顯示綠色可加碼。最多只建議追加一筆，追加股數約不超過本裝置初始觀察持股的三分之一；同裝置偵測已加碼即停止重複提示。若停損、MA20警示、20%停利或獲利回吐保護先發生，先處理風險，絕不加碼。加碼條件為研究型風控建議，尚未完成獨立回測，並非買進保證。</div>
-              <div class="risk-note"><b>6｜買進與賣出後要做的事</b><br>買進：在股票卡上點「我已買進」，輸入成本與數量，股票就會進入自己的持股清單。<br>持股平常盤中不持續抓價；交易日 13:00 起才納入收盤前 12 分鐘量價確認。<br>分批賣出或全部賣出：到持股卡調整；已賣出的股票立即移出收盤前確認清單。持股清單屬於個人帳號，會員看不到管理員持股。</div>
-
-              <div class="risk-note"><b>7｜不要混淆三種時間</b><br><b>技術模型基準</b>：最後一次完整日 K 的模型日期。<br><b>收盤前量價更新</b>：只有已買進股票在 13:00～13:29 取樣，用來做 12 分鐘存活與量能提示，不代表整套模型盤中重算。<br><b>系統最新掃描</b>：晚上 9 點分批完成的新模型快照時間。若資料日較舊，就以畫面標示為準，不把舊資料當成今日確認。</div>
-
-              <div class="risk-note"><b>8｜最簡單的每日使用順序</b><br><b>晚上 9 點後：</b>看 🌱 發動前、🎯 進場雷達，整理隔日觀察名單。<br><b>白天盤中：</b>雷達不為持股整天連續抓價，避免浪費流量。<br><b>13:00～13:29：</b>看 📌 已買進，讓 12 分鐘存活跑完，再依 MA20 與量能提示決定續抱、警戒、減碼或處理持股。<br><b>13:30 後：</b>停止盤中抓價，晚上 9 點再看完整模型。</div>
-
-              <div class="risk-note">⚠️ 本雷達是研究與持股管理輔助工具，不保證獲利。13:00～13:29 的收盤前提示使用即時價與量能搭配最近完整日 K 模型，目的是協助持股管理，不是自動交易指令；實際下單仍請核對市場行情並自行評估風險。</div>
+              <div class="risk-note"><b>1｜登入與使用入口</b><br>使用原本的管理員 Email 和密碼登入。現在只有管理員雷達，已取消獨立會員登入、會員選股頁與會員名單介面。個人已買進股票仍保存在原帳號中，不會因取消會員版而消失。</div>
+              <div class="risk-note"><b>2｜S 算模型，C 提供盤中報價</b><br><b>S（Supabase）</b>保留完整 A／B／C、V5、MA10／MA20／MA60、KD、MACD、量價、籌碼及持股風控模型，不搬到 C。<br><b>C（Cloudflare）</b>負責管理員三區盤中報價，只有通過 Worker 健康檢查與登入驗證才啟用。驗證失敗不能冒充已有 C 即時價；獨立的 C 基礎模型 Worker 不參與正式選股。</div>
+              <div class="risk-note"><b>3｜每天什麼時候更新？</b><br><b>交易日 09:00～13:30</b>：C 報價橋接成功後，🌱發動前、🎯進場雷達、📌已買進在網頁前景時約每 <b>3 分鐘</b>低頻更新今日有效成交價。沒有今日有效價時不顯示 0.00，也不以昨收冒充。<br><b>交易日 13:00～13:29</b>：C 未啟用時，已買進才使用原本的收盤前低頻 S 備援，不是整天從 S 抓價。<br><b>交易日 21:00～21:55</b>：S 依原排程分批更新完整日 K 選股，並非每檔在 21:00 就全部更新完成。</div>
+              <div class="risk-note"><b>4｜簡單看三區</b><br>🌱 <b>發動前</b>：底部整理、均線轉強、接近發動，追蹤尚未突破且位置不過熱的股票。<br>🎯 <b>進場雷達</b>：已起漲、突破或適合回踩觀察的候選，仍須判斷風險和位置，不代表每檔都能立刻買。<br>📌 <b>已買進</b>：只顯示自己已記錄的持股、成本與風控，沒有盤中報價時也不會刪除持股。</div>
+              <div class="risk-note"><b>5｜四種買點顏色與防追高</b><br>🔴 <b>明確不能買</b>：突破失敗、均線結構破壞、爆量轉弱或跌破支撐。<br>🟡 <b>近買點／等確認</b>：條件缺量或位置，先觀察。<br>🟠 <b>可小量試單</b>：風險過濾通過，部位保守。<br>🟢 <b>正式買點</b>：完整條件成立，再評估分批進場。<br>還要核對 MA10／20／60、K 棒、KD／MACD、成交量至少 1,000 張與距 MA20 的乖離。距 MA20 超過 5% 不作為適合追價的買點；盤後訊號不是即時成交保證。</div>
+              <div class="risk-note"><b>6｜已買進怎麼管理？</b><br>先看「今日動作」：<b>續抱、可加碼、警戒或出清</b>，再看 MA20 是否守住及下方「續抱理由與持股規則」。獲利約 20% 可評估分批停利；跌破 MA20 或量價明顯轉弱，優先處理風險。系統不會自動下單。買進、減碼或全部賣出後，在持股卡更新成本與數量。</div>
+              <div class="risk-note"><b>7｜看清三種時間</b><br><b>技術模型基準</b>：最新完整日 K 日期；盤中顯示上一有效交易日是正常的。<br><b>系統最新掃描</b>：S 最近一次模型快照掃描時間；排程執行成功不代表全市場更新完。<br><b>今日報價時間</b>：僅代表有效成交價取得時間，不等於 KD、MACD 等完整選股模型盤中重算。休市日不會有新的當日成交價。</div>
+              <div class="risk-note"><b>8｜最簡單的每日流程</b><br><b>晚上盤後</b>看發動前、進場雷達與模型日期，整理隔日觀察名單。<br><b>盤中</b>若 C 報價橋接正常，核對今日價格、成交量與追高風險；若沒報價，手動核對券商行情。<br><b>已買進</b>看 MA20、今日動作及風控，必要時自行下單並更新持股。<br><b>資料仍舊</b>時先觀察，不把舊快照當作當日正式買點。</div>
+              <div class="risk-note">⚠️ 雷達是研究與持股管理輔助工具，不保證獲利。實際報價與下單請以券商資訊核對。取消會員版不修改 S 完整模型、房產網站或 LINE。</div>
             </div>
           </details>
 
@@ -1074,10 +1062,10 @@ h1 {
             <button class="search-clear" id="stockClearBtn" hidden>清除</button>
           </div>
           <div class="entry-phase" id="entryPhase"></div>
-          <div class="holding-note">📌 已買進：只顯示管理員自己的持股｜平常不抓盤中報價；交易日13:00～13:29約3分鐘取樣量價＋12分鐘存活；晚上9點完整更新。<span id="memberIdentity"></span><button class="holding-sync" id="syncHoldingsBtn">登出</button></div>
+          <div class="holding-note">📌 已買進：只顯示管理員自己的持股｜C 驗證成功後交易時段約每3分鐘抓價；C 未啟用時僅13:00～13:29低頻備援；S 完整模型晚上9點後分批更新。<span id="memberIdentity"></span><button class="holding-sync" id="syncHoldingsBtn">登出</button></div>
         </section>
         <section id="cfPrefilterPanel" class="box" hidden aria-live="polite"></section>
-        <p id="timeInfoExplanation" class="time-info-explanation" hidden>已買進只在交易日 13:00～13:29 取樣收盤前量價；MA10／MA20／MA60、KD、MACD 等完整技術模型仍以晚上 9 點後的完整日 K 更新為準。</p>
+        <p id="timeInfoExplanation" class="time-info-explanation" hidden>管理員三區在 C 報價驗證成功時，交易時段約每3分鐘更新有效成交價；C 未啟用時，已買進僅於13:00～13:29使用低頻備援。MA10／MA20／MA60、KD、MACD 等完整模型仍以 S 的盤後完整日 K 更新為準。</p>
         <main class="list" id="list">
           <div class="box empty loading">正在載入候選股…</div>
         </main>
@@ -1365,220 +1353,6 @@ h1 {
       };
 
       const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
-      const renderPendingMemberPanel = async () => {
-        const wrap = radarApp.querySelector('.wrap');
-        if (!wrap || document.querySelector('#memberAdminPanel')) return;
-
-        const panel = document.createElement('details');
-        panel.id = 'memberAdminPanel';
-        panel.className = 'box guide-panel';
-        panel.innerHTML = `
-          <summary>👥 會員管理｜讀取中…</summary>
-          <div class="guide-content">
-            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
-              <input id="memberAdminSearch" type="search" placeholder="搜尋會員 Email" autocomplete="off"
-                style="flex:1;min-width:180px;padding:11px 12px;border-radius:10px;border:1px solid var(--line);background:#0f172a;color:#e2e8f0">
-              <select id="memberAdminFilter"
-                style="padding:11px 12px;border-radius:10px;border:1px solid var(--line);background:#0f172a;color:#e2e8f0">
-                <option value="all">全部會員</option>
-                <option value="pending">待審核</option>
-                <option value="active">已開通</option>
-                <option value="suspended">已停止</option>
-                <option value="rejected">未通過</option>
-              </select>
-              <button type="button" id="memberAdminReload">重新整理</button>
-            </div>
-            <div id="memberAdminStats" class="risk-note" style="margin-bottom:10px">正在讀取會員資料…</div>
-            <div id="memberAdminList"><div class="risk-note">正在讀取會員資料…</div></div>
-          </div>`;
-
-        const guide = wrap.querySelector('.guide-panel');
-        if (guide) wrap.insertBefore(panel, guide); else wrap.prepend(panel);
-        if (new URLSearchParams(location.search).get('view') === 'members') panel.open = true;
-
-        let allMembers = [];
-        const statusLabel = status => ({
-          pending:'🟡 待審核',
-          active:'🟢 已開通',
-          suspended:'🔴 已停止',
-          rejected:'⚫ 未通過',
-          trialing:'🔵 試用中'
-        }[String(status || '')] || String(status || '-'));
-
-        const roleLabel = role => role === 'admin' ? '👑 管理員' : '👤 一般會員';
-
-        const renderMembers = () => {
-          const list = panel.querySelector('#memberAdminList');
-          const stats = panel.querySelector('#memberAdminStats');
-          const q = String(panel.querySelector('#memberAdminSearch')?.value || '').trim().toLowerCase();
-          const filter = String(panel.querySelector('#memberAdminFilter')?.value || 'all');
-
-          const rows = allMembers.filter(row => {
-            const email = String(row.email || '').toLowerCase();
-            const matchesSearch = !q || email.includes(q) || String(row.user_id || '').toLowerCase().includes(q);
-            const matchesStatus = filter === 'all' || String(row.status) === filter;
-            return matchesSearch && matchesStatus;
-          });
-
-          const pending = allMembers.filter(row => row.status === 'pending').length;
-          const active = allMembers.filter(row => row.status === 'active' || row.status === 'trialing').length;
-          const suspended = allMembers.filter(row => row.status === 'suspended').length;
-          panel.querySelector('summary').textContent =
-            '👥 會員管理｜總數 ' + allMembers.length + '｜待審核 ' + pending;
-          stats.textContent =
-            '總會員 ' + allMembers.length + '｜🟡待審核 ' + pending +
-            '｜🟢已開通 ' + active + '｜🔴已停止 ' + suspended +
-            '｜目前顯示 ' + rows.length;
-
-          if (!rows.length) {
-            list.innerHTML = '<div class="risk-note">找不到符合條件的會員。</div>';
-            return;
-          }
-
-          list.innerHTML = rows.map(row => {
-            const self = !!row.is_self;
-            const created = row.created_at
-              ? new Date(row.created_at).toLocaleString('zh-TW',{timeZone:'Asia/Taipei'})
-              : '-';
-            const reviewed = row.reviewed_at
-              ? new Date(row.reviewed_at).toLocaleString('zh-TW',{timeZone:'Asia/Taipei'})
-              : '-';
-
-            const statusButtons = self ? '' :
-              (row.status === 'active' || row.status === 'trialing')
-                ? `<button type="button" data-member-status="suspended" data-user-id="${escapeHtml(row.user_id)}">⛔ 停止使用</button>`
-                : row.status === 'suspended'
-                  ? `<button type="button" data-member-status="active" data-user-id="${escapeHtml(row.user_id)}">✅ 恢復開通</button>`
-                  : row.status === 'pending'
-                    ? `<button type="button" data-member-status="active" data-user-id="${escapeHtml(row.user_id)}">✅ 開通</button>
-                       <button type="button" data-member-status="rejected" data-user-id="${escapeHtml(row.user_id)}">❌ 不開通</button>`
-                    : `<button type="button" data-member-status="active" data-user-id="${escapeHtml(row.user_id)}">✅ 開通</button>`;
-
-            const roleControl = self
-              ? '<span style="font-weight:700">👑 管理員（目前帳號）</span>'
-              : `<label style="display:flex;align-items:center;gap:6px">權限
-                   <select data-member-role data-user-id="${escapeHtml(row.user_id)}"
-                     style="padding:7px 9px;border-radius:8px;border:1px solid var(--line);background:#0f172a;color:#e2e8f0">
-                     <option value="member" ${row.role === 'member' ? 'selected' : ''}>一般會員</option>
-                     <option value="admin" ${row.role === 'admin' ? 'selected' : ''}>管理員</option>
-                   </select>
-                 </label>`;
-
-            return `
-              <div class="risk-note" data-member-row="${escapeHtml(row.user_id)}" style="margin-bottom:10px">
-                <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap">
-                  <div>
-                    <b style="font-size:16px">${escapeHtml(row.email || '未提供 Email')}</b><br>
-                    <small>${statusLabel(row.status)}｜${roleLabel(row.role)}</small>
-                  </div>
-                  <div style="display:flex;gap:8px;flex-wrap:wrap">${statusButtons}</div>
-                </div>
-                <div style="margin-top:10px">${roleControl}</div>
-                <div style="margin-top:8px;font-size:12px;opacity:.8">
-                  申請／建立：${escapeHtml(created)}｜最近審核：${escapeHtml(reviewed)}
-                </div>
-              </div>`;
-          }).join('');
-        };
-
-        const loadMembers = async () => {
-          const list = panel.querySelector('#memberAdminList');
-          const stats = panel.querySelector('#memberAdminStats');
-          stats.textContent = '會員資料更新中…';
-          try {
-            let response = null;
-            let data = null;
-            for (let attempt = 0; attempt < 2; attempt++) {
-              try {
-                response = await memberFetch(MEMBER_API + '?action=members', { cache:'no-store' });
-                data = await response.json();
-                if (response.ok && data?.ok) break;
-              } catch (error) {}
-              if (attempt === 0) await new Promise(resolve => setTimeout(resolve, 700));
-            }
-            if (!response?.ok || !data?.ok) throw new Error(data?.error || 'members_failed');
-            allMembers = Array.isArray(data.members) ? data.members : [];
-            renderMembers();
-          } catch (error) {
-            stats.textContent = '會員資料讀取失敗';
-            list.innerHTML = '<div class="risk-note">會員名單讀取失敗，請按「重新整理」再試一次。</div>';
-          }
-        };
-
-        panel.querySelector('#memberAdminSearch')?.addEventListener('input', renderMembers);
-        panel.querySelector('#memberAdminFilter')?.addEventListener('change', renderMembers);
-        panel.querySelector('#memberAdminReload')?.addEventListener('click', loadMembers);
-
-        panel.addEventListener('click', async event => {
-          const button = event.target.closest('[data-member-status]');
-          if (!button) return;
-          const userId = button.dataset.userId;
-          const status = button.dataset.memberStatus;
-          const row = allMembers.find(item => item.user_id === userId);
-          const label = status === 'active' ? '開通／恢復' : status === 'suspended' ? '停止使用' : '不開通';
-          if (!confirm('確定要對「' + (row?.email || userId) + '」執行：' + label + '？')) return;
-
-          button.disabled = true;
-          try {
-            const response = await memberFetch(MEMBER_API, {
-              method:'POST',
-              headers:{'Content-Type':'application/json'},
-              body:JSON.stringify({
-                action:'set_membership_access',
-                user_id:userId,
-                status
-              })
-            });
-            const data = await response.json();
-            if (!response.ok || !data?.ok) throw new Error(data?.error || 'update_failed');
-            await loadMembers();
-          } catch (error) {
-            button.disabled = false;
-            alert('會員狀態更新失敗，請再試一次。');
-          }
-        });
-
-        panel.addEventListener('change', async event => {
-          const select = event.target.closest('[data-member-role]');
-          if (!select) return;
-          const userId = select.dataset.userId;
-          const role = select.value;
-          const row = allMembers.find(item => item.user_id === userId);
-          const oldRole = row?.role || 'member';
-
-          if (role === 'admin' && !confirm('確定要把「' + (row?.email || userId) + '」設為管理員？管理員可管理其他會員。')) {
-            select.value = oldRole;
-            return;
-          }
-          if (role === 'member' && oldRole === 'admin' && !confirm('確定要取消「' + (row?.email || userId) + '」的管理員權限？')) {
-            select.value = oldRole;
-            return;
-          }
-
-          select.disabled = true;
-          try {
-            const response = await memberFetch(MEMBER_API, {
-              method:'POST',
-              headers:{'Content-Type':'application/json'},
-              body:JSON.stringify({
-                action:'set_membership_access',
-                user_id:userId,
-                role
-              })
-            });
-            const data = await response.json();
-            if (!response.ok || !data?.ok) throw new Error(data?.error || 'role_update_failed');
-            await loadMembers();
-          } catch (error) {
-            select.value = oldRole;
-            select.disabled = false;
-            alert('會員權限更新失敗，請再試一次。');
-          }
-        });
-
-        await loadMembers();
-      };
-
       try {
         const meResponse = await memberFetch(MEMBER_API + '?action=me', { cache:'no-store' });
         const me = await meResponse.json();
@@ -1653,14 +1427,13 @@ h1 {
         authBox.style.display = 'none';
         const identity = document.querySelector('#memberIdentity');
         if (identity) identity.textContent = (me.membership?.role === 'admin' ? '｜👑 Admin' : '｜會員') + '｜已開通';
-        if (me.membership?.role === 'admin') await renderPendingMemberPanel();
         installEligible = true;
         setTimeout(showInstallPanel, 700);
       } catch (error) {
         radarApp.style.display = 'block';
         authBox.style.display = 'none';
         const identity = document.querySelector('#memberIdentity');
-        if (identity) identity.textContent = '｜會員｜連線重試中';
+        if (identity) identity.textContent = '｜管理員｜連線重試中';
       }
       const API = MEMBER_API + '?action=picks';
       const V5_API = MEMBER_API + '?action=v5';
