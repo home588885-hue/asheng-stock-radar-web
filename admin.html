@@ -1891,43 +1891,86 @@ h1 {
       let cfPrefilterCache = null;
       let cfPrefilterInFlight = false;
       let cfPrefilterLastTryAt = 0;
+      // This is a capped C-market liquidity snapshot. It NEVER changes S-model eligibility,
+      // buy signals, holding exits, or any account data. A missing stock is NOT a failure.
+      const cloudflareEodQuote = stockId => {
+        if (!cfPrefilterCache?.length) return null;
+        const expected = expectedSignalDataDate();
+        for (const market of cfPrefilterCache) {
+          if (market.source_date !== expected) continue;
+          const found = (market.candidates || []).find(x=>String(x.stock_id)===String(stockId));
+          if (found) return found;
+        }
+        return null;
+      };
+      const cloudflareEodBadge = item => {
+        const hit = cloudflareEodQuote(item?.stock_id);
+        if (!hit) return '';
+        const vol=Number(hit.volume_lots),date=String(hit.source_date||'');
+        if (!Number.isFinite(vol)) return '';
+        return '<span class="pill" style="display:inline-block;margin:3px 0 4px 0">'
+          +'☁️ C盤後量 '+esc(vol.toLocaleString('zh-TW'))+'張｜'+esc(date)+'｜非今日即時價</span>';
+      };
       const renderCloudflarePrefilter = () => {
         const panel = $('#cfPrefilterPanel');
         if (!panel) return;
-        if (stage !== 'LAUNCH' || !cfPrefilterCache) { panel.hidden = true; return; }
+        if (!['LAUNCH','ENTRY','HOLDING'].includes(stage) || !cfPrefilterCache?.length) {
+          panel.hidden = true; return;
+        }
         const rows = cfPrefilterCache;
         const expected = expectedSignalDataDate();
         if (rows.some(r => r.source_date !== expected)) {
           panel.hidden = true;
-          return; // source dates must agree with the last expected complete trading session.
+          return; // stale data is never a current observation.
         }
-        const activeIds = new Set((liveBasePicks || []).map(r => String(r.stock_id || '')));
-        const samples = rows.flatMap(r => (r.candidates || []).slice(0,10).map(x => ({...x})));
-        const textRows = samples.map(x => {
-          const inModel = activeIds.has(String(x.stock_id));
-          const code = esc(x.stock_id),name = esc(x.stock_name),market = x.market === 'otc' ? '上櫃' : '上市';
-          const pct = Number(x.day_change_pct),lots = Number(x.volume_lots);
-          const change = Number.isFinite(pct) ? (pct>=0?'+':'') + pct.toFixed(2)+'%' : '－';
+        const byId = new Map(rows.flatMap(r => (r.candidates || []).map(x => [String(x.stock_id),x])));
+        const isHolding = stage === 'HOLDING';
+        const idList = isHolding ? Array.from(holdings.keys()).map(String)
+          : (liveBasePicks || []).map(item=>String(item.stock_id||''));
+        const seen = new Set();
+        const matches = idList.filter(id=>id&&!seen.has(id)&&(seen.add(id),byId.has(id)))
+          .map(id=>byId.get(id));
+        const stageName = stage === 'LAUNCH'?'🌱 發動前':stage==='ENTRY'?'🎯 進場雷達':'📌 已買進';
+        const samples = stage === 'LAUNCH'
+          ? rows.flatMap(r => (r.candidates || []).slice(0,10))
+          : matches.slice(0,20);
+        const sampleHtml = samples.map(x => {
+          const code=esc(x.stock_id),name=esc(x.stock_name);
+          const market=x.market==='otc'?'上櫃':'上市';
+          const vol=Number(x.volume_lots),pct=Number(x.day_change_pct);
+          const change=Number.isFinite(pct)?(pct>=0?'+':'')+pct.toFixed(2)+'%':'－';
+          const isTracked=seen.has(String(x.stock_id));
           return '<div style="padding:5px 0;border-top:1px solid var(--line,rgba(120,120,120,.16));font-size:14px">'
-            +'<b>'+code+' '+name+'</b>｜'+market+'｜'+(Number.isFinite(lots)?lots.toLocaleString():'－')
-            +'張｜開收漲幅 '+esc(change)+'｜'+(inModel?'已在S模型候選':'尚未經S模型確認')
-            +'</div>';
+            +'<b>'+code+' '+name+'</b>｜'+market+'｜盤後 '+(Number.isFinite(vol)?vol.toLocaleString('zh-TW'):'－')
+            +'張｜當日開收漲幅 '+esc(change)
+            +'｜'+(isHolding?'僅輔助持股觀察':isTracked?'已有S模型候選':'尚未經S完整模型確認')+'</div>';
         }).join('');
-        const markets = rows.map(r => r.market === 'otc' ? '上櫃' : '上市').join('／');
-        const coverageNotice = rows.length === 2 ? '兩市場均取得資料' : '僅部分市場有資料，尚非全市場';
-        const passes = rows.reduce((v,r) => v + Number(r.liquidity_pass_count||0),0);
-        const total = rows.reduce((v,r) => v + Number(r.valid_common_stocks||0),0);
-        panel.innerHTML = '<details><summary style="cursor:pointer;font-weight:650">☁️ C 官方盤後價量初篩｜'
-          +esc(expected)+'｜量≥1,000張 '+passes+' 檔（展開觀察）</summary>'
-          +'<p style="font-size:13px">'+esc(markets)+'共讀取 '+total+' 檔｜'+esc(coverageNotice)+'｜各市場成交量前10檔範例。'
-          +'此區僅供觀察，尚未通過 MA10／20／60、KD、MACD、籌碼或防追高模型，'
-          +'不能視為買點。S 模型名單及排名完全不變。</p>'
-          +textRows+'</details>';
-        panel.hidden = false;
+        const coverage=rows.length===2?'上市與上櫃均有資料':'部分市場資料未取得';
+        const total=rows.reduce((n,r)=>n+Number(r.valid_common_stocks||0),0);
+        const passes=rows.reduce((n,r)=>n+Number(r.liquidity_pass_count||0),0);
+        const inPool=stage==='LAUNCH'?'按上市、上櫃各取成交量前10檔示例'
+          : isHolding ? 'C樣本對照我的持股 '+matches.length+'/'+idList.length+' 檔'
+          : 'C樣本對照進場候選 '+matches.length+'/'+new Set(idList).size+' 檔';
+        const noMatch=stage!=='LAUNCH'&&!matches.length
+          ? '<p style="font-size:13px">目前 C 預覽樣本沒有涵蓋本區股票；因每個市場只回傳成交量前120檔，'
+            +'不代表該股票量不足、沒有機會或該出場。既有 S 模型與持股完全維持。</p>'
+          : '';
+        panel.innerHTML='<details><summary style="cursor:pointer;font-weight:650">☁️ C 盤後價量對照｜'
+          +stageName+'｜'+esc(expected)+'｜量≥1,000張 '+passes+' 檔（展開）</summary>'
+          +'<p style="font-size:13px">'+esc(coverage)+'｜官方盤後資料 '+total+' 檔｜'
+          +esc(inPool)+'。只比對流動性與當日開收價量，不是即時買點或出場訊號。'
+          +'C資料不會改變 MA10／20／60、KD、MACD、籌碼或 S 選股排序。</p>'
+          +noMatch+sampleHtml+'</details>';
+        panel.hidden=false;
       };
       const loadCloudflarePrefilter = async () => {
-        if (stage !== 'LAUNCH' || document.hidden || !EOD_PREFILTER_BRIDGE_URL || cfPrefilterInFlight) return;
-        if (cfPrefilterCache) { renderCloudflarePrefilter(); return; }
+        if (!['LAUNCH','ENTRY','HOLDING'].includes(stage) || document.hidden || !EOD_PREFILTER_BRIDGE_URL || cfPrefilterInFlight) return;
+        if (cfPrefilterCache) {
+          if (cfPrefilterCache.every(r=>r.source_date===expectedSignalDataDate())) {
+            renderCloudflarePrefilter(); return;
+          }
+          cfPrefilterCache=null; // overnight date rollover must not leave stale preview.
+        }
         const now = Date.now();
         if (now - cfPrefilterLastTryAt < 30*60*1000) return;
         cfPrefilterLastTryAt = now;
@@ -3031,7 +3074,7 @@ h1 {
             <span class="entry-mini-score">模型 ${Number.isFinite(score)?esc(num(score,0)):'-'} 分</span>
             <span class="entry-mini-expand">詳情 ▾</span>
             <span class="entry-mini-metrics">${q?'今日成交':'模型收盤'} <b>${close>0?esc(num(close,2)):'-'}</b>｜距MA20 ${dist==null?'-':(dist>=0?'+':'')+esc(num(dist,1))+'%'}｜成交量 ${Number.isFinite(vol)?esc(num(vol,0))+'張':'-'}</span>
-            <span class="entry-mini-date">模型基準 ${esc(item.as_of||'待更新')}｜${tradeContext}</span>
+            <span class="entry-mini-date">模型基準 ${esc(item.as_of||'待更新')}｜${tradeContext}｜${cloudflareEodBadge(item)}</span>
           </summary>
           <div class="entry-mini-full">${expanded}</div>
         </details>`;
@@ -3623,14 +3666,13 @@ h1 {
         const hiddenModelHtml = `${launchQualityHtml}${precisionHtml}${warrant ? `<div class="signal-note">${warrant}</div>` : ''}${bottomHtml}${launchHtml}${launchSequenceHtml}${holding ? '' : guideHtml}`;
         const detailHtml = `<details class="card-details"><summary>完整判斷與數據</summary><div class="detail-body">${hiddenModelHtml}${v5Html}${chipHtml}${holding ? '' : liquidityHtml}${playbookHtml}<div class="metrics"><span class="pill">3年位階 ${num(metrics.position_3y_pct)}%</span><span class="pill">週K ${num(metrics.weekly_k)}｜${gradeText(weeklyKGrade(metrics.weekly_k))}</span><span class="pill">月K ${num(metrics.monthly_k)}｜${gradeText(monthlyKGrade(metrics.monthly_k))}</span><span class="pill">${backtestSignal(item)}</span>${metrics.backtest ? `<span class="pill">5日 ${num(metrics.backtest.win_rate_5d_pct)}%</span><span class="pill">20日 ${num(metrics.backtest.win_rate_20d_pct)}%</span>` : ''}</div><div class="why">${reasons}</div>${cautions ? `<div class="warn">${cautions}</div>` : ''}</div></details>`;
         const actionHtml = options.hideSignal ? '' : `<div class="trade-signal ${signal.className}">${esc(memberFacingText(signal.text))}<small style="display:block;margin-top:4px;font-weight:500">${esc(memberFacingText(signal.detail || ''))}</small></div>`;
-        return `<article class="card" data-stock-id="${esc(item.stock_id)}"><div class="top"><div><div class="name">${esc(item.stock_id)} ${esc(item.stock_name)}</div><div class="meta">${esc(item.market)}${item.industry ? '・' + esc(item.industry) : ''}${timeInfoStages() ? '' : '｜資料日 ' + esc(item.as_of || '-')}｜${twseOfficialQuoteLink(item.stock_id)}</div></div><div class="badge ${esc(item.stage)}">模型 ${Number(item.score || 0)}分</div></div>${companyProfileHtml(item)}${volumePriceHtml(item, displayQuote)}${pullbackWatchHtml(item, displayQuote)}${holding ? holdingTodayHtml : actionHtml + quickHtml + deviationWarningHtml + riskSummary}${holdingHtml}${holdingStatusHtml}${detailHtml}${timeInfoStages() ? timeInfoHtml(item, displayQuote) : '<div class="time">背景模型掃描：' + updated + '</div>'}</article>`;
+        return `<article class="card" data-stock-id="${esc(item.stock_id)}"><div class="top"><div><div class="name">${esc(item.stock_id)} ${esc(item.stock_name)}</div><div class="meta">${esc(item.market)}${item.industry ? '・' + esc(item.industry) : ''}${timeInfoStages() ? '' : '｜資料日 ' + esc(item.as_of || '-')}｜${twseOfficialQuoteLink(item.stock_id)}</div></div><div class="badge ${esc(item.stage)}">模型 ${Number(item.score || 0)}分</div></div>${companyProfileHtml(item)}${volumePriceHtml(item, displayQuote)}${pullbackWatchHtml(item, displayQuote)}${holding ? holdingTodayHtml : actionHtml + quickHtml + deviationWarningHtml + riskSummary}${holdingHtml}${holdingStatusHtml}${cloudflareEodBadge(item)}${detailHtml}${timeInfoStages() ? timeInfoHtml(item, displayQuote) : '<div class="time">背景模型掃描：' + updated + '</div>'}</article>`;
       }
 
       async function load() {
         const navToken = navigationSeq;
         const requestedStage = stage;
-        if (stage === 'LAUNCH') void loadCloudflarePrefilter();
-        else { const p = $('#cfPrefilterPanel'); if (p) p.hidden = true; }
+        void loadCloudflarePrefilter();
         const listEl = $('#list');
         const hasVisibleCards = !!listEl?.querySelector('[data-stock-id]');
         if (!hasVisibleCards) listEl.innerHTML =
@@ -4850,6 +4892,7 @@ h1 {
           if (nextPool.length) {
             liveBasePicks = nextPool;
             writeEntryPoolCache(liveBasePicks);
+            if (cfPrefilterCache) renderCloudflarePrefilter();
           }
           lastEntryPoolRefreshAt = Date.now();
           await refreshLiveQuotes();
@@ -4862,6 +4905,7 @@ h1 {
       async function loadLiveMonitor() {
         const navToken = navigationSeq;
         const requestedStage = stage;
+        void loadCloudflarePrefilter();
         if (liveTimer) clearInterval(liveTimer);
         if (livePoolTimer) clearInterval(livePoolTimer);
         if (!$('#list').querySelector('[data-stock-id]')) $('#list').innerHTML = `<div class="box empty loading">${stage === 'ENTRY' ? '正在整理進場雷達的夜間模型快照…' : '正在建立盤中看盤池…'}</div>`;
@@ -5022,6 +5066,7 @@ h1 {
         const requestedStage = stage;
         const holdingToken = ++holdingLoadSeq;
         holdingVisibilityControl = null;
+        void loadCloudflarePrefilter();
         const holdingStillCurrent = () => holdingToken === holdingLoadSeq && navigationSeq === navToken && stage === requestedStage && stage === 'HOLDING';
         if (liveTimer) { clearInterval(liveTimer); liveTimer = null; }
         if (livePoolTimer) { clearInterval(livePoolTimer); livePoolTimer = null; }
@@ -5040,6 +5085,7 @@ h1 {
         await loadHoldings();
         if (!holdingStillCurrent()) return;
         const symbols = Array.from(holdings.keys());
+        if (cfPrefilterCache) renderCloudflarePrefilter();
         if (!symbols.length) {
           $('#list').innerHTML = '<div class="box empty">目前沒有標記為已買進的股票。</div>';
           return;
@@ -5075,6 +5121,7 @@ h1 {
         let items = baseResults.map(result => result.item).filter(Boolean);
         let fallbackHtml = baseResults.map(result => result.fallback).filter(Boolean).join('');
         liveBasePicks = items;
+        if (cfPrefilterCache) renderCloudflarePrefilter();
         let lastHoldingQuoteRequestAt = 0;
         const render = async () => {
           if (!holdingStillCurrent() || document.hidden || holdingQuoteRefreshing) return;
@@ -5244,8 +5291,8 @@ h1 {
           button.classList.add('on');
           moneyFlowSectorViewActive = false;
           stage = targetStage;
-          if (stage !== 'LAUNCH') { const p = $('#cfPrefilterPanel'); if (p) p.hidden = true; }
-          else if (cfPrefilterCache) renderCloudflarePrefilter();
+          if (cfPrefilterCache) renderCloudflarePrefilter();
+          void loadCloudflarePrefilter();
           updateEntryPhase();
           $('#stockSearch').value = '';
           $('#stockClearBtn').hidden = true;
