@@ -2072,6 +2072,10 @@ h1 {
           const id = String(item?.stock_id || '');
           const cached = cache[id];
           if (!cached || String(cached.as_of || '') !== expectedSignalDataDate()) return item;
+          // Never overwrite a newly committed S snapshot with an older local EOD recheck.
+          const cachedAt = Date.parse(String(cached.scanned_at || ''));
+          const sourceAt = Date.parse(String(item?.scanned_at || ''));
+          if (!Number.isFinite(cachedAt) || !Number.isFinite(sourceAt) || cachedAt < sourceAt) return item;
           const keepWatch = item?.__pullback_watch || cached?.__pullback_watch || null;
           return { ...item, ...cached, __pullback_watch: keepWatch };
         });
@@ -2608,7 +2612,11 @@ h1 {
         if(bottomConfirmed&&base?.key==='wait')return {...base,keep_candidate:true};
         if(bottomConfirmed)return {key:'bottom',rank:35,className:'scout',text:'🌱 底部型態已確認｜等盤中起漲',detail:'型態已成立；尚未出現盤中發動前只列等待起漲，不當成已起漲',keep_candidate:true};
         if(base&&base.key!=='wait'&&item.metrics?.entry_candle_guard?.version!=='2026-10-06-kbar-ma10-20-60-v3')return {key:'wait',rank:10,className:'wait',text:'🟡 等確認／不追價',detail:'K棒最後過濾資料待確認｜保留候選，暫不試單',candle_guard:true,keep_candidate:true};
-        if(base)return base;
+        const isNearModel=(item?.stage==='B'||item?.stage==='C') && String(item?.metrics?.trade_lifecycle?.entry?.state||'')==='near';
+        if(base) return base.key==='wait' && isNearModel ? {...base,keep_candidate:true} : base;
+        // Near is a model tracking state, never a buy signal; preserve it as a visible watch candidate.
+        if(isNearModel) return {key:'wait',rank:8,className:'wait',text:'🟡 近買點觀察｜等待確認',
+          detail:'S盤後模型已列為近買點；尚未具備正式進場條件，請勿當成即時買進訊號',keep_candidate:true};
         // 已確認開始起漲者直接併入進場雷達；即使尚缺平均量能／最後確認，也不能整檔消失。
         if(isActiveLaunchItem(item)){
           const m=item?.metrics||{};
@@ -3128,6 +3136,7 @@ h1 {
           m.first_breakout20===true ||
           m?.bottom_start?.confirmed===true ||
           ['formal_candidate','starter'].includes(entryState) ||
+          ((item?.stage==='B'||item?.stage==='C') && entryState==='near') ||
           mc.breakout_detected_raw===true ||
           mc.breakout_first_bar===true ||
           seq.second_buy_candidate===true ||
