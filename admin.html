@@ -4914,7 +4914,7 @@ h1 {
         if (!cachedHoldingView && holdings.size) {
           const instantHtml=Array.from(holdings.keys()).map(symbol=>{
             const h=holdings.get(String(symbol))||{}, cost=Number(h.avg_cost), qty=Number(h.quantity||0);
-            const q=bestTodayQuote(null,symbol), price=Number(q?.price), prev=Number(q?.prev_close), vol=Number(q?.volume_lots), qt=String(q?.quote_time||'');
+            const q=bestTodayQuote(null,symbol), price=q?.price == null ? NaN : Number(q.price), prev=q?.prev_close == null ? NaN : Number(q.prev_close), vol=q?.volume_lots == null ? NaN : Number(q.volume_lots), qt=String(q?.quote_time||'');
             const pct=Number.isFinite(price)&&Number.isFinite(prev)&&prev>0?(price/prev-1)*100:null;
             return '<article class="card" data-stock-id="'+esc(symbol)+'"><div class="top"><div><div class="name">'+esc(symbol)+'</div><div class="meta">📌 已買進｜先顯示持股</div></div><div class="badge">持股</div></div><div class="holding-row"><span>成本 '+(Number.isFinite(cost)?num(cost,2):'-')+'｜數量 '+(Number.isFinite(qty)?qty.toLocaleString('zh-TW'):'-')+'</span></div><div class="quick-grid"><div><span>今日成交價</span><b>'+(Number.isFinite(price)?num(price,2):'-')+'</b></div><div><span>今日漲跌</span><b>'+(pct==null?'-':(pct>=0?'+':'')+num(pct,2)+'%')+'</b></div><div><span>成交量</span><b>'+(Number.isFinite(vol)?vol.toLocaleString('zh-TW')+'張':'-')+'</b></div></div>'+timeInfoHtml(null,q)+'<div class="meta">模型背景更新中…</div></article>';
           }).join('');
@@ -4931,7 +4931,7 @@ h1 {
           const quickHoldingHtml = symbols.map(symbol => {
             const h=holdings.get(String(symbol)) || {};
             const cost=Number(h.avg_cost), qty=Number(h.quantity || 0);
-            const q=bestTodayQuote(null,symbol), price=Number(q?.price), prev=Number(q?.prev_close), vol=Number(q?.volume_lots), qt=String(q?.quote_time||'');
+            const q=bestTodayQuote(null,symbol), price=q?.price == null ? NaN : Number(q.price), prev=q?.prev_close == null ? NaN : Number(q.prev_close), vol=q?.volume_lots == null ? NaN : Number(q.volume_lots), qt=String(q?.quote_time||'');
             const pct=Number.isFinite(price)&&Number.isFinite(prev)&&prev>0?(price/prev-1)*100:null;
             return '<article class="card" data-stock-id="'+esc(symbol)+'"><div class="top"><div><div class="name">'+esc(symbol)+'</div><div class="meta">📌 已買進｜持股資料已載入</div></div><div class="badge">持股</div></div><div class="holding-row"><span>成本 '+(Number.isFinite(cost)?num(cost,2):'-')+'｜數量 '+(Number.isFinite(qty)?qty.toLocaleString('zh-TW'):'-')+'</span></div><div class="quick-grid"><div><span>今日成交價</span><b>'+(Number.isFinite(price)?num(price,2):'-')+'</b></div><div><span>今日漲跌</span><b>'+(pct==null?'-':(pct>=0?'+':'')+num(pct,2)+'%')+'</b></div><div><span>成交量</span><b>'+(Number.isFinite(vol)?vol.toLocaleString('zh-TW')+'張':'-')+'</b></div></div>'+timeInfoHtml(null,q)+'<div class="meta">最新模型背景更新中…</div></article>';
           }).join('');
