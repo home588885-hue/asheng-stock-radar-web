@@ -1642,12 +1642,12 @@ h1 {
           localStorage.setItem(LAUNCH_DATA_CACHE_KEY, JSON.stringify({ saved_at:Date.now(), data:compact }));
         } catch (error) {}
       };
-      const ENTRY_POOL_CACHE_KEY = 'asheng-entry-pool-v7';
+      const ENTRY_POOL_CACHE_KEY = 'asheng-entry-pool-v8';
       const readEntryPoolCache = () => {
         try {
           const cached = JSON.parse(localStorage.getItem(ENTRY_POOL_CACHE_KEY) || 'null');
           if (!cached || !Array.isArray(cached.items) || !cached.items.length) return [];
-          if (!cached.saved_at || Date.now() - Number(cached.saved_at) > 24 * 60 * 60 * 1000) return [];
+          if (!cached.saved_at || Date.now() - Number(cached.saved_at) > 15 * 60 * 1000) return [];
           return cached.items;
         } catch (error) { return []; }
       };
@@ -4674,10 +4674,9 @@ h1 {
           }
           if (launchData) applyGlobalHeaderSummary(launchData);
           const nextPool = applyEntryEodCache(await mergePullbackWatchItems(buildEntryPool(v5Data?.picks || [], launchData?.picks || [])));
-          if (nextPool.length) {
-            liveBasePicks = nextPool;
-            writeEntryPoolCache(liveBasePicks);
-            }
+          liveBasePicks = nextPool;
+          if (nextPool.length) writeEntryPoolCache(nextPool);
+          else localStorage.removeItem(ENTRY_POOL_CACHE_KEY);
           lastEntryPoolRefreshAt = Date.now();
           await refreshLiveQuotes();
         } catch (error) {
@@ -4712,10 +4711,9 @@ h1 {
               throw new Error('進場資料來源暫時無法讀取');
             }
             const nextPool = applyEntryEodCache(await mergePullbackWatchItems(buildEntryPool(v5Data?.picks || [], launchData?.picks || [])));
-            if (nextPool.length) {
-              liveBasePicks = nextPool;
-              writeEntryPoolCache(liveBasePicks);
-            }
+            liveBasePicks = nextPool;
+            if (nextPool.length) writeEntryPoolCache(nextPool);
+            else localStorage.removeItem(ENTRY_POOL_CACHE_KEY);
             if (launchData) {
               applyGlobalHeaderSummary(launchData);
               const progress = launchData.progress || {};
@@ -5114,13 +5112,16 @@ h1 {
       updateEntryPhase();
       setInterval(updateEntryPhase, 30000);
       let lastSeenExternalCommitAt = '';
+      const pageOpenedAt = Date.now();
       let lastCommitProbeAt = 0;
       let externalCommitSyncBusy = false;
       const checkExternalScanCommit = async () => {
         if (document.hidden || externalCommitSyncBusy || moneyFlowSectorViewActive) return;
         const market = taipeiMarketState();
-        // Probe only during the existing EOD scan window; never add daytime API polling.
-        if (!market.weekday || market.totalMinutes < 1255 || market.totalMinutes > 1330) return;
+        // Reuse the existing 5-minute commit check for normal EOD writes and Sunday recovery.
+        // No new scheduler, no intraday polling, no model changes or background rescan.
+        const sunday = new Intl.DateTimeFormat('en-US',{timeZone:'Asia/Taipei',weekday:'short'}).format(new Date()) === 'Sun';
+        if (!(market.totalMinutes >= 1255 && market.totalMinutes <= 1330 && (market.weekday || sunday))) return;
         const now = Date.now();
         if (now - lastCommitProbeAt < 290000) return;
         lastCommitProbeAt = now;
@@ -5131,10 +5132,11 @@ h1 {
           if (!commitAt) return;
           if (!lastSeenExternalCommitAt) {
             lastSeenExternalCommitAt = commitAt;
-            return;
+            if (Date.parse(commitAt) <= pageOpenedAt) return;
+          } else {
+            if (commitAt === lastSeenExternalCommitAt) return;
+            lastSeenExternalCommitAt = commitAt;
           }
-          if (commitAt === lastSeenExternalCommitAt) return;
-          lastSeenExternalCommitAt = commitAt;
           externalCommitSyncBusy = true;
           stageViewCache.delete(stage);
           await refreshCurrent();
