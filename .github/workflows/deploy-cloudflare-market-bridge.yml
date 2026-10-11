@@ -1,0 +1,45 @@
+name: Deploy Cloudflare market bridge (manual)
+
+# No push, schedule, or automatic trigger: deployment requires explicit confirmation.
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_deploy:
+        description: "Explicitly approve the Cloudflare market-bridge deployment"
+        required: true
+        type: choice
+        default: "NO"
+        options:
+          - "NO"
+          - "DEPLOY"
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    if: ${{ github.event.inputs.confirm_deploy == 'DEPLOY' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout locked source
+        uses: actions/checkout@v4
+      - name: Deploy only the existing Cloudflare market bridge
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: cloudflare-bridge
+          command: deploy
+      - name: Verify deployed Worker routes without credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="https://asheng-market-bridge.home588885.workers.dev"
+          curl --fail --silent --show-error --retry 3 --retry-delay 2 "$BASE/health" -o /tmp/market-health.json
+          node -e 'const j=require("/tmp/market-health.json");if(j.ok!==true||j.service!=="asheng-market-bridge"||j.deployment_marker!=="admin-auth-market-bridge-20261010"||j.eod_prefilter_route!=="read_only_available")process.exit(1)'
+          for ROUTE in "quotes?symbols=2330:tse" "eod-prefilter?market=tse"; do
+            STATUS="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' "$BASE/$ROUTE")"
+            test "$STATUS" = 401 || { echo "Unauthenticated route must return 401, got $STATUS"; exit 1; }
+          done
+          echo "PASS: live Worker health, deployment marker, optional route, and auth boundaries"
