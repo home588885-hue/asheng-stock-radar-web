@@ -1035,7 +1035,7 @@ h1 {
                 <figcaption>📱 管理員網址可加入手機主畫面，捷徑名稱「穩」；電腦可存為書籤。原會員選股頁已取消。</figcaption>
               </figure>
               <div class="risk-note"><b>1｜登入與使用入口</b><br>使用原本的管理員 Email 和密碼登入。現在只有管理員雷達，已取消獨立會員登入、會員選股頁與會員名單介面。個人已買進股票仍保存在原帳號中，不會因取消會員版而消失。</div>
-              <div class="risk-note"><b>2｜S 算模型，C 提供盤中報價</b><br><b>S（Supabase）</b>保留完整 A／B／C、V5、MA10／MA20／MA60、KD、MACD、量價、籌碼及持股風控模型，不搬到 C。<br><b>C（Cloudflare）</b>負責管理員三區盤中報價，只有通過 Worker 健康檢查與登入驗證才啟用。驗證失敗不能冒充已有 C 即時價；獨立的 C 基礎模型 Worker 不參與正式選股。</div>
+              <div class="risk-note"><b>2｜S 算模型，C 提供盤中報價</b><br><b>S（Supabase）</b>保留完整 A／B／C、V5、MA10／MA20／MA60、KD、MACD、量價、籌碼及持股風控模型，不搬到 C。<br><b>C（Cloudflare）</b>只為 S 完整模型已選出的「發動前、進場雷達」候選，以及管理員「已買進」股票取得盤中價；不掃全市場、不自行增刪候選，也不修改 A／B／C、V5 或籌碼結果。只有報價 Worker 健康檢查及登入驗證通過才啟用；失敗不冒充已有即時價。</div>
               <div class="risk-note"><b>3｜每天什麼時候更新？</b><br><b>交易日 09:00～13:30</b>：C 報價橋接成功後，🌱發動前、🎯進場雷達、📌已買進在網頁前景時約每 <b>3 分鐘</b>低頻更新今日有效成交價。沒有今日有效價時不顯示 0.00，也不以昨收冒充。<br><b>交易日 13:00～13:29</b>：C 未啟用時，已買進才使用原本的收盤前低頻 S 備援，不是整天從 S 抓價。<br><b>交易日 21:00～21:55</b>：S 依原排程分批更新完整日 K 選股，並非每檔在 21:00 就全部更新完成。</div>
               <div class="risk-note"><b>4｜簡單看三區</b><br>🌱 <b>發動前</b>：底部整理、均線轉強、接近發動，追蹤尚未突破且位置不過熱的股票。<br>🎯 <b>進場雷達</b>：已起漲、突破或適合回踩觀察的候選，仍須判斷風險和位置，不代表每檔都能立刻買。<br>📌 <b>已買進</b>：只顯示自己已記錄的持股、成本與風控，沒有盤中報價時也不會刪除持股。</div>
               <div class="risk-note"><b>5｜四種買點顏色與防追高</b><br>🔴 <b>明確不能買</b>：突破失敗、均線結構破壞、爆量轉弱或跌破支撐。<br>🟡 <b>近買點／等確認</b>：條件缺量或位置，先觀察。<br>🟠 <b>可小量試單</b>：風險過濾通過，部位保守。<br>🟢 <b>正式買點</b>：完整條件成立，再評估分批進場。<br>還要核對 MA10／20／60、K 棒、KD／MACD、成交量至少 1,000 張與距 MA20 的乖離。距 MA20 超過 5% 不作為適合追價的買點；盤後訊號不是即時成交保證。</div>
@@ -1064,8 +1064,7 @@ h1 {
           <div class="entry-phase" id="entryPhase"></div>
           <div class="holding-note">📌 已買進：只顯示管理員自己的持股｜C 驗證成功後交易時段約每3分鐘抓價；C 未啟用時僅13:00～13:29低頻備援；S 完整模型晚上9點後分批更新。<span id="memberIdentity"></span><button class="holding-sync" id="syncHoldingsBtn">登出</button></div>
         </section>
-        <section id="cfPrefilterPanel" class="box" hidden aria-live="polite"></section>
-        <p id="timeInfoExplanation" class="time-info-explanation" hidden>管理員三區在 C 報價驗證成功時，交易時段約每3分鐘更新有效成交價；C 未啟用時，已買進僅於13:00～13:29使用低頻備援。MA10／MA20／MA60、KD、MACD 等完整模型仍以 S 的盤後完整日 K 更新為準。</p>
+                <p id="timeInfoExplanation" class="time-info-explanation" hidden>管理員三區在 C 報價驗證成功時，交易時段約每3分鐘更新有效成交價；C 未啟用時，已買進僅於13:00～13:29使用低頻備援。MA10／MA20／MA60、KD、MACD 等完整模型仍以 S 的盤後完整日 K 更新為準。</p>
         <main class="list" id="list">
           <div class="box empty loading">正在載入候選股…</div>
         </main>
@@ -1537,9 +1536,15 @@ h1 {
         } catch (error) {}
       };
       const bestTodayQuote = (quote, stockId = '') => {
-        if (!holdings.has(String(stockId || quote?.stock_id || ''))) return null; // 即時價只供目前已買進股票
+        const id = String(stockId || quote?.stock_id || '');
+        // Cloudflare may quote ONLY the current S-model picks of the active radar
+        // section plus the admin's own saved holdings. It NEVER creates new picks.
+        const isModelSelected = marketBridgeReady()
+          && ['LAUNCH','ENTRY'].includes(stage)
+          && liveBasePicks.some(item => String(item?.stock_id || '') === id);
+        if (!holdings.has(id) && !isModelSelected) return null;
         if (validTodayQuote(quote)) return quote;
-        const cached = liveQuoteCache.get(String(stockId || quote?.stock_id || ''));
+        const cached = liveQuoteCache.get(id);
         return validTodayQuote(cached) ? { ...cached, cached_last_trade:true } : null;
       };
       // Reuse today's valid holding quotes when tabs are switched, and cool down failed
@@ -2847,7 +2852,7 @@ h1 {
             <span class="entry-mini-score">模型 ${Number.isFinite(score)?esc(num(score,0)):'-'} 分</span>
             <span class="entry-mini-expand">詳情 ▾</span>
             <span class="entry-mini-metrics">${q?'今日成交':'模型收盤'} <b>${close>0?esc(num(close,2)):'-'}</b>｜距MA20 ${dist==null?'-':(dist>=0?'+':'')+esc(num(dist,1))+'%'}｜成交量 ${Number.isFinite(vol)?esc(num(vol,0))+'張':'-'}</span>
-            <span class="entry-mini-date">模型基準 ${esc(item.as_of||'待更新')}｜${tradeContext}｜${cloudflareEodBadge(item)}</span>
+            <span class="entry-mini-date">模型基準 ${esc(item.as_of||'待更新')}｜${tradeContext}｜</span>
           </summary>
           <div class="entry-mini-full">${expanded}</div>
         </details>`;
@@ -3439,13 +3444,12 @@ h1 {
         const hiddenModelHtml = `${launchQualityHtml}${precisionHtml}${warrant ? `<div class="signal-note">${warrant}</div>` : ''}${bottomHtml}${launchHtml}${launchSequenceHtml}${holding ? '' : guideHtml}`;
         const detailHtml = `<details class="card-details"><summary>完整判斷與數據</summary><div class="detail-body">${hiddenModelHtml}${v5Html}${chipHtml}${holding ? '' : liquidityHtml}${playbookHtml}<div class="metrics"><span class="pill">3年位階 ${num(metrics.position_3y_pct)}%</span><span class="pill">週K ${num(metrics.weekly_k)}｜${gradeText(weeklyKGrade(metrics.weekly_k))}</span><span class="pill">月K ${num(metrics.monthly_k)}｜${gradeText(monthlyKGrade(metrics.monthly_k))}</span><span class="pill">${backtestSignal(item)}</span>${metrics.backtest ? `<span class="pill">5日 ${num(metrics.backtest.win_rate_5d_pct)}%</span><span class="pill">20日 ${num(metrics.backtest.win_rate_20d_pct)}%</span>` : ''}</div><div class="why">${reasons}</div>${cautions ? `<div class="warn">${cautions}</div>` : ''}</div></details>`;
         const actionHtml = options.hideSignal ? '' : `<div class="trade-signal ${signal.className}">${esc(memberFacingText(signal.text))}<small style="display:block;margin-top:4px;font-weight:500">${esc(memberFacingText(signal.detail || ''))}</small></div>`;
-        return `<article class="card" data-stock-id="${esc(item.stock_id)}"><div class="top"><div><div class="name">${esc(item.stock_id)} ${esc(item.stock_name)}</div><div class="meta">${esc(item.market)}${item.industry ? '・' + esc(item.industry) : ''}${timeInfoStages() ? '' : '｜資料日 ' + esc(item.as_of || '-')}｜${twseOfficialQuoteLink(item.stock_id)}</div></div><div class="badge ${esc(item.stage)}">模型 ${Number(item.score || 0)}分</div></div>${companyProfileHtml(item)}${volumePriceHtml(item, displayQuote)}${pullbackWatchHtml(item, displayQuote)}${holding ? holdingTodayHtml : actionHtml + quickHtml + deviationWarningHtml + riskSummary}${holdingHtml}${holdingStatusHtml}${cloudflareEodBadge(item)}${detailHtml}${timeInfoStages() ? timeInfoHtml(item, displayQuote) : '<div class="time">背景模型掃描：' + updated + '</div>'}</article>`;
+        return `<article class="card" data-stock-id="${esc(item.stock_id)}"><div class="top"><div><div class="name">${esc(item.stock_id)} ${esc(item.stock_name)}</div><div class="meta">${esc(item.market)}${item.industry ? '・' + esc(item.industry) : ''}${timeInfoStages() ? '' : '｜資料日 ' + esc(item.as_of || '-')}｜${twseOfficialQuoteLink(item.stock_id)}</div></div><div class="badge ${esc(item.stage)}">模型 ${Number(item.score || 0)}分</div></div>${companyProfileHtml(item)}${volumePriceHtml(item, displayQuote)}${pullbackWatchHtml(item, displayQuote)}${holding ? holdingTodayHtml : actionHtml + quickHtml + deviationWarningHtml + riskSummary}${holdingHtml}${holdingStatusHtml}${detailHtml}${timeInfoStages() ? timeInfoHtml(item, displayQuote) : '<div class="time">背景模型掃描：' + updated + '</div>'}</article>`;
       }
 
       async function load() {
         const navToken = navigationSeq;
         const requestedStage = stage;
-        void loadCloudflarePrefilter();
         const listEl = $('#list');
         const hasVisibleCards = !!listEl?.querySelector('[data-stock-id]');
         if (!hasVisibleCards) listEl.innerHTML =
@@ -3625,8 +3629,7 @@ h1 {
             : `<div class="box empty">${stage === 'LAUNCH' ? '目前沒有符合「發動前試單／突破確認／回踩加碼」的股票。若最新資料仍在補掃，這不代表全市場為0。' : stage === 'ENTRY' ? '目前沒有符合正式可進場條件的股票。' : stage === 'PREATTACK' ? '目前沒有需要轉入進場雷達的起漲候選。' : '目前這個階段沒有候選股。'}</div>`);
           if (stage === 'LAUNCH' && rankedPicks.length) {
             liveBasePicks = rankedPicks.slice(0, 100);
-            if (cfPrefilterCache) renderCloudflarePrefilter();
-            await refreshSimpleQuotes();
+              await refreshSimpleQuotes();
             if (liveTimer) clearInterval(liveTimer);
             liveTimer = marketBridgeReady() && taipeiMarketState().open
               ? setInterval(() => { if (stage === 'LAUNCH' && !document.hidden) refreshSimpleQuotes(); }, 180000)
@@ -4665,8 +4668,7 @@ h1 {
           if (nextPool.length) {
             liveBasePicks = nextPool;
             writeEntryPoolCache(liveBasePicks);
-            if (cfPrefilterCache) renderCloudflarePrefilter();
-          }
+            }
           lastEntryPoolRefreshAt = Date.now();
           await refreshLiveQuotes();
         } catch (error) {
@@ -4678,7 +4680,6 @@ h1 {
       async function loadLiveMonitor() {
         const navToken = navigationSeq;
         const requestedStage = stage;
-        void loadCloudflarePrefilter();
         if (liveTimer) clearInterval(liveTimer);
         if (livePoolTimer) clearInterval(livePoolTimer);
         if (!$('#list').querySelector('[data-stock-id]')) $('#list').innerHTML = `<div class="box empty loading">${stage === 'ENTRY' ? '正在整理進場雷達的夜間模型快照…' : '正在建立盤中看盤池…'}</div>`;
@@ -4839,7 +4840,6 @@ h1 {
         const requestedStage = stage;
         const holdingToken = ++holdingLoadSeq;
         holdingVisibilityControl = null;
-        void loadCloudflarePrefilter();
         const holdingStillCurrent = () => holdingToken === holdingLoadSeq && navigationSeq === navToken && stage === requestedStage && stage === 'HOLDING';
         if (liveTimer) { clearInterval(liveTimer); liveTimer = null; }
         if (livePoolTimer) { clearInterval(livePoolTimer); livePoolTimer = null; }
@@ -4858,7 +4858,6 @@ h1 {
         await loadHoldings();
         if (!holdingStillCurrent()) return;
         const symbols = Array.from(holdings.keys());
-        if (cfPrefilterCache) renderCloudflarePrefilter();
         if (!symbols.length) {
           $('#list').innerHTML = '<div class="box empty">目前沒有標記為已買進的股票。</div>';
           return;
@@ -4894,7 +4893,6 @@ h1 {
         let items = baseResults.map(result => result.item).filter(Boolean);
         let fallbackHtml = baseResults.map(result => result.fallback).filter(Boolean).join('');
         liveBasePicks = items;
-        if (cfPrefilterCache) renderCloudflarePrefilter();
         let lastHoldingQuoteRequestAt = 0;
         const render = async () => {
           if (!holdingStillCurrent() || document.hidden || holdingQuoteRefreshing) return;
@@ -5064,9 +5062,7 @@ h1 {
           button.classList.add('on');
           moneyFlowSectorViewActive = false;
           stage = targetStage;
-          if (cfPrefilterCache) renderCloudflarePrefilter();
-          void loadCloudflarePrefilter();
-          updateEntryPhase();
+            updateEntryPhase();
           $('#stockSearch').value = '';
           $('#stockClearBtn').hidden = true;
           const loadingText = stage === 'HOLDING'
