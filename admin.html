@@ -4588,7 +4588,19 @@ h1 {
               })
               .sort((a,b)=>b.action.rank-a.action.rank);
             const groups = renderEntrySections(rows);
-            $('#note').textContent = `🎯 進場雷達｜🚀盤中起漲 0｜🔵小量試單 0｜🟡等確認 ${groups.nearRows.length}｜🔵等回踩 ${groups.highRows.length}｜🟠轉弱 ${groups.weakeningRows.length}｜休市／盤前不列試單。${scanProgressSuffix()}`;
+            // A locked-EOD lifecycle 'starter' is a watch item, never a premarket buy signal.
+            // Keep these visible in the summary while live-trial count awaits verified C trades.
+            const eodStarterWatch = liveBasePicks.filter(item =>
+              String(item?.as_of||'') === expectedSignalDataDate()
+              && !holdings.has(String(item?.stock_id||''))
+              && String(item?.metrics?.trade_lifecycle?.entry?.state||'') === 'starter'
+            );
+            const preopenStarterText = eodStarterWatch.length
+              ? '｜📋 盤後起漲追蹤 '+eodStarterWatch.length+' 檔（'+eodStarterWatch.slice(0,4).map(item=>String(item.stock_id)+' '+String(item.stock_name||'')).join('、')+'；尚非試單，須檢查KD／乖離／籌碼）'
+              : '｜📋 盤後起漲追蹤暫無已驗證候選';
+            $('#note').textContent = `🎯 進場雷達｜🚀盤中起漲：待開盤｜🔵小量試單：待開盤核對`
+              +preopenStarterText
+              +`｜🟡等確認 ${groups.nearRows.length}｜🔵等回踩 ${groups.highRows.length}｜🟠轉弱 ${groups.weakeningRows.length}｜非交易時段不發出試單訊號。${scanProgressSuffix()}`;
             return;
           }
           stableListRender(liveBasePicks.map(item => card(item)).join(''));
