@@ -1913,11 +1913,13 @@ h1 {
             +'張｜開收漲幅 '+esc(change)+'｜'+(inModel?'已在S模型候選':'尚未經S模型確認')
             +'</div>';
         }).join('');
+        const markets = rows.map(r => r.market === 'otc' ? '上櫃' : '上市').join('／');
+        const coverageNotice = rows.length === 2 ? '兩市場均取得資料' : '僅部分市場有資料，尚非全市場';
         const passes = rows.reduce((v,r) => v + Number(r.liquidity_pass_count||0),0);
         const total = rows.reduce((v,r) => v + Number(r.valid_common_stocks||0),0);
         panel.innerHTML = '<details><summary style="cursor:pointer;font-weight:650">☁️ C 官方盤後價量初篩｜'
           +esc(expected)+'｜量≥1,000張 '+passes+' 檔（展開觀察）</summary>'
-          +'<p style="font-size:13px">上市／上櫃共讀取 '+total+' 檔｜各市場成交量前10檔範例。'
+          +'<p style="font-size:13px">'+esc(markets)+'共讀取 '+total+' 檔｜'+esc(coverageNotice)+'｜各市場成交量前10檔範例。'
           +'此區僅供觀察，尚未通過 MA10／20／60、KD、MACD、籌碼或防追高模型，'
           +'不能視為買點。S 模型名單及排名完全不變。</p>'
           +textRows+'</details>';
@@ -1934,7 +1936,7 @@ h1 {
           const {data:auth} = await authClient.auth.getSession();
           const jwt = auth?.session?.access_token;
           if (!jwt) return;
-          const results = await Promise.all(['tse','otc'].map(async market => {
+          const attempts = await Promise.allSettled(['tse','otc'].map(async market => {
             const response = await fetch(EOD_PREFILTER_BRIDGE_URL+'/eod-prefilter?market='+market,{
               headers:{Authorization:'Bearer '+jwt,Accept:'application/json'},
               cache:'no-store',signal:AbortSignal.timeout(18000)
@@ -1952,7 +1954,8 @@ h1 {
             }
             return data;
           }));
-          if (results.some(r => r.source_date !== expectedSignalDataDate())) return;
+          const results = attempts.filter(x => x.status === 'fulfilled').map(x => x.value);
+          if (!results.length || results.some(r => r.source_date !== expectedSignalDataDate())) return;
           cfPrefilterCache = results;
           renderCloudflarePrefilter();
         } catch(error) {
