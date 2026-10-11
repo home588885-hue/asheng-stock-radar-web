@@ -1674,6 +1674,7 @@ h1 {
       // Cloudflare's verified workers.dev origin is configured only after live /health check.
       // Never accept an arbitrary query-string or localStorage URL: it would leak login JWTs.
       let MARKET_BRIDGE_URL = '';
+      let EOD_PREFILTER_BRIDGE_URL = '';
       const marketBridgeReady = () => !!MARKET_BRIDGE_URL;
       const configureCloudflareMarketBridge = async () => {
         try {
@@ -1687,6 +1688,8 @@ h1 {
           const status = await check.json();
           if (status?.service !== 'asheng-market-bridge'
               || status?.deployment_marker !== 'admin-auth-market-bridge-20261010') return;
+          // EOD read-only prefilter availability does not depend on MIS opening hours.
+          EOD_PREFILTER_BRIDGE_URL = url;
           // Only activate after this logged-in administrator can access /quotes.
           // This prevents a working /health with a broken auth route from hiding quotes.
           const { data: authData } = await authClient.auth.getSession();
@@ -1921,7 +1924,7 @@ h1 {
         panel.hidden = false;
       };
       const loadCloudflarePrefilter = async () => {
-        if (stage !== 'LAUNCH' || document.hidden || !marketBridgeReady() || cfPrefilterInFlight) return;
+        if (stage !== 'LAUNCH' || document.hidden || !EOD_PREFILTER_BRIDGE_URL || cfPrefilterInFlight) return;
         if (cfPrefilterCache) { renderCloudflarePrefilter(); return; }
         const now = Date.now();
         if (now - cfPrefilterLastTryAt < 30*60*1000) return;
@@ -1932,7 +1935,7 @@ h1 {
           const jwt = auth?.session?.access_token;
           if (!jwt) return;
           const results = await Promise.all(['tse','otc'].map(async market => {
-            const response = await fetch(MARKET_BRIDGE_URL+'/eod-prefilter?market='+market,{
+            const response = await fetch(EOD_PREFILTER_BRIDGE_URL+'/eod-prefilter?market='+market,{
               headers:{Authorization:'Bearer '+jwt,Accept:'application/json'},
               cache:'no-store',signal:AbortSignal.timeout(18000)
             });
