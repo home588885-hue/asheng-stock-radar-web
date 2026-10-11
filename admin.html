@@ -1684,9 +1684,21 @@ h1 {
           const check = await fetch(url + '/health',{cache:'no-store',signal:AbortSignal.timeout(5000)});
           if (!check.ok) return;
           const status = await check.json();
-          if (status?.service === 'asheng-market-bridge'
-              && status?.deployment_marker === 'admin-auth-market-bridge-20261010')
-            MARKET_BRIDGE_URL = url;
+          if (status?.service !== 'asheng-market-bridge'
+              || status?.deployment_marker !== 'admin-auth-market-bridge-20261010') return;
+          // Only activate after this logged-in administrator can access /quotes.
+          // This prevents a working /health with a broken auth route from hiding quotes.
+          const { data: authData } = await authClient.auth.getSession();
+          const jwt = authData?.session?.access_token;
+          if (!jwt) return;
+          const probe = await fetch(url + '/quotes?symbols=2330:tse', {
+            headers:{Authorization:'Bearer '+jwt,Accept:'application/json'},
+            cache:'no-store',signal:AbortSignal.timeout(12000)
+          });
+          if (!probe.ok) return;
+          const json = await probe.json();
+          if (json?.ok !== true || !Array.isArray(json.quotes)) return;
+          MARKET_BRIDGE_URL = url;
         } catch (error) {}
       };
       const LIVE_API = SHARED_DATA_HUB + '/asheng-live-quotes';
