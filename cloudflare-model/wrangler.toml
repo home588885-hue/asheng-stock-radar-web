@@ -1,0 +1,8 @@
+name = "asheng-model-engine"
+main = "src/index.js"
+compatibility_date = "2026-10-11"
+workers_dev = true
+
+# Do not define MODEL_INPUT_KEY here or in GitHub.
+# Set via Cloudflare Worker Secrets when deploying.
+# Deliberately no [triggers] / cron.
