@@ -4173,23 +4173,44 @@ h1 {
         const safeQuote = validTodayQuote(quote) ? quote : null;
         const { action, main, reminder } = holdingDisplay(item, safeQuote);
         const metrics = item.metrics || {};
-        const modelIsToday = String(item.as_of || '').replace(/[^0-9]/g,'') === todayQuoteDate();
+        const modelDate = String(item.as_of || '');
+        const modelFresh = modelDate === expectedSignalDataDate();
         const modelClose = Number(metrics.close);
         const modelPrev = Number(metrics.prev_close);
         const modelVolume = Number(metrics.current_volume_lots);
-        const price = safeQuote ? Number(safeQuote.price) : (modelIsToday && Number.isFinite(modelClose) ? modelClose : null);
+        // On weekends, holidays and premarket, compare against the latest COMPLETE trading-day
+        // model instead of today's calendar date. Never present EOD prices as today's live trade.
+        const modelUsable = modelFresh && Number.isFinite(modelClose) && modelClose > 0;
+        const price = safeQuote ? Number(safeQuote.price) : (modelUsable ? modelClose : null);
         const ma20 = Number(metrics.ma20);
-        const held = Number.isFinite(price) && Number.isFinite(ma20) && ma20 > 0 ? (price >= ma20 ? '守住' : '未守住') : '待即時價';
-        const prev = safeQuote?.prev_close == null ? (modelIsToday && Number.isFinite(modelPrev) ? modelPrev : null) : Number(safeQuote.prev_close);
-        const pct = Number.isFinite(price) && Number.isFinite(prev) && prev > 0 ? (price / prev - 1) * 100 : null;
-        const volume = safeQuote?.volume_lots == null ? (modelIsToday && Number.isFinite(modelVolume) ? modelVolume : null) : Number(safeQuote.volume_lots);
-        const quoteTime = String(safeQuote?.quote_time || (modelIsToday ? '13:30 收盤' : ''));
-        const quoteDate = String(safeQuote?.quote_date || (modelIsToday ? item.as_of : ''));
-        const quoteUi = safeQuote ? quoteDisplayState(safeQuote, item) : (modelIsToday ? {label:'今日收盤',value:modelClose,time:'13:30 收盤',date:item.as_of} : quoteDisplayState(null, item));
+        const held = Number.isFinite(price) && Number.isFinite(ma20) && ma20 > 0
+          ? (price >= ma20 ? '守住' : '未守住') : '待新資料';
+        const prev = safeQuote?.prev_close == null
+          ? (modelUsable && Number.isFinite(modelPrev) && modelPrev > 0 ? modelPrev : null)
+          : Number(safeQuote.prev_close);
+        const pct = price != null && prev != null && prev > 0 ? (price / prev - 1) * 100 : null;
+        const volume = safeQuote?.volume_lots == null
+          ? (modelUsable && Number.isFinite(modelVolume) && modelVolume >= 0 ? modelVolume : null)
+          : Number(safeQuote.volume_lots);
+        const quoteUi = safeQuote ? quoteDisplayState(safeQuote, item)
+          : modelUsable ? {label:'最近完整交易日收盤（'+modelDate+'）',value:modelClose}
+          : {label:'模型收盤待更新',value:null,text:'待資料'};
         const priceLabel = quoteUi.label;
-        const priceText = Number.isFinite(price) ? num(price,2) : (Number.isFinite(quoteUi.value) ? num(quoteUi.value,2) : quoteUi.text);
-        const fields = [[priceLabel, priceText], ['今日漲跌', pct == null ? '-' : (pct >= 0 ? '+' : '') + num(pct,2) + '%'], ['成交量', Number.isFinite(volume) ? volume.toLocaleString('zh-TW') + '張' : '-']];
-        return `<section class="live-banner holding-action ${action.className}"><h2>🟢 今日動作</h2><div class="holding-main-action">${main}</div><span>MA20：${held}</span><span>${esc(reminder)}</span><dl class="holding-quote-grid">${fields.map(([label,value]) => `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl>${holdingCloseWatchHtml(item, safeQuote)}</section>`;
+        const priceText = Number.isFinite(price) ? num(price,2) : (quoteUi.text || '-');
+        const isLive = !!safeQuote;
+        const actionDateLabel = isLive ? '今日動作' : (modelFresh ? '盤後模型判斷（'+modelDate+'）' : '過期模型｜待更新');
+        const actionIcon = main === '出清' ? '🔴' : main === '減碼' ? '🟠'
+          : main === '警戒' ? '🟡' : main === '可加碼' ? '🟢' : '🟢';
+        const modelPrefix = isLive ? 'MA20（今日有效成交）' : 'MA20（'+modelDate+'模型）';
+        const changeLabel = isLive ? '今日漲跌' : '模型日漲跌（'+modelDate+'）';
+        const volumeLabel = isLive ? '今日成交量' : '模型日成交量（'+modelDate+'）';
+        const fields = [[priceLabel, priceText],
+          [changeLabel, pct == null ? '-' : (pct >= 0 ? '+' : '') + num(pct,2) + '%'],
+          [volumeLabel, volume == null || !Number.isFinite(volume) ? '-' : volume.toLocaleString('zh-TW') + '張']];
+        const dataCaution = !isLive
+          ? '<small class="model-only-note">目前無今日有效成交報價；以下判斷以'+esc(modelDate||'待更新')+'完整日K為基準，不代表當下即時股價。</small>'
+          : '';
+        return `<section class="live-banner holding-action ${action.className}"><h2>${actionIcon} ${esc(actionDateLabel)}</h2><div class="holding-main-action">${main}</div><span>${esc(modelPrefix)}：${held}</span><span>${esc(reminder)}</span>${dataCaution}<dl class="holding-quote-grid">${fields.map(([label,value]) => `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl>${holdingCloseWatchHtml(item, safeQuote)}</section>`;
       };
       const holdingRulesHtml = (item, quote = null) => {
         const { action, main, rulesTitle } = holdingDisplay(item, quote);
