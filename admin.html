@@ -1460,8 +1460,9 @@ h1 {
           const status = await check.json();
           if (status?.service !== 'asheng-market-bridge'
               || status?.deployment_marker !== 'admin-auth-market-bridge-20261010') return;
-          // EOD read-only prefilter availability does not depend on MIS opening hours.
-          EOD_PREFILTER_BRIDGE_URL = url;
+          // Fail closed: only call the optional prefilter when the live Worker explicitly advertises it.
+          // Older deployed Workers omit this capability; avoid repeated 404 requests without changing S-model picks.
+          EOD_PREFILTER_BRIDGE_URL = status?.eod_prefilter_route === 'read_only_available' ? url : '';
           // Only activate after this logged-in administrator can access /quotes.
           // This prevents a working /health with a broken auth route from hiding quotes.
           const { data: authData } = await authClient.auth.getSession();
