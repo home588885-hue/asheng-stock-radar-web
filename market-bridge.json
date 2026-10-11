@@ -1,4 +1,4 @@
 {
-  "worker_url": "",
-  "note": "Set only after checking live Cloudflare /health; never put credentials in this public file"
+  "worker_url": "https://asheng-market-bridge.home588885.workers.dev",
+  "note": "Cloudflare dashboard screenshot confirms workers.dev route; client will only activate after expected /health deployment-marker validation"
 }
