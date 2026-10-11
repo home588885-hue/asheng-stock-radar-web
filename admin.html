@@ -2011,6 +2011,25 @@ h1 {
         }
         return current.toISOString().slice(0, 10);
       };
+      // Shared status for LAUNCH / PREATTACK / ENTRY / HOLDING. Uses the picks response,
+      // so no extra quote request, scheduled job, or technical-model recomputation.
+      const renderCoverageWarning = progress => {
+        const warning = document.getElementById('scanFreshnessWarning');
+        if (!warning) return;
+        const total = Number(progress?.total_stocks || 0);
+        const latest = String(progress?.latest_as_of || '');
+        if (!total) { warning.hidden = true; return; }
+        const expected = expectedSignalDataDate();
+        const completed = Number(progress?.latest_count ?? progress?.scanned_fresh ?? 0);
+        const incomplete = progress?.latest_complete !== true || latest !== expected;
+        warning.hidden = !incomplete;
+        if (incomplete) {
+          const pct = Number.isFinite(Number(progress?.latest_percent)) ? Number(progress.latest_percent).toFixed(1) : '-';
+          warning.textContent = '⚠️ 最新完整日K覆蓋不足｜應有資料日 ' + expected
+            + '｜目前最新 ' + (latest || '未知') + '：' + completed + '/' + total + ' 檔（' + pct + '%）'
+            + '｜未完成的模型只供觀察，不得當成新買點；持股獨立按持股風控及個別資料日判斷。';
+        }
+      };
       const signalDataFresh = item => {
         const version = String(item.metrics?.model?.version || '');
         const asOf = String(item.as_of || '');
@@ -3545,21 +3564,7 @@ h1 {
           if (navigationSeq !== navToken || stage !== requestedStage) return;
           const progress = data.progress || {};
           latestScanProgress = progress;
-          // Show the S snapshot-completeness warning using data already returned by the picks API.
-          // Presentation only: no new API calls, scans, jobs, changes to signals or holdings.
-          const freshnessWarning = $('#scanFreshnessWarning');
-          if (freshnessWarning) {
-            const isCandidateStage = ['LAUNCH','ENTRY','PREATTACK'].includes(stage);
-            const incomplete = isCandidateStage && Number(progress.total_stocks || 0) > 0 && progress.latest_complete !== true;
-            if (incomplete) {
-              const latest = String(progress.latest_as_of || '待確認');
-              const expected = expectedSignalDataDate();
-              freshnessWarning.textContent = '⚠️ 盤後選股資料尚未完整更新｜目前快照模型日 ' + latest
-                + (latest !== expected ? '，最近有效交易日 ' + expected : '')
-                + '｜候選股仍在分批補齊；舊模型僅供觀察，不當成最新買點。已買進資料不受影響。';
-            }
-            freshnessWarning.hidden = !incomplete;
-          }
+          renderCoverageWarning(progress);
           const counts = data.stage_counts || {};
           $('#done').textContent = progress.scanned_fresh ?? 0;
           $('#total').textContent = progress.total_stocks ?? 0;
@@ -4727,6 +4732,7 @@ h1 {
               applyGlobalHeaderSummary(launchData);
               const progress = launchData.progress || {};
               latestScanProgress = progress;
+              renderCoverageWarning(progress);
               $('#done').textContent = progress.scanned_fresh ?? 0;
               $('#total').textContent = progress.total_stocks ?? 0;
               $('#bar').style.width = Math.min(100, Number(progress.percent || 0)) + '%';
@@ -4862,6 +4868,7 @@ h1 {
         const cachedHoldingView = stageViewCache.get('HOLDING');
         $('#list').innerHTML = cachedHoldingView || '<div class="box empty loading">📌 已切換到已買進｜正在更新持股…</div>';
         $('#note').textContent = '📌 已買進｜先顯示持股區，最新報價與模型正在背景補上。';
+        renderCoverageWarning(latestScanProgress);
         if (!cachedHoldingView && holdings.size) {
           const instantHtml=Array.from(holdings.keys()).map(symbol=>{
             const h=holdings.get(String(symbol))||{}, cost=Number(h.avg_cost), qty=Number(h.quantity||0);
