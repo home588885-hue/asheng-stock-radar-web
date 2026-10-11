@@ -125,6 +125,107 @@ async function isAuthenticatedAdmin(request) {
   } catch { return false; }
 }
 
+
+/**
+ * 盤後純觀察型初篩（獨立測試，與正式模型沒有任何資料寫入）。
+ * 每次只查一個市場的官方最新交易日批量開放資料。
+ * 僅檢查股價、成交量等「廉價價量初篩」，絕不宣稱 MA10/20/60 已完成。
+ * 無 Cron、無 Supabase 掃描請求、無持股資料讀寫。
+ */
+const BULK_EOD_FEEDS = Object.freeze({
+  tse: "https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL",
+  otc: "https://www.tpex.org.tw/openapi/v1/tpex_mainboard_daily_close_quotes"
+});
+function parseRocDay(value) {
+  const digits=String(value ?? "").trim().replace(/[^0-9]/g,"");
+  const m=/^(\d{3})(\d{2})(\d{2})$/.exec(digits);
+  if(!m) return null;
+  const year=Number(m[1])+1911,month=Number(m[2]),day=Number(m[3]);
+  const d=new Date(Date.UTC(year,month-1,day));
+  if(d.getUTCFullYear()!==year||d.getUTCMonth()+1!==month||d.getUTCDate()!==day)return null;
+  return year+"-"+m[2]+"-"+m[3];
+}
+function marketNum(raw) {
+  const v=String(raw ?? "").replace(/,/g,"").trim();
+  if(!v||v==="--"||v==="---")return null;
+  const n=Number(v);
+  return Number.isFinite(n)?n:null;
+}
+function normalizeBulkEod(row,market) {
+  const code=String(market==="tse"?row.Code:row.SecuritiesCompanyCode ?? "").trim();
+  // Exclude ETFs, structured products and warrants; no assumption they are ordinary shares.
+  if(!/^[1-9][0-9]{3}$/.test(code))return null;
+  const tradeDay=parseRocDay(row.Date);
+  const close=marketNum(market==="tse"?row.ClosingPrice:row.Close);
+  const open=marketNum(market==="tse"?row.OpeningPrice:row.Open);
+  const high=marketNum(market==="tse"?row.HighestPrice:row.High);
+  const low=marketNum(market==="tse"?row.LowestPrice:row.Low);
+  const shares=marketNum(market==="tse"?row.TradeVolume:row.TradingShares);
+  if(!tradeDay||!(close>0)||!(open>0)||!(shares>=0))return null;
+  const volumeLots=Math.floor(shares/1000);
+  return {
+    stock_id:code,stock_name:String(market==="tse"?row.Name:row.CompanyName ?? "").trim(),
+    market,source_date:tradeDay,open,close,high,low,volume_lots:volumeLots,
+    day_change_pct:Math.round((close/open-1)*10000)/100
+  };
+}
+async function readDailyPrefilter(request,market) {
+  const feed=BULK_EOD_FEEDS[market];
+  if(!feed)throw new Error("invalid_market");
+  const cache=typeof caches!=="undefined" ? caches.default : null;
+  const key=new Request(new URL("/__eod_prefilter_cache_"+market,request.url).toString());
+  if(cache){
+    try {
+      const saved=await cache.match(key);
+      if(saved) {
+        const j=await saved.json();
+        if(j?.ok&&j.market===market&&Array.isArray(j.candidates))
+          return {...j,cached:true};
+      }
+    } catch {}
+  }
+  const upstream=await fetch(feed,{
+    headers:{Accept:"application/json"},
+    signal:AbortSignal.timeout(15000)
+  });
+  if(!upstream.ok)throw new Error("official_feed_http_"+upstream.status);
+  const payload=await upstream.json();
+  if(!Array.isArray(payload)||payload.length<300||payload.length>25000)
+    throw new Error("official_feed_incomplete_or_unexpected");
+  const valid=[];
+  const byDate=new Map();
+  for(const row of payload){
+    const x=normalizeBulkEod(row,market);
+    if(!x)continue;
+    valid.push(x);
+    byDate.set(x.source_date,(byDate.get(x.source_date)||0)+1);
+  }
+  if(valid.length<200)throw new Error("official_feed_too_few_common_stocks");
+  const sourceDate=[...byDate.entries()].sort((a,b)=>b[1]-a[1])[0]?.[0];
+  const sameDay=valid.filter(x=>x.source_date===sourceDate);
+  const liquid=sameDay.filter(x=>x.volume_lots>=1000);
+  // Preview only. This is NOT a full-market MA/KD/MACD selection or a buy signal.
+  liquid.sort((a,b)=>b.volume_lots-a.volume_lots||a.stock_id.localeCompare(b.stock_id));
+  const body={
+    ok:true,market,source:"official_bulk_daily_open_data",source_date:sourceDate,
+    received_rows:payload.length,valid_common_stocks:sameDay.length,
+    liquidity_pass_count:liquid.length,liquidity_min_lots:1000,
+    candidates:liquid.slice(0,120),result_capped:liquid.length>120,
+    preview_only:true,full_model_scanned:false,eligible_to_trade:false,
+    supabase_model_invocations:0,supabase_database_writes:0,
+    note:"僅官方盤後價量初篩；未計算MA10/MA20/MA60、KD、MACD、籌碼，絕不作正式買點"
+  };
+  if(cache) {
+    try{
+      const response=new Response(JSON.stringify(body),{
+        headers:{"Content-Type":"application/json","Cache-Control":"public, max-age=1800"}
+      });
+      await cache.put(key,response);
+    }catch{}
+  }
+  return body;
+}
+
 export default {
   async fetch(request, env) {
     const url=new URL(request.url);
@@ -157,6 +258,24 @@ export default {
         return json(await readTwseQuotes(items),200,origin);
       } catch {
         return json({ok:false,error:"upstream_unavailable",quotes:[]},502,origin);
+      }
+    }
+    // Isolated read-only preview. Never inserts candidates into Supabase or changes the radar.
+    if(url.pathname==="/eod-prefilter") {
+      if (!(await isAuthenticatedAdmin(request))) {
+        return json({ok:false,error:"admin_auth_required"},401,origin);
+      }
+      const market=url.searchParams.get("market");
+      if(!["tse","otc"].includes(market))
+        return json({ok:false,error:"market_must_be_tse_or_otc"},400,origin);
+      try {
+        return json(await readDailyPrefilter(request,market),200,origin);
+      } catch(error) {
+        return json({
+          ok:false,error:"official_bulk_feed_not_ready",
+          diagnostic:String(error?.message||"unavailable").slice(0,100),
+          preview_only:true,supabase_model_invocations:0,supabase_database_writes:0
+        },503,origin);
       }
     }
     return json({ok:false,error:"not_found"},404,origin);
