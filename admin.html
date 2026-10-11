@@ -1024,6 +1024,7 @@ h1 {
             <div class="stat stat-signal"><small>🎯 進場雷達候選</small><b id="bCount">查看名單</b><span class="stat-explain" id="bCountInfo">切換進場雷達查看</span></div>
           </div>
           <div class="bar"><i id="bar"></i></div>
+          <div class="risk-note" id="scanFreshnessWarning" role="status" hidden></div>
           <div class="note" id="note">讀取資料中…</div>
         </section>
 
@@ -3535,6 +3536,21 @@ h1 {
           if (navigationSeq !== navToken || stage !== requestedStage) return;
           const progress = data.progress || {};
           latestScanProgress = progress;
+          // Show the S snapshot-completeness warning using data already returned by the picks API.
+          // Presentation only: no new API calls, scans, jobs, changes to signals or holdings.
+          const freshnessWarning = $('#scanFreshnessWarning');
+          if (freshnessWarning) {
+            const isCandidateStage = ['LAUNCH','ENTRY','PREATTACK'].includes(stage);
+            const incomplete = isCandidateStage && Number(progress.total_stocks || 0) > 0 && progress.latest_complete !== true;
+            if (incomplete) {
+              const latest = String(progress.latest_as_of || '待確認');
+              const expected = expectedSignalDataDate();
+              freshnessWarning.textContent = '⚠️ 盤後選股資料尚未完整更新｜目前快照模型日 ' + latest
+                + (latest !== expected ? '，最近有效交易日 ' + expected : '')
+                + '｜候選股仍在分批補齊；舊模型僅供觀察，不當成最新買點。已買進資料不受影響。';
+            }
+            freshnessWarning.hidden = !incomplete;
+          }
           const counts = data.stage_counts || {};
           $('#done').textContent = progress.scanned_fresh ?? 0;
           $('#total').textContent = progress.total_stocks ?? 0;
