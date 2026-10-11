@@ -1076,6 +1076,7 @@ h1 {
           <div class="entry-phase" id="entryPhase"></div>
           <div class="holding-note">📌 已買進：只顯示管理員自己的持股｜平常不抓盤中報價；交易日13:00～13:29約3分鐘取樣量價＋12分鐘存活；晚上9點完整更新。<span id="memberIdentity"></span><button class="holding-sync" id="syncHoldingsBtn">登出</button></div>
         </section>
+        <section id="cfPrefilterPanel" class="box" hidden aria-live="polite"></section>
         <p id="timeInfoExplanation" class="time-info-explanation" hidden>已買進只在交易日 13:00～13:29 取樣收盤前量價；MA10／MA20／MA60、KD、MACD 等完整技術模型仍以晚上 9 點後的完整日 K 更新為準。</p>
         <main class="list" id="list">
           <div class="box empty loading">正在載入候選股…</div>
@@ -1881,6 +1882,86 @@ h1 {
       // 進場雷達僅保留最近完整日K快照，不建立盤中存活計時器。
       const scanProgressSuffix = () => latestScanProgress?.latest_complete === false ? `｜🔄 最新資料 ${Number(latestScanProgress.latest_count || 0)}/${Number(latestScanProgress.total_stocks || 0)}，訊號數尚未代表全市場` : '';
       const $ = selector => document.querySelector(selector);
+
+      // C official bulk EOD observation: read-only, no Supabase scanning or writes.
+      // Do NOT classify this liquid preview as a model-validated first-bar buy signal.
+      let cfPrefilterCache = null;
+      let cfPrefilterInFlight = false;
+      let cfPrefilterLastTryAt = 0;
+      const renderCloudflarePrefilter = () => {
+        const panel = $('#cfPrefilterPanel');
+        if (!panel) return;
+        if (stage !== 'LAUNCH' || !cfPrefilterCache) { panel.hidden = true; return; }
+        const rows = cfPrefilterCache;
+        const expected = expectedSignalDataDate();
+        if (rows.some(r => r.source_date !== expected)) {
+          panel.hidden = true;
+          return; // source dates must agree with the last expected complete trading session.
+        }
+        const activeIds = new Set((liveBasePicks || []).map(r => String(r.stock_id || '')));
+        const samples = rows.flatMap(r => (r.candidates || []).slice(0,10).map(x => ({...x})));
+        const textRows = samples.map(x => {
+          const inModel = activeIds.has(String(x.stock_id));
+          const code = esc(x.stock_id),name = esc(x.stock_name),market = x.market === 'otc' ? '上櫃' : '上市';
+          const pct = Number(x.day_change_pct),lots = Number(x.volume_lots);
+          const change = Number.isFinite(pct) ? (pct>=0?'+':'') + pct.toFixed(2)+'%' : '－';
+          return '<div style="padding:5px 0;border-top:1px solid var(--line,rgba(120,120,120,.16));font-size:14px">'
+            +'<b>'+code+' '+name+'</b>｜'+market+'｜'+(Number.isFinite(lots)?lots.toLocaleString():'－')
+            +'張｜開收漲幅 '+esc(change)+'｜'+(inModel?'已在S模型候選':'尚未經S模型確認')
+            +'</div>';
+        }).join('');
+        const passes = rows.reduce((v,r) => v + Number(r.liquidity_pass_count||0),0);
+        const total = rows.reduce((v,r) => v + Number(r.valid_common_stocks||0),0);
+        panel.innerHTML = '<details><summary style="cursor:pointer;font-weight:650">☁️ C 官方盤後價量初篩｜'
+          +esc(expected)+'｜量≥1,000張 '+passes+' 檔（展開觀察）</summary>'
+          +'<p style="font-size:13px">上市／上櫃共讀取 '+total+' 檔｜各市場成交量前10檔範例。'
+          +'此區僅供觀察，尚未通過 MA10／20／60、KD、MACD、籌碼或防追高模型，'
+          +'不能視為買點。S 模型名單及排名完全不變。</p>'
+          +textRows+'</details>';
+        panel.hidden = false;
+      };
+      const loadCloudflarePrefilter = async () => {
+        if (stage !== 'LAUNCH' || document.hidden || !marketBridgeReady() || cfPrefilterInFlight) return;
+        if (cfPrefilterCache) { renderCloudflarePrefilter(); return; }
+        const now = Date.now();
+        if (now - cfPrefilterLastTryAt < 30*60*1000) return;
+        cfPrefilterLastTryAt = now;
+        cfPrefilterInFlight = true;
+        try {
+          const {data:auth} = await authClient.auth.getSession();
+          const jwt = auth?.session?.access_token;
+          if (!jwt) return;
+          const results = await Promise.all(['tse','otc'].map(async market => {
+            const response = await fetch(MARKET_BRIDGE_URL+'/eod-prefilter?market='+market,{
+              headers:{Authorization:'Bearer '+jwt,Accept:'application/json'},
+              cache:'no-store',signal:AbortSignal.timeout(18000)
+            });
+            if (!response.ok) throw new Error('cloudflare_prefilter_unavailable');
+            const data = await response.json();
+            if (data?.ok !== true || data?.market !== market
+                || data.prefilter_version !== '2026-10-11-bulk-eod-v1'
+                || data.preview_only !== true || data.full_model_scanned !== false
+                || data.eligible_to_trade !== false
+                || !Array.isArray(data.candidates)
+                || data.valid_common_stocks < 200
+                || !/^\d{4}-\d\d-\d\d$/.test(data.source_date||'')) {
+              throw new Error('cloudflare_prefilter_validation_failed');
+            }
+            return data;
+          }));
+          if (results.some(r => r.source_date !== expectedSignalDataDate())) return;
+          cfPrefilterCache = results;
+          renderCloudflarePrefilter();
+        } catch(error) {
+          // Route not deployed, market feed blocked or dates inconsistent:
+          // fail closed and leave all 3 S-model/radar sections unmodified.
+          const panel = $('#cfPrefilterPanel');
+          if (panel) panel.hidden = true;
+        } finally {
+          cfPrefilterInFlight = false;
+        }
+      };
+
       const fetchWithTimeout = async (url, options = {}, timeoutMs = 12000) => {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -3542,6 +3623,8 @@ h1 {
       async function load() {
         const navToken = navigationSeq;
         const requestedStage = stage;
+        if (stage === 'LAUNCH') void loadCloudflarePrefilter();
+        else { const p = $('#cfPrefilterPanel'); if (p) p.hidden = true; }
         const listEl = $('#list');
         const hasVisibleCards = !!listEl?.querySelector('[data-stock-id]');
         if (!hasVisibleCards) listEl.innerHTML =
@@ -3721,6 +3804,7 @@ h1 {
             : `<div class="box empty">${stage === 'LAUNCH' ? '目前沒有符合「發動前試單／突破確認／回踩加碼」的股票。若最新資料仍在補掃，這不代表全市場為0。' : stage === 'ENTRY' ? '目前沒有符合正式可進場條件的股票。' : stage === 'PREATTACK' ? '目前沒有需要轉入進場雷達的起漲候選。' : '目前這個階段沒有候選股。'}</div>`);
           if (stage === 'LAUNCH' && rankedPicks.length) {
             liveBasePicks = rankedPicks.slice(0, 100);
+            if (cfPrefilterCache) renderCloudflarePrefilter();
             await refreshSimpleQuotes();
             if (liveTimer) clearInterval(liveTimer);
             liveTimer = marketBridgeReady() && taipeiMarketState().open
@@ -5154,6 +5238,8 @@ h1 {
           button.classList.add('on');
           moneyFlowSectorViewActive = false;
           stage = targetStage;
+          if (stage !== 'LAUNCH') { const p = $('#cfPrefilterPanel'); if (p) p.hidden = true; }
+          else if (cfPrefilterCache) renderCloudflarePrefilter();
           updateEntryPhase();
           $('#stockSearch').value = '';
           $('#stockClearBtn').hidden = true;
