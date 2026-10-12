@@ -1002,14 +1002,14 @@ h1 {
   <body>
     <section id="memberAuth" class="box member-auth" style="display:block">
       <h2>🔐 阿勝底部起漲雷達管理員登入</h2>
-      <div class="member-auth-row">
+      <div class="member-auth-row" id="memberAuthFields" style="display:none">
         <input id="memberEmail" type="email" autocomplete="email" placeholder="Email">
         <input id="memberPassword" type="password" autocomplete="current-password" placeholder="密碼">
       </div>
-      <div class="member-auth-actions">
+      <div class="member-auth-actions" id="memberAuthButtons" style="display:none">
         <button id="memberLogin" class="primary">登入</button>
       </div>
-      <div id="memberAuthMsg" class="member-auth-msg">僅供管理員登入，請使用原有管理員帳號與密碼。</div>
+      <div id="memberAuthMsg" class="member-auth-msg">正在確認已儲存的登入狀態…</div>
     </section>
     <div id="app" style="display:none">
       <div class="wrap">
@@ -1118,6 +1118,8 @@ h1 {
       const showLogin = message => {
         radarApp.style.display = 'none';
         authBox.style.display = 'block';
+        document.querySelector('#memberAuthFields')?.removeAttribute('style');
+        document.querySelector('#memberAuthButtons')?.removeAttribute('style');
         if (message) authMsg.textContent = message;
       };
       const loadSupabaseBrowser = async () => {
@@ -1354,13 +1356,30 @@ h1 {
 
       const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
       try {
-        const meResponse = await memberFetch(MEMBER_API + '?action=me', { cache:'no-store' });
-        const me = await meResponse.json();
+        let meResponse = await memberFetch(MEMBER_API + '?action=me', { cache:'no-store' });
         if (meResponse.status === 401) {
-          await authClient.auth.signOut();
-          showLogin('登入狀態已失效，請重新登入一次。');
+          // A short-lived JWT or transient API 401 must not discard a saved login.
+          // Refresh the existing Supabase session once, then retry verification.
+          const { data: renewed, error: renewError } = await authClient.auth.refreshSession();
+          if (!renewError && renewed?.session?.access_token) {
+            memberSession = renewed.session;
+            meResponse = await memberFetch(MEMBER_API + '?action=me', { cache:'no-store' });
+          }
+        }
+        if (meResponse.status === 401) {
+          const { data: stored } = await authClient.auth.getSession();
+          if (!stored?.session?.access_token) {
+            showLogin('登入期限已到，請重新登入。');
+          } else {
+            // Keep a still-stored session and avoid showing the password form on API failure.
+            radarApp.style.display = 'block';
+            authBox.style.display = 'none';
+            const identity = document.querySelector('#memberIdentity');
+            if (identity) identity.textContent = '｜登入驗證暫時失敗，請重新整理';
+          }
           return;
         }
+        const me = await meResponse.json();
         if (!meResponse.ok || !me?.ok) throw new Error('會員驗證暫時失敗');
         if (me.membership?.role !== 'admin') {
           showLogin('此入口僅供管理員使用。會員登入頁面已停用。');
