@@ -1865,9 +1865,15 @@ h1 {
       // a membership response, a JWT, holding details or Cloudflare quotes.
       // Account namespace prevents accidental sharing in a multi-login device.
       const SHARED_MODEL_CROSS_TAB_PREFIX='asheng-s-model-public-v1:'+portfolioId+':';
+      const availableModelStorages=()=>{
+        const stores=[];
+        try{stores.push([sessionStorage,SHARED_MODEL_STORAGE_PREFIX]);}catch(error){}
+        try{stores.push([localStorage,SHARED_MODEL_CROSS_TAB_PREFIX]);}catch(error){}
+        return stores;
+      };
       const readStoredModelSnapshot=key=>{
         let latest=null;
-        for(const [storage,prefix] of [[sessionStorage,SHARED_MODEL_STORAGE_PREFIX],[localStorage,SHARED_MODEL_CROSS_TAB_PREFIX]]){
+        for(const [storage,prefix] of availableModelStorages()){
           try{
             const raw=storage.getItem(prefix+key);
             if(!raw)continue;
@@ -1884,7 +1890,7 @@ h1 {
         return latest;
       };
       const storeModelSnapshot=(key,entry)=>{
-        for(const [storage,prefix] of [[sessionStorage,SHARED_MODEL_STORAGE_PREFIX],[localStorage,SHARED_MODEL_CROSS_TAB_PREFIX]]){
+        for(const [storage,prefix] of availableModelStorages()){
           try{
             for(let i=storage.length-1;i>=0;i--){
               const k=storage.key(i);
@@ -1909,7 +1915,7 @@ h1 {
         sharedModelGeneration++;
         sharedModelSnapshots.clear();
         sharedModelInFlight.clear();
-        for(const [storage,prefix] of [[sessionStorage,SHARED_MODEL_STORAGE_PREFIX],[localStorage,SHARED_MODEL_CROSS_TAB_PREFIX]]){
+        for(const [storage,prefix] of availableModelStorages()){
           try{
             for(let i=storage.length-1;i>=0;i--){
               const k=storage.key(i);
