@@ -36,10 +36,32 @@ jobs:
         run: |
           set -euo pipefail
           BASE="https://asheng-market-bridge.home588885.workers.dev"
-          curl --fail --silent --show-error --retry 3 --retry-delay 2 "$BASE/health" -o /tmp/market-health.json
-          node -e 'const j=require("/tmp/market-health.json");if(j.ok!==true||j.service!=="asheng-market-bridge"||j.deployment_marker!=="admin-auth-market-bridge-20261010"||j.eod_prefilter_route!=="read_only_available")process.exit(1)'
-          for ROUTE in "quotes?symbols=2330:tse" "eod-prefilter?market=tse"; do
-            STATUS="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' "$BASE/$ROUTE")"
-            test "$STATUS" = 401 || { echo "Unauthenticated route must return 401, got $STATUS"; exit 1; }
+          # Cloudflare's workers.dev edge rollout can lag the successful Wrangler deploy.
+          # Poll the REAL deployed endpoint before judging the workflow result.
+          VERIFIED=false
+          for ATTEMPT in 1 2 3 4 5 6 7 8 9 10; do
+            if curl --fail --silent --show-error --max-time 8 "$BASE/health" -o /tmp/market-health.json \
+              && node -e 'const j=require("/tmp/market-health.json");if(j.ok!==true||j.service!=="asheng-market-bridge"||j.deployment_marker!=="admin-auth-market-bridge-20261010"||j.eod_prefilter_route!=="read_only_available")process.exit(1)'; then
+              VERIFIED=true
+              break
+            fi
+            echo "Waiting for deployed Worker health and eod-prefilter capability ($ATTEMPT/10)"
+            sleep 4
           done
-          echo "PASS: live Worker health, deployment marker, optional route, and auth boundaries"
+          if [ "$VERIFIED" != true ]; then
+            echo "::error::Worker deployed, but live version did not pass health checks after retry window"
+            cat /tmp/market-health.json 2>/dev/null || true
+            exit 1
+          fi
+          # Security checks MUST remain strict: both protected endpoints reject anonymous calls.
+          for ROUTE in "quotes?symbols=2330:tse" "eod-prefilter?market=tse"; do
+            VERIFIED=false
+            for ATTEMPT in 1 2 3 4 5; do
+              STATUS="$(curl --silent --show-error --max-time 8 --output /dev/null --write-out '%{http_code}' "$BASE/$ROUTE")" || STATUS="network_error"
+              if [ "$STATUS" = 401 ]; then VERIFIED=true; break; fi
+              echo "Waiting for auth boundary at $ROUTE ($ATTEMPT/5; status=$STATUS)"
+              sleep 3
+            done
+            test "$VERIFIED" = true || { echo "::error::Protected route must return HTTP 401: $ROUTE (got $STATUS)"; exit 1; }
+          done
+          echo "PASS: live Worker health after rollout, deployment marker, prefilter route, and anonymous access controls"
