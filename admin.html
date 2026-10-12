@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>阿勝底部起漲雷達｜管理員</title>
     <meta name="theme-color" content="#0b1020" />
-    <meta name="asheng-build" content="admin-pages-v9-session-s-model-cache-20261012" />
+    <meta name="asheng-build" content="admin-pages-v10-holding-survival-1250-1320-20261012" />
     <style>
 @tailwind base;
 @tailwind components;
@@ -1037,7 +1037,7 @@ h1 {
               </figure>
               <div class="risk-note"><b>1｜登入與使用入口</b><br>使用原本的管理員 Email 和密碼登入。現在只有管理員雷達，已取消獨立會員登入、會員選股頁與會員名單介面。個人已買進股票仍保存在原帳號中，不會因取消會員版而消失。</div>
               <div class="risk-note"><b>2｜S 算模型，C 提供盤中報價</b><br><b>S（Supabase）</b>保留完整 A／B／C、V5、MA10／MA20／MA60、KD、MACD、量價、籌碼及持股風控模型，不搬到 C。<br><b>C（Cloudflare）</b>只為 S 完整模型已選出的「發動前（含原發動中）、進場雷達」候選，以及管理員「已買進」股票取得盤中價；不掃全市場、不自行增刪候選，也不修改 A／B／C、V5 或籌碼結果。只有報價 Worker 健康檢查及登入驗證通過才啟用；失敗不冒充已有即時價。</div>
-              <div class="risk-note"><b>3｜每天什麼時候更新？</b><br><b>交易日 09:00～13:30</b>：C 報價橋接成功後，🟠發動前、🎯進場雷達、📌已買進在網頁前景時約每 <b>3 分鐘</b>低頻更新今日有效成交價。沒有今日有效價時不顯示 0.00，也不以昨收冒充。<br><b>交易日 13:00～13:29</b>：C 未啟用時，已買進才使用原本的收盤前低頻 S 備援，不是整天從 S 抓價。<br><b>交易日 21:00～21:55</b>：S 依原排程分批更新完整日 K 選股，並非每檔在 21:00 就全部更新完成。</div>
+              <div class="risk-note"><b>3｜每天什麼時候更新？</b><br><b>交易日 09:00～13:30</b>：C 報價橋接成功後，🟠發動前、🎯進場雷達、📌已買進在網頁前景時約每 <b>3 分鐘</b>低頻更新今日有效成交價。沒有今日有效價時不顯示 0.00，也不以昨收冒充。<br><b>交易日 13:00～13:29</b>：📌已買進 12 分鐘存活觀察只在 <b>12:50～13:20</b> 累計有效成交；C 無有效報價時不會假裝通過。<br><b>交易日 21:00～21:55</b>：S 依原排程分批更新完整日 K 選股，並非每檔在 21:00 就全部更新完成。</div>
               <div class="risk-note"><b>4｜簡單看三區</b><br>🟠 <b>發動前</b>：底部整理、均線轉強及接近發動，收錄原發動中 S 候選並顯示 🔥 發動中標籤。<br>🎯 <b>進場雷達</b>：已起漲、突破或適合回踩觀察的候選，仍須判斷風險和位置，不代表每檔都能立刻買。<br>📌 <b>已買進</b>：只顯示自己已記錄的持股、成本與風控，沒有盤中報價時也不會刪除持股。</div>
               <div class="risk-note"><b>5｜四種買點顏色與防追高</b><br>🔴 <b>明確不能買</b>：突破失敗、均線結構破壞、爆量轉弱或跌破支撐。<br>🟡 <b>近買點／等確認</b>：條件缺量或位置，先觀察。<br>🟠 <b>可小量試單</b>：風險過濾通過，部位保守。<br>🟢 <b>正式買點</b>：完整條件成立，再評估分批進場。<br>還要核對 MA10／20／60、K 棒、KD／MACD、成交量至少 1,000 張與距 MA20 的乖離。距 MA20 超過 5% 不作為適合追價的買點；盤後訊號不是即時成交保證。</div>
               <div class="risk-note"><b>6｜已買進怎麼管理？</b><br>先看「今日動作」：<b>續抱、可加碼、警戒或出清</b>，再看 MA20 是否守住及下方「續抱理由與持股規則」。獲利約 20% 可評估分批停利；跌破 MA20 或量價明顯轉弱，優先處理風險。系統不會自動下單。買進、減碼或全部賣出後，在持股卡更新成本與數量。</div>
@@ -1063,9 +1063,9 @@ h1 {
             <button class="search-clear" id="stockClearBtn" hidden>清除</button>
           </div>
           <div class="entry-phase" id="entryPhase"></div>
-          <div class="holding-note">📌 已買進：只顯示管理員自己的持股｜C 驗證成功後交易時段約每3分鐘抓價；C 未啟用時僅13:00～13:29低頻備援；S 完整模型晚上9點後分批更新。<span id="memberIdentity"></span><button class="holding-sync" id="syncHoldingsBtn">登出</button></div>
+          <div class="holding-note">📌 已買進：只顯示管理員自己的持股｜C 驗證成功後交易時段約每3分鐘抓價；持股12分鐘確認12:50～13:20；S 完整模型晚上9點後分批更新。<span id="memberIdentity"></span><button class="holding-sync" id="syncHoldingsBtn">登出</button></div>
         </section>
-                <p id="timeInfoExplanation" class="time-info-explanation" hidden>管理員三區在 C 報價驗證成功時，交易時段約每3分鐘更新有效成交價；C 未啟用時，已買進僅於13:00～13:29使用低頻備援。MA10／MA20／MA60、KD、MACD 等完整模型仍以 S 的盤後完整日 K 更新為準。</p>
+                <p id="timeInfoExplanation" class="time-info-explanation" hidden>管理員三區在 C 報價驗證成功時，交易時段約每3分鐘更新有效成交價；已買進12分鐘存活只統計12:50～13:20有效成交。MA10／MA20／MA60、KD、MACD 等完整模型仍以 S 的盤後完整日 K 更新為準。</p>
         <main class="list" id="list">
           <div class="box empty loading">正在載入候選股…</div>
         </main>
@@ -4181,7 +4181,7 @@ h1 {
         const reminder = title.includes('加碼觀察') ? action.detail + '。盤中先續抱，等待完整日K確認才考慮加碼。' : title.includes('加碼暫緩') ? action.detail + '。先管理原部位，不追價。' : /停損確認|停損警戒/.test(title) ? action.detail + '。先核對現價與成本，盤中警戒並非正式成交。' : /停損減碼|停損預警/.test(title) ? action.detail + '。暫停加碼，評估是否降低風險。' : /20%分批停利/.test(title) ? action.detail + '。評估停利約三分之一，餘部依MA20管理。' : title.includes('獲利回吐保護') ? action.detail + '。先評估減碼約三分之一，非自動下單；此條件仍在驗證。' : title.includes('獲利保護觀察') ? action.detail + '。盤中僅觀察，等待收盤確認。' : title.includes('強警示') ? '結構快速轉弱，請優先檢查持股。' : main === '出清' ? '出場訊號已確認，請處理持股。' : title.includes('第3天觀察') ? '觀察中，等待本日收盤確認。' : main === '警戒' ? '暫停加碼，先觀察後續修復。' : title.includes('候選') ? '加碼候選，等待收盤確認。' : main === '可加碼' ? '採分批節奏，不一次加滿。' : '按原持股計畫管理，避免追價。';
         return { action, main, rulesTitle, reminder };
       };
-      const HOLDING_CLOSE_WATCH_PREFIX = 'asheng-holding-close-watch-';
+      const HOLDING_CLOSE_WATCH_PREFIX = 'asheng-holding-close-watch-v2-';
       let holdingCloseWatchLoadedDate = '';
       let holdingCloseWatch = new Map();
       const holdingCloseWatchMap = () => {
@@ -4205,6 +4205,12 @@ h1 {
         const map = holdingCloseWatchMap();
         const existing = map.get(id) || null;
         if (!watch.active) return existing;
+        const quoteClock = String(quote.quote_time || '').match(/^(\\d{1,2}):(\\d{2})(?::\\d{2})?$/);
+        const quoteMinute = quoteClock ? Number(quoteClock[1]) * 60 + Number(quoteClock[2]) : NaN;
+        if (!Number.isFinite(quoteMinute) || quoteMinute < 770 || quoteMinute >= 800
+          || Number(quoteClock[1]) > 23 || Number(quoteClock[2]) > 59
+          || (existing && Number.isFinite(Number(existing.lastQuoteMinute))
+              && quoteMinute <= Number(existing.lastQuoteMinute))) return existing;
         const metrics = item?.metrics || {};
         const price = Number(quote.price);
         const prev = Number(quote.prev_close ?? metrics.close);
@@ -4220,6 +4226,10 @@ h1 {
         const now = Date.now();
         const row = {
           startedAt: Number(existing?.startedAt || now),
+          // Limit even a local clock display to 13:20, before the trial-matching period.
+          windowEndAt: Number(existing?.windowEndAt || now + (800 - watch.totalMinutes) * 60000),
+          firstQuoteMinute: existing?.firstQuoteMinute ?? quoteMinute,
+          lastQuoteMinute: quoteMinute,
           updatedAt: now,
           samples: Math.min(20, Number(existing?.samples || 0) + 1),
           failed: existing?.failed === true || hardRisk,
@@ -4235,20 +4245,53 @@ h1 {
         persistHoldingCloseWatch();
         return row;
       };
+      const holdingSurvivalState = (row,watch=closeWatchState()) => {
+        const started=Number(row?.startedAt||0);
+        const endAt=Number(row?.windowEndAt||0);
+        // Locally animate observed time. Elapsed time alone NEVER proves survival.
+        const until=started ? Math.min(Date.now(),endAt>started?endAt:Date.now()) : 0;
+        const elapsed=started ? Math.max(0,Math.min(12,Math.floor((until-started)/60000))) : 0;
+        const quoteSpan=Number(row?.lastQuoteMinute)-Number(row?.firstQuoteMinute);
+        const validSpan=Number.isFinite(quoteSpan)&&quoteSpan>=12;
+        const passed=elapsed>=12&&validSpan&&Number(row?.samples||0)>=3&&row?.failed!==true;
+        const failed=row?.failed===true;
+        const ended=watch.phase==='after';
+        const label=failed?'⚠️ 12分鐘確認未通過'
+          :passed?'✅ 12分鐘存活通過'
+          :ended?'⚠️ 13:20已截止｜有效樣本不足，不能判定通過'
+          :elapsed>=12?'⏱ 計時12分｜等待有效成交樣本確認'
+          :`⏱ 12分鐘確認 ${elapsed}/12 分`;
+        return {elapsed,progress:Math.round(elapsed/12*100),passed,label};
+      };
+      const refreshHoldingSurvivalDisplay = () => {
+        if(stage!=='HOLDING'||document.hidden)return;
+        for(const el of document.querySelectorAll('[data-holding-watch-id]')){
+          const row=holdingCloseWatchMap().get(String(el.getAttribute('data-holding-watch-id')||''));
+          if(!row)continue;
+          const state=holdingSurvivalState(row);
+          const label=el.querySelector('[data-watch-survival-label]');
+          if(label)label.textContent=state.label+'｜'+(row.projectedRatio==null?'量能待資料':'推估日量約 '+num(Number(row.projectedRatio),2)+'x 20日均量');
+          const mins=el.querySelector('[data-watch-survival-minutes]');
+          if(mins)mins.textContent=state.elapsed+'/12 分';
+          const fill=el.querySelector('[data-watch-survival-fill]');
+          if(fill)fill.style.width=state.progress+'%';
+          const wrapper=el.querySelector('.survival-progress');
+          if(wrapper)wrapper.classList.toggle('done',state.passed);
+        }
+      };
+
       const holdingCloseWatchHtml = (item, quote = null) => {
         const watch = closeWatchState();
         const row = holdingCloseWatchMap().get(String(item?.stock_id || '')) || null;
         if (!row) {
           const text = watch.phase === 'before'
-            ? '🕐 13:00 啟動收盤前量價＋12分鐘確認'
+            ? '🕐 12:50 開始12分鐘確認｜13:20截止'
             : watch.active
-              ? '⏱ 收盤前確認準備中｜等待第一筆有效成交'
+              ? '⏱ 收盤前12分鐘確認中｜等待12:50後第一筆有效成交'
               : '🌙 今日未留下收盤前確認紀錄｜晚上9點看完整模型';
           return `<div class="signal-note">${text}</div>`;
         }
-        const elapsed = Math.max(0, Math.floor((Number(row.updatedAt || 0) - Number(row.startedAt || 0)) / 60000));
-        const done = elapsed >= 12;
-        const progress = Math.max(0, Math.min(100, Math.round(elapsed / 12 * 100)));
+        const survivalState=holdingSurvivalState(row,watch);
         const price = Number(row.price);
         const ma20 = Number(row.ma20);
         const ratio = row.projectedRatio == null ? null : Number(row.projectedRatio);
@@ -4265,11 +4308,9 @@ h1 {
         } else if (dayPct != null && dayPct >= 0 && ratio != null && ratio >= 1) {
           cls = 'green'; action = '🟢 續抱｜量價正常'; volumeTip = '量價配合';
         }
-        const survival = done
-          ? (row.failed ? '⚠️ 12分鐘確認未通過' : '✅ 12分鐘存活通過')
-          : `⏱ 12分鐘確認 ${elapsed}/12 分`;
+        const survival=survivalState.label;
         const ratioText = ratio == null ? '量能待資料' : `推估日量約 ${num(ratio,2)}x 20日均量`;
-        return `<div class="holding-status ${cls}"><b>${action}</b><span>${survival}｜${ratioText}</span><small>${volumeTip}｜樣本 ${Number(row.samples || 0)} 次｜最後 ${esc(row.quoteTime || '-')}</small><div class="survival-progress ${done ? 'done' : ''}" style="width:100%"><div class="survival-progress-head"><span>收盤前存活</span><span>${Math.min(elapsed,12)}/12 分</span></div><div class="survival-progress-track"><div class="survival-progress-fill" style="width:${progress}%"></div></div></div></div>`;
+        return `<div class="holding-status ${cls}" data-holding-watch-id="${esc(String(item?.stock_id||''))}"><b>${action}</b><span data-watch-survival-label>${survival}｜${ratioText}</span><small>${volumeTip}｜有效成交樣本 ${Number(row.samples || 0)} 次｜最後 ${esc(row.quoteTime || '-')}｜13:20截止</small><div class="survival-progress ${survivalState.passed ? 'done' : ''}" style="width:100%"><div class="survival-progress-head"><span>收盤前存活</span><span data-watch-survival-minutes>${survivalState.elapsed}/12 分</span></div><div class="survival-progress-track"><div class="survival-progress-fill" data-watch-survival-fill style="width:${survivalState.progress}%"></div></div></div></div>`;
       };
 
       const holdingActionHtml = (item, quote = null) => {
@@ -4655,11 +4696,12 @@ h1 {
       };
       const closeWatchState = () => {
         const market = taipeiMarketState();
-        const active = market.weekday && market.totalMinutes >= 780 && market.totalMinutes < 810;
+        // Only the HOLDING survival check is bounded here; C's 3-minute quote service remains unchanged.
+        const active = market.weekday && market.totalMinutes >= 770 && market.totalMinutes < 800;
         return {
           ...market,
           active,
-          phase: !market.weekday ? 'closed' : market.totalMinutes < 780 ? 'before' : active ? 'active' : 'after'
+          phase: !market.weekday ? 'closed' : market.totalMinutes < 770 ? 'before' : active ? 'active' : 'after'
         };
       };
       const updateEntryPhase = () => {
@@ -5169,10 +5211,10 @@ h1 {
           }
         };
 
-        // 已買進平時只讀最近模型快照；13:00～13:29 才啟動低頻收盤前量價確認。
+        // 已買進 12:50～13:20 計算12分鐘存活；C 原本的三分鐘報價取樣不變。
         await render();
         if (!holdingStillCurrent()) return;
-        // 已買進只保留收盤前低頻取樣；其餘盤中不抓報價。
+        // 已買進只保留原有約三分鐘報價取樣，存活統計於13:20停止。
         const manageHoldingQuoteTimer = () => {
           const active = holdingStillCurrent() && !document.hidden; // 前景保留輕量排程，隔日開盤能自動恢復
           if (!active) {
@@ -5191,7 +5233,7 @@ h1 {
           manageHoldingQuoteTimer();
           if (holdingStillCurrent() && !document.hidden && (marketBridgeReady() ? taipeiMarketState().open : closeWatchState().active)
               && !holdingQuoteRefreshing && Date.now() - lastHoldingQuoteRequestAt >= 150000) {
-            render(); // 13:00後回到前景，距上次超過150秒才補抓，避免重複請求
+            render(); // 回到前景時先檢查冷卻時間，避免重複請求
           }
         };
         manageHoldingQuoteTimer();
@@ -5318,7 +5360,8 @@ h1 {
         refreshCurrent();
       });
       updateEntryPhase();
-      setInterval(updateEntryPhase, 30000);
+      // Reuse the existing UI-only timer; no extra S/C fetches or schedules.
+      setInterval(() => {updateEntryPhase(); refreshHoldingSurvivalDisplay();}, 30000);
       let lastSeenExternalCommitAt = '';
       const pageOpenedAt = Date.now();
       let lastCommitProbeAt = 0;
