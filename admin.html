@@ -3206,25 +3206,50 @@ h1 {
         };
         const focusRows=sortEntryVisual(safeWatch.filter(row=>!inRows(recalcRows,row)&&visuallyStrong(row))).slice(0,8);
         const focusIds=new Set(focusRows.map(rowId));
-        const waitRows=sortEntryVisual(safeWatch.filter(row=>!focusIds.has(rowId(row))));
+        // The top-eight cap is display-only. An existing S-model entry/launch signal
+        // must not become a yellow "waiting" stock simply because it ranks ninth.
+        // Off-hours actions remain observational; these are NOT newly issued buy signals.
+        const signalSourceIds=new Set([...earlyRows,...starterRows,...completedRows].map(rowId));
+        const hasExistingEntrySignal=row=>
+          String(row?.item?.as_of||'')===expectedSignalDataDate()
+          && row?.action?.stale_model!==true
+          && row?.action?.candle_guard!==true
+          && row?.action?.active_launch_fallback!==true
+          && (signalSourceIds.has(rowId(row))
+            || ['pre','breakout','add'].includes(String(row?.action?.key||'')));
+        const signalRows=sortEntryVisual(safeWatch.filter(row=>
+          !focusIds.has(rowId(row)) && hasExistingEntrySignal(row)));
+        const signalIds=new Set(signalRows.map(rowId));
+        const separateRows=list=>sortEntryVisual(list.filter(row=>
+          !focusIds.has(rowId(row)) && !signalIds.has(rowId(row))));
+        const queuedDisplayRows=separateRows(queuedRows);
+        const recalcDisplayRows=separateRows(recalcRows);
+        const separateIds=new Set([...queuedDisplayRows,...recalcDisplayRows].map(rowId));
+        const waitRows=sortEntryVisual(safeWatch.filter(row=>
+          !focusIds.has(rowId(row)) && !signalIds.has(rowId(row)) && !separateIds.has(rowId(row))));
         const pullbackRows=sortEntryVisual(highRows);
         const avoidRows=sortEntryVisual([...blockedRows,...weakeningRows]);
-        const displayedTotal=focusRows.length+waitRows.length+pullbackRows.length+avoidRows.length;
+        const displayedTotal=focusRows.length+signalRows.length+queuedDisplayRows.length+
+          recalcDisplayRows.length+waitRows.length+pullbackRows.length+avoidRows.length;
         const banner=`<div class="entry-list-overview" data-stable-key="entry-overview">
           <strong>🎯 進場雷達｜${displayedTotal} 檔追蹤</strong>
-          <span>⭐ 優先查看 ${focusRows.length}　🟡 待確認 ${waitRows.length}　🔵 等回踩 ${pullbackRows.length}　🔴 風險避開 ${avoidRows.length}</span>
+          <span>⭐ 優先 ${focusRows.length}　🟠 進場候選 ${signalRows.length}　🌱 待發動 ${queuedDisplayRows.length}　🟡 待確認 ${waitRows.length}　⚡ 待補算 ${recalcDisplayRows.length}　🔵 等回踩 ${pullbackRows.length}　🔴 風險避開 ${avoidRows.length}</span>
           <small>基準交易日 ${esc(expectedSignalDataDate())}｜舊模型僅觀察、不列新買點｜非盤中即時買進指令｜點股票名稱展開資料${staleRows.length?'｜另有 '+staleRows.length+' 檔過期快照未列入':''}</small>
         </div>`;
         const outHtml = banner+
           entryBucketHtml('focus','⭐ 優先查看','原模型條件相對成熟，仍須核對當日行情',focusRows,{open:true,tone:'focus',preview:6})+
-          entryBucketHtml('wait','🟡 等待確認','尚缺量價、位置或其他條件，並非可直接買進',waitRows,{open:!focusRows.length,tone:'near',preview:5})+
-          entryBucketHtml('pullback','🔵 位置偏高｜等回踩','避免追高，觀察支撐與短均線',pullbackRows,{open:!focusRows.length&&!waitRows.length,tone:'high',preview:5})+
-          entryBucketHtml('avoid','🔴 風險警戒｜先避開','已觸發風險或轉弱條件，不列買進候選',avoidRows,{open:!focusRows.length&&!waitRows.length&&!pullbackRows.length,tone:'blocked',preview:5});
+          entryBucketHtml('signal','🟠 起漲／進場候選','原模型已有追蹤、試單或突破訊號；仍須核對今日成交與風險，並非直接買進指令',signalRows,{open:!focusRows.length,tone:'focus',preview:5})+
+          entryBucketHtml('queued','🌱 底部確認｜等待發動','底部型態成立不代表已突破，須再等量價與均線確認',queuedDisplayRows,{open:!focusRows.length&&!signalRows.length,tone:'near',preview:5})+
+          entryBucketHtml('wait','🟡 等待確認','尚缺量價、位置或其他條件，並非可直接買進',waitRows,{open:!focusRows.length&&!signalRows.length&&!queuedDisplayRows.length,tone:'near',preview:5})+
+          entryBucketHtml('recalc','⚡ 收盤資料待補算','資料尚未齊全，不列進場候選或一般等確認',recalcDisplayRows,{open:false,tone:'near',preview:5})+
+          entryBucketHtml('pullback','🔵 位置偏高｜等回踩','避免追高，觀察支撐與短均線',pullbackRows,{open:!focusRows.length&&!signalRows.length&&!queuedDisplayRows.length&&!waitRows.length,tone:'high',preview:5})+
+          entryBucketHtml('avoid','🔴 風險警戒｜先避開','已觸發風險或轉弱條件，不列買進候選',avoidRows,{open:!focusRows.length&&!signalRows.length&&!queuedDisplayRows.length&&!waitRows.length&&!pullbackRows.length,tone:'blocked',preview:5});
         updateBuySignalNotice(focusRows);
         stableListRender(outHtml,{quoteUpdate});
         return { earlyRows, starterRows, completedRows, recalcRows, blockedRows, highRows,
           weakeningRows, queuedRows, nearRows, trackingRows, staleRows,
-          focusRows, waitRows, pullbackRows, avoidRows, displayedTotal };
+          focusRows, signalRows, queuedDisplayRows, recalcDisplayRows,
+          waitRows, pullbackRows, avoidRows, displayedTotal };
       };
 
       const isEntryRadarItem = item => {
@@ -4683,7 +4708,7 @@ h1 {
               .sort((a,b)=>b.action.rank-a.action.rank);
             const view=renderEntrySections(rows);
             setCandidateSummary('bCount', view.displayedTotal, '最近完整日K追蹤名單');
-            $('#note').textContent = `🎯 進場雷達｜追蹤 ${view.displayedTotal} 檔｜優先 ${view.focusRows.length}、待確認 ${view.waitRows.length}、等回踩 ${view.pullbackRows.length}、風險 ${view.avoidRows.length}｜晚上9點起分批更新日K，盤中不抓候選股報價。`;
+            $('#note').textContent = `🎯 進場雷達｜追蹤 ${view.displayedTotal} 檔｜優先 ${view.focusRows.length}、進場候選 ${view.signalRows.length}、待發動 ${view.queuedDisplayRows.length}、待確認 ${view.waitRows.length}、待補算 ${view.recalcDisplayRows.length}、等回踩 ${view.pullbackRows.length}、風險 ${view.avoidRows.length}｜晚上9點起分批更新日K，盤中不抓候選股報價。`;
           } else {
             stableListRender(liveBasePicks.map(item => card(item)).join(''));
             $('#note').textContent = '看盤候選｜日 K 模型快照；只有已買進股票更新盤中價格。';
@@ -4718,7 +4743,7 @@ h1 {
               : '｜📋 盤後起漲追蹤暫無已驗證候選';
             $('#note').textContent = `🎯 進場雷達｜🚀盤中起漲：待開盤｜🔵小量試單：待開盤核對`
               +preopenStarterText
-              +`｜🟡等確認 ${groups.nearRows.length}｜🔵等回踩 ${groups.highRows.length}｜🟠轉弱 ${groups.weakeningRows.length}｜非交易時段不發出試單訊號。${scanProgressSuffix()}`;
+              +`｜🟡等確認 ${groups.waitRows.length}｜🔵等回踩 ${groups.pullbackRows.length}｜🟠轉弱 ${groups.avoidRows.length}｜非交易時段不發出試單訊號。${scanProgressSuffix()}`;
             return;
           }
           stableListRender(liveBasePicks.map(item => card(item)).join(''));
@@ -4753,8 +4778,8 @@ h1 {
             const confirmed = rows.filter(row => row.action.phase === 'confirmed').length;
             const finalWait = rows.filter(row => row.action.phase === 'final_wait').length;
             $('#note').textContent = finalQuoteWindow
-              ? `🎯 盤後整理｜📌明日優先 ${groups.completedRows.length}｜⚡日K補算 ${groups.recalcRows.length}｜🔵等回踩 ${groups.highRows.length}｜🟠轉弱 ${groups.weakeningRows.length}｜過期排除 ${groups.staleRows.length}｜資料完成後自動更新。${scanProgressSuffix()}`
-              : `🎯 進場雷達｜🚀盤中起漲 ${groups.earlyRows.length}｜🔵小量試單 ${groups.starterRows.length}｜🟡等確認 ${groups.nearRows.length}｜🔵等回踩 ${groups.highRows.length}｜🟠轉弱 ${groups.weakeningRows.length}${quoteCoverage}｜盤中起漲優先看最上方。${scanProgressSuffix()}`;
+              ? `🎯 盤後整理｜📌明日優先 ${groups.completedRows.length}｜⚡日K補算 ${groups.recalcRows.length}｜🔵等回踩 ${groups.pullbackRows.length}｜🟠轉弱 ${groups.avoidRows.length}｜過期排除 ${groups.staleRows.length}｜資料完成後自動更新。${scanProgressSuffix()}`
+              : `🎯 進場雷達｜🚀盤中起漲 ${groups.earlyRows.length}｜🔵小量試單 ${groups.starterRows.length}｜🟡等確認 ${groups.waitRows.length}｜🔵等回踩 ${groups.pullbackRows.length}｜🟠轉弱 ${groups.avoidRows.length}${quoteCoverage}｜盤中起漲優先看最上方。${scanProgressSuffix()}`;
             return;
           }
           const ranked = liveBasePicks.map(item => ({ item, quote: quoteMap.get(String(item.stock_id)) })).filter(row => row.quote).sort((a, b) => {
