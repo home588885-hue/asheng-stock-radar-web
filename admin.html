@@ -1001,7 +1001,7 @@ h1 {
   </head>
   <body>
     <section id="memberAuth" class="box member-auth" style="display:block">
-      <h2>🔐 阿勝底部起漲雷達管理員登入</h2>
+      <h2 id="memberAuthTitle" style="display:none">🔐 阿勝底部起漲雷達管理員登入</h2>
       <div class="member-auth-row" id="memberAuthFields" style="display:none">
         <input id="memberEmail" type="email" autocomplete="email" placeholder="Email">
         <input id="memberPassword" type="password" autocomplete="current-password" placeholder="密碼">
@@ -1118,6 +1118,7 @@ h1 {
       const showLogin = message => {
         radarApp.style.display = 'none';
         authBox.style.display = 'block';
+        document.querySelector('#memberAuthTitle')?.removeAttribute('style');
         document.querySelector('#memberAuthFields')?.removeAttribute('style');
         document.querySelector('#memberAuthButtons')?.removeAttribute('style');
         if (message) authMsg.textContent = message;
@@ -1150,7 +1151,8 @@ h1 {
       try {
         supabaseBrowser = await loadSupabaseBrowser();
       } catch (error) {
-        showLogin('登入元件載入失敗，請重新整理一次。');
+        // A temporary JS/CDN failure is not proof of logout.
+        authMsg.textContent = '登入服務暫時無法連線，畫面尚未確認登出；請稍後再開啟。';
         return;
       }
       const authClient = supabaseBrowser.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
@@ -1647,7 +1649,13 @@ h1 {
       let holdingModelRefreshing = false;
       let holdingVisibilityControl = null; // 已買進頁專屬，切換分頁後失效
       let pullbackWatch = new Map();
+      // Preserve only tab choice per verified account, never stored portfolio HTML.
+      const LAST_RADAR_STAGE_KEY = 'asheng-last-stage-v1-' + portfolioId;
       let stage = 'LAUNCH';
+      try {
+        const savedStage = localStorage.getItem(LAST_RADAR_STAGE_KEY);
+        if (['LAUNCH','ENTRY','HOLDING'].includes(savedStage)) stage = savedStage;
+      } catch (error) {}
       let navigationSeq = 0;
       const stageViewCache = new Map();
       let liveTimer = null;
@@ -5402,8 +5410,9 @@ h1 {
       Array.from(document.querySelectorAll('.tab')).forEach(button =>
         button.addEventListener('click', () => {
           const targetStage = button.dataset.stage || '';
-          if (!targetStage) return;
-          if (!moneyFlowSectorViewActive && !($('#stockSearch')?.value || '').trim()) {
+          if (!targetStage || targetStage === stage) return;
+          if (!moneyFlowSectorViewActive && !($('#stockSearch')?.value || '').trim()
+              && stage !== 'HOLDING') {
             stageViewCache.set(stage, $('#list').innerHTML);
           }
           navigationSeq += 1;
@@ -5412,12 +5421,15 @@ h1 {
           if (livePoolTimer) { clearInterval(livePoolTimer); livePoolTimer = null; }
           holdingVisibilityControl = null;
           liveBasePicks = [];
-          stageViewCache.delete(targetStage);
+          // Reuse the latest public-market DOM within this signed-in page session.
+          // Held stock cards are never reused without the server holdings check.
+          const preservedTabHtml = targetStage !== 'HOLDING' ? stageViewCache.get(targetStage) : null;
           Array.from(document.querySelectorAll('.tab')).forEach(item => item.classList.remove('on'));
           button.classList.add('on');
           moneyFlowSectorViewActive = false;
           stage = targetStage;
-            updateEntryPhase();
+          try { localStorage.setItem(LAST_RADAR_STAGE_KEY, stage); } catch (error) {}
+          updateEntryPhase();
           $('#stockSearch').value = '';
           $('#stockClearBtn').hidden = true;
           const loadingText = stage === 'HOLDING'
@@ -5425,7 +5437,8 @@ h1 {
             : stage === 'ENTRY'
               ? '🎯 已切換到進場雷達｜正在更新…'
               : '🟠 已切換到發動前｜正在更新…';
-          $('#list').innerHTML = '<div class="box empty loading" data-stage-loading="1">'+loadingText+'</div>';
+          $('#list').innerHTML = preservedTabHtml ||
+            '<div class="box empty loading" data-stage-loading="1">'+loadingText+'</div>';
           if (stage === 'HOLDING') loadHoldingCards();
           else if (stage === 'ENTRY') loadLiveMonitor();
           else load();
@@ -5507,14 +5520,10 @@ h1 {
         const now = Date.now();
         if (now - lastEntryResumeAt < 1500) return;
         lastEntryResumeAt = now;
-        if (stage === 'ENTRY') {
-          refreshLiveQuotes();
-          if (now - lastEntryPoolRefreshAt >= 300000) refreshV5MonitorPool();
-        } else if (stage === 'LAUNCH') {
-          refreshSimpleQuotes();
-        } else if (stage === 'HOLDING') {
-          if (!$('#list')?.querySelector('[data-stock-id]')) loadHoldingCards();
-          else if (typeof holdingVisibilityControl === 'function') holdingVisibilityControl();
+        // Keep current stock cards as-is. Existing foreground quote timer resumes
+        // naturally; switching apps does not rebuild model pools or clear cards.
+        if (stage === 'HOLDING' && typeof holdingVisibilityControl === 'function') {
+          holdingVisibilityControl();
         }
       };
       // iOS 切換 App／瀏覽器標籤：背景立即停用報價定時器；前景恢復由上方處理。
@@ -5526,29 +5535,19 @@ h1 {
       });
       document.addEventListener('visibilitychange', refreshEntryOnResume);
       window.addEventListener('focus', refreshEntryOnResume);
-      document.addEventListener('visibilitychange', checkExternalScanCommit);
-      window.addEventListener('focus', checkExternalScanCommit);
-      const PAGE_BUILD = 'admin-pages-v8-shared-s-model-cache-20261012';
-      let pageVersionCheckAt = 0;
-      const checkLatestPageBuild = async () => {
-        if (document.hidden) return;
-        const now = Date.now();
-        if (now - pageVersionCheckAt < 60000) return;
-        pageVersionCheckAt = now;
-        try {
-          const response = await fetch(location.pathname + '?_build_check=' + now, { cache:'no-store' });
-          if (!response.ok) return;
-          const html = await response.text();
-          const match = html.match(/name=\"asheng-build\" content=\"([^\"]+)\"/);
-          if (match && match[1] && match[1] !== PAGE_BUILD) location.reload();
-        } catch (error) {}
-      };
-      window.addEventListener('pageshow', event => { if (event.persisted) location.reload(); else checkLatestPageBuild(); });
-      document.addEventListener('visibilitychange', checkLatestPageBuild);
-      window.addEventListener('focus', checkLatestPageBuild);
+      // No forced reload on pageshow (including iOS bfcache) or when a new
+      // source build is deployed. User's explicit refresh button remains available.
+      window.addEventListener('pageshow', event => {
+        if (event.persisted) refreshEntryOnResume();
+      });
       (async () => {
+        Array.from(document.querySelectorAll('.tab')).forEach(button =>
+          button.classList.toggle('on', button.dataset.stage === stage));
+        updateEntryPhase();
         await configureCloudflareMarketBridge();
-        load();
+        if (stage === 'HOLDING') loadHoldingCards();
+        else if (stage === 'ENTRY') loadLiveMonitor();
+        else load();
         loadHoldings();
       })();
     })();
