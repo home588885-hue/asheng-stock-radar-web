@@ -1861,29 +1861,39 @@ h1 {
       const sharedModelSnapshots=new Map(), sharedModelInFlight=new Map();
       // Session-only persistence avoids refetch on reload; portfolio/C quotes stay separate.
       const SHARED_MODEL_STORAGE_PREFIX='asheng-s-model-v2:';
+      // Only already-authorized, public-market EOD candidate payloads; never cache
+      // a membership response, a JWT, holding details or Cloudflare quotes.
+      // Account namespace prevents accidental sharing in a multi-login device.
+      const SHARED_MODEL_CROSS_TAB_PREFIX='asheng-s-model-public-v1:'+portfolioId+':';
       const readStoredModelSnapshot=key=>{
-        try{
-          const raw=sessionStorage.getItem(SHARED_MODEL_STORAGE_PREFIX+key);
-          if(!raw)return null;
-          const value=JSON.parse(raw);
-          if(!value || Date.now()-Number(value.savedAt)>=sharedSnapshotTTL()
-             || !value.data?.ok || !Array.isArray(value.data.picks)
-             || !isLockedRulePayload(value.data)){
-            sessionStorage.removeItem(SHARED_MODEL_STORAGE_PREFIX+key);
-            return null;
-          }
-          return value;
-        }catch{return null;}
+        let latest=null;
+        for(const [storage,prefix] of [[sessionStorage,SHARED_MODEL_STORAGE_PREFIX],[localStorage,SHARED_MODEL_CROSS_TAB_PREFIX]]){
+          try{
+            const raw=storage.getItem(prefix+key);
+            if(!raw)continue;
+            const value=JSON.parse(raw);
+            if(!value || Date.now()-Number(value.savedAt)>=sharedSnapshotTTL()
+               || !value.data?.ok || !Array.isArray(value.data.picks)
+               || !isLockedRulePayload(value.data)){
+              storage.removeItem(prefix+key);
+              continue;
+            }
+            if(!latest||Number(value.savedAt)>Number(latest.savedAt))latest=value;
+          }catch{/* browser may disable storage */}
+        }
+        return latest;
       };
       const storeModelSnapshot=(key,entry)=>{
-        try{
-          for(let i=sessionStorage.length-1;i>=0;i--){
-            const k=sessionStorage.key(i);
-            if(k?.startsWith(SHARED_MODEL_STORAGE_PREFIX) && !k.includes(expectedSignalDataDate()+'|'))
-              sessionStorage.removeItem(k);
-          }
-          sessionStorage.setItem(SHARED_MODEL_STORAGE_PREFIX+key,JSON.stringify(entry));
-        }catch{/* keep memory cache when storage quota is unavailable */}
+        for(const [storage,prefix] of [[sessionStorage,SHARED_MODEL_STORAGE_PREFIX],[localStorage,SHARED_MODEL_CROSS_TAB_PREFIX]]){
+          try{
+            for(let i=storage.length-1;i>=0;i--){
+              const k=storage.key(i);
+              if(k?.startsWith(prefix) && !k.includes(expectedSignalDataDate()+'|'))
+                storage.removeItem(k);
+            }
+            storage.setItem(prefix+key,JSON.stringify(entry));
+          }catch{/* quota/storage denial: in-memory cache continues */}
+        }
       };
       let sharedModelGeneration=0;
       const sharedSnapshotTTL=()=>{
@@ -1891,18 +1901,22 @@ h1 {
           timeZone:'Asia/Taipei',hour:'2-digit',hourCycle:'h23'
         }).format(new Date()));
         // Fresh S batches arrive at night: shorten TTL without additional polling.
-        return hour>=21 && hour<=22 ? 60000 : 900000;
+        // Nightly batches update frequently; 2 minutes bounds cross-tab staleness.
+        // Outside EOD update window, snapshots remain at the existing 15 minutes.
+        return hour>=21 && hour<=22 ? 120000 : 900000;
       };
       const invalidateSharedModelSnapshots=()=>{
         sharedModelGeneration++;
         sharedModelSnapshots.clear();
         sharedModelInFlight.clear();
-        try{
-          for(let i=sessionStorage.length-1;i>=0;i--){
-            const k=sessionStorage.key(i);
-            if(k?.startsWith(SHARED_MODEL_STORAGE_PREFIX))sessionStorage.removeItem(k);
-          }
-        }catch{}
+        for(const [storage,prefix] of [[sessionStorage,SHARED_MODEL_STORAGE_PREFIX],[localStorage,SHARED_MODEL_CROSS_TAB_PREFIX]]){
+          try{
+            for(let i=storage.length-1;i>=0;i--){
+              const k=storage.key(i);
+              if(k?.startsWith(prefix))storage.removeItem(k);
+            }
+          }catch{}
+        }
       };
       const fetchSharedModelSnapshot=async(url,timeoutMs=15000)=>{
         const key=expectedSignalDataDate()+'|'+String(url);
@@ -5146,8 +5160,17 @@ h1 {
       };
 
       let holdingsLastReadSucceeded = false;
-      async function loadHoldings() {
-        if (holdingsFetchPromise) return holdingsFetchPromise;
+      let holdingsLastVerifiedAt = 0;
+      async function loadHoldings({force=false}={}) {
+        // Only reuse a recently server-verified list within the SAME page/account.
+        // Writes and explicit refresh always reverify; persisted localStorage holdings
+        // are NEVER treated as confirmed, including after opening a new page.
+        if (holdingsFetchPromise) {
+          if (!force) return holdingsFetchPromise;
+          await holdingsFetchPromise;
+        }
+        if (!force && holdingsLastReadSucceeded && Date.now()-holdingsLastVerifiedAt<20000)
+          return holdings;
         holdingsFetchPromise = (async () => {
           try {
             const response = await fetchWithTimeout(HOLDINGS_API, { cache: 'no-store' }, 4500);
@@ -5157,9 +5180,11 @@ h1 {
             holdings = new Map(data.holdings.filter(item => item?.active === true)
               .map(item => [String(item.stock_id), item]));
             holdingsLastReadSucceeded = true;
+            holdingsLastVerifiedAt = Date.now();
             cacheHoldings();
           } catch (error) {
             holdingsLastReadSucceeded = false;
+            holdingsLastVerifiedAt = 0;
             if (!holdings.size) restoreCachedHoldings();
           } finally {
             holdingsFetchPromise = null;
@@ -5366,7 +5391,7 @@ h1 {
         cacheHoldings();
         pullbackWatch.delete(String(stockId));
         await savePullbackWatchRows([{ stock_id:String(stockId), state:'bought', active:false, reason:'已買進，停止回踩天數追蹤' }]);
-        await loadHoldings();
+        await loadHoldings({force:true});
         refreshCurrent();
       }
 
@@ -5378,7 +5403,7 @@ h1 {
         holdings.delete(String(stockId));
         stageViewCache.delete('HOLDING');
         cacheHoldings();
-        await loadHoldings();
+        await loadHoldings({force:true});
         // The API acknowledges member sales before its admin mirror update.
         // Verify the one existing holdings GET; never silently claim completion.
         if (!holdingsLastReadSucceeded || holdings.has(String(stockId))) {
@@ -5471,6 +5496,7 @@ h1 {
       });
       $('#refresh').addEventListener('click',()=>{
         invalidateSharedModelSnapshots();
+        holdingsLastVerifiedAt=0;
         refreshCurrent();
       });
       updateEntryPhase();
