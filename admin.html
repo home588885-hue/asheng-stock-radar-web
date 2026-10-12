@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>阿勝底部起漲雷達｜管理員</title>
     <meta name="theme-color" content="#0b1020" />
-    <meta name="asheng-build" content="admin-pages-v7-merge-active-20261012" />
+    <meta name="asheng-build" content="admin-pages-v8-shared-s-model-cache-20261012" />
     <style>
 @tailwind base;
 @tailwind components;
@@ -1830,6 +1830,46 @@ h1 {
           clearTimeout(timer);
         }
       };
+      // Shared S model snapshots ONLY. Never alter Cloudflare quotes or private holdings.
+      const sharedModelSnapshots=new Map(), sharedModelInFlight=new Map();
+      let sharedModelGeneration=0;
+      const sharedSnapshotTTL=()=>{
+        const hour=Number(new Intl.DateTimeFormat('en-US',{
+          timeZone:'Asia/Taipei',hour:'2-digit',hourCycle:'h23'
+        }).format(new Date()));
+        // Fresh S batches arrive at night: shorten TTL without additional polling.
+        return hour>=21 ? 180000 : 900000;
+      };
+      const invalidateSharedModelSnapshots=()=>{
+        sharedModelGeneration++;
+        sharedModelSnapshots.clear();
+        sharedModelInFlight.clear();
+      };
+      const fetchSharedModelSnapshot=async(url,timeoutMs=15000)=>{
+        const key=expectedSignalDataDate()+'|'+String(url);
+        const cache=sharedModelSnapshots.get(key);
+        if(cache && Date.now()-cache.savedAt<sharedSnapshotTTL()
+          && cache.data?.ok && isLockedRulePayload(cache.data))
+          return {response:{ok:true},data:cache.data,fromSharedCache:true};
+        const ongoing=sharedModelInFlight.get(key);
+        if(ongoing)return ongoing;
+        const generation=sharedModelGeneration;
+        const job=(async()=>{
+          const result=await fetchJsonWithTimeout(url,{cache:'no-store'},timeoutMs);
+          if(result.response?.ok && result.data?.ok &&
+            isLockedRulePayload(result.data) && Array.isArray(result.data.picks) &&
+            generation===sharedModelGeneration &&
+            key.startsWith(expectedSignalDataDate()+'|')){
+            sharedModelSnapshots.set(key,{savedAt:Date.now(),data:result.data});
+            if(sharedModelSnapshots.size>6)
+              sharedModelSnapshots.delete(sharedModelSnapshots.keys().next().value);
+          }
+          return result;
+        })();
+        sharedModelInFlight.set(key,job);
+        try{return await job;}
+        finally{if(sharedModelInFlight.get(key)===job)sharedModelInFlight.delete(key);}
+      };
       const fetchAnalyzerJsonWithTimeout = async (query, options = {}, timeoutMs = 12000) => {
         const suffix = String(query || '');
         try {
@@ -3496,7 +3536,7 @@ h1 {
             for (let attempt = 0; attempt < 2; attempt++) {
               try {
                 const limit = attempt === 0 ? '250' : '100';
-                const result = await fetchJsonWithTimeout(API + '&' + new URLSearchParams({ limit, fresh_hours:'144', mode: 'launch' }).toString(), { cache: 'no-store' }, attempt === 0 ? 15000 : 12000);
+                const result = await fetchSharedModelSnapshot(API + '&' + new URLSearchParams({ limit, fresh_hours:'144', mode: 'launch' }).toString(), attempt === 0 ? 15000 : 12000);
                 response = result.response;
                 launchData = result.data;
                 if (response.ok && launchData.ok) break;
@@ -4731,10 +4771,10 @@ h1 {
       const entrySourceUrl = (base, params) => base + (String(base).includes('?') ? '&' : '?') + params.toString();
       const loadEntrySourcePair = async () => {
         const paramsV5 = new URLSearchParams({ limit:'100', fresh_hours:'144', mode:'monitor' });
-        const paramsLaunch = new URLSearchParams({ limit:'100', fresh_hours:'144', mode:'launch' });
+        const paramsLaunch = new URLSearchParams({ limit:'250', fresh_hours:'144', mode:'launch' });
         const settled = await Promise.allSettled([
-          fetchJsonWithTimeout(entrySourceUrl(V5_API, paramsV5), { cache:'no-store' }, 15000),
-          fetchJsonWithTimeout(entrySourceUrl(API, paramsLaunch), { cache:'no-store' }, 15000),
+          fetchSharedModelSnapshot(entrySourceUrl(V5_API, paramsV5), 15000),
+          fetchSharedModelSnapshot(entrySourceUrl(API, paramsLaunch), 15000),
         ]);
         const unwrap = settledItem => {
           if (settledItem.status !== 'fulfilled') return null;
@@ -5213,7 +5253,10 @@ h1 {
         else if (edit) openHoldingDialog(edit.dataset.holdingEdit);
         else if (sell) sellHolding(sell.dataset.holdingSell);
       });
-      $('#refresh').addEventListener('click', refreshCurrent);
+      $('#refresh').addEventListener('click',()=>{
+        invalidateSharedModelSnapshots();
+        refreshCurrent();
+      });
       updateEntryPhase();
       setInterval(updateEntryPhase, 30000);
       let lastSeenExternalCommitAt = '';
@@ -5243,6 +5286,8 @@ h1 {
             lastSeenExternalCommitAt = commitAt;
           }
           externalCommitSyncBusy = true;
+          // A new model commit must not be hidden behind cached S candidates.
+          invalidateSharedModelSnapshots();
           stageViewCache.delete(stage);
           await refreshCurrent();
         } catch (error) {
@@ -5279,7 +5324,7 @@ h1 {
       window.addEventListener('focus', refreshEntryOnResume);
       document.addEventListener('visibilitychange', checkExternalScanCommit);
       window.addEventListener('focus', checkExternalScanCommit);
-      const PAGE_BUILD = 'admin-pages-v7-merge-active-20261012';
+      const PAGE_BUILD = 'admin-pages-v8-shared-s-model-cache-20261012';
       let pageVersionCheckAt = 0;
       const checkLatestPageBuild = async () => {
         if (document.hidden) return;
