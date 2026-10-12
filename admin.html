@@ -1920,8 +1920,12 @@ h1 {
       };
       const fetchSharedModelSnapshot=async(url,timeoutMs=15000)=>{
         const key=expectedSignalDataDate()+'|'+String(url);
-        const cache=sharedModelSnapshots.get(key) || readStoredModelSnapshot(key);
-        if(cache && !sharedModelSnapshots.has(key))sharedModelSnapshots.set(key,cache);
+        const inMemory=sharedModelSnapshots.get(key);
+        const inStorage=readStoredModelSnapshot(key);
+        // A second browser tab might have written a newer valid scan snapshot.
+        const cache=inStorage && (!inMemory || inStorage.savedAt>inMemory.savedAt)
+          ? inStorage : inMemory;
+        if(cache && cache!==inMemory)sharedModelSnapshots.set(key,cache);
         if(cache && Date.now()-cache.savedAt<sharedSnapshotTTL()
           && cache.data?.ok && isLockedRulePayload(cache.data))
           return {response:{ok:true},data:cache.data,fromSharedCache:true};
