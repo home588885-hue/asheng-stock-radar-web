@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>阿勝底部起漲雷達｜管理員</title>
     <meta name="theme-color" content="#0b1020" />
-    <meta name="asheng-build" content="admin-pages-v3" />
+    <meta name="asheng-build" content="admin-pages-v4-quote-marketcode-20261012" />
     <style>
 @tailwind base;
 @tailwind components;
@@ -5012,8 +5012,8 @@ h1 {
             }).join('') + fallbackHtml);
             const freshCount = items.filter(item => String(item.as_of || '') === expectedSignalDataDate()).length;
             $('#note').textContent = marketBridgeReady()
-              ? `📌 已買進 ${symbols.length} 檔｜Cloudflare 盤中有效成交價與量｜約3分鐘取樣｜日K模型 ${freshCount}/${items.length} 檔｜晚上9點完整更新。`
-              : `📌 已買進 ${symbols.length} 檔｜⏱ 13:00～13:29 收盤前確認｜約3分鐘取樣量價｜模型 ${freshCount}/${items.length} 檔已到 ${expectedSignalDataDate()}｜晚上9點完整更新。`;
+              ? `📌 已買進 ${symbols.length} 檔｜C 今日有效成交報價 ${quoteMap.size}/${items.length} 檔${quoteMap.size ? '｜約3分鐘取樣' : '｜暫無核實的今日成交價，不顯示委買委賣價'}｜日K模型 ${freshCount}/${items.length} 檔｜盤後完整更新。`
+              : `⚠️ 已買進 ${symbols.length} 檔｜C 目前未通過登入／資料來源驗證，盤中報價未啟用（不代表股票沒有成交）｜只顯示 ${freshCount}/${items.length} 檔既有日K模型｜不冒用舊價。`;
           } catch (error) {
             stableListRender(items.map(item => card(item,{hideSignal:true})).join('') + fallbackHtml);
             $('#note').textContent = `📌 持股 ${symbols.length} 檔已保留｜收盤前行情暫時未回；不補抓全天盤中報價，晚上9點再更新完整模型。`;
@@ -5261,7 +5261,7 @@ h1 {
       window.addEventListener('focus', refreshEntryOnResume);
       document.addEventListener('visibilitychange', checkExternalScanCommit);
       window.addEventListener('focus', checkExternalScanCommit);
-      const PAGE_BUILD = 'admin-pages-v3';
+      const PAGE_BUILD = 'admin-pages-v4-quote-marketcode-20261012';
       let pageVersionCheckAt = 0;
       const checkLatestPageBuild = async () => {
         if (document.hidden) return;
