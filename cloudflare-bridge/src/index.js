@@ -68,15 +68,21 @@ async function readTwseQuotes(items) {
   const quotes=payload.msgArray.map(q=>{
     const stockId=String(q.c||"").trim().toUpperCase();
     const d=String(q.d||"").replace(/[^0-9]/g,"");
-    const z=finitePositive(q.z),v=finitePositive(q.v);
-    // Last trade ONLY. Bid/ask must not be represented as a completed trade.
-    const hasTodayTrade=d===today && z!==null && v!==null;
+    // TWSE MIS sometimes leaves top-level z="-" despite a real matched trade
+    // in trade.z. Both fields are transaction prices, never bid/ask estimates.
+    const directTrade=finitePositive(q.z);
+    const nestedTrade=finitePositive(q?.trade?.z);
+    const tradePrice=directTrade ?? nestedTrade;
+    const v=finitePositive(q.v); // cumulative market volume, not trade.v (single print)
+    const tradeTime=directTrade!==null ? String(q.t||"") : String(q?.trade?.t||q.t||"");
+    const hasTodayTrade=d===today && tradePrice!==null && v!==null && /^\\d{1,2}:\\d{2}(:\\d{2})?$/.test(tradeTime);
     return {
       stock_id:stockId,stock_name:String(q.n||""),market:String(q.ex||""),
-      price:hasTodayTrade?z:null,prev_close:finitePositive(q.y),
+      price:hasTodayTrade?tradePrice:null,prev_close:finitePositive(q.y),
       open:finitePositive(q.o),high:finitePositive(q.h),low:finitePositive(q.l),
-      volume_lots:v,quote_date:d,quote_time:String(q.t||""),
-      has_today_trade:hasTodayTrade,price_source:hasTodayTrade?"mis_last_trade":null
+      volume_lots:v,quote_date:d,quote_time:hasTodayTrade?tradeTime:String(q.t||""),
+      has_today_trade:hasTodayTrade,
+      price_source:hasTodayTrade ? (directTrade!==null?"mis_last_trade":"mis_trade_last") : null
     };
   }).filter(q=>allowed.has(q.stock_id));
   return {ok:true,source:"TWSE MIS",today,quotes};
