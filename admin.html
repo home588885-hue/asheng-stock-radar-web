@@ -1442,6 +1442,9 @@ h1 {
       const ANALYZER_FALLBACK_API =
         'https://qexbtubfoyfsllaiecvv.supabase.co/functions/v1/spring-swallow-analyze';
       const HOLDINGS_API = MEMBER_API + '?action=holdings';
+      // Model snapshots are public market calculations, not private portfolio rows.
+      // Read them directly from the existing S endpoint: one Edge request instead of proxying through member-api.
+      const HOLDING_SNAPSHOT_API = SHARED_DATA_HUB + '/spring-swallow-picks';
       const PULLBACK_WATCH_API =
         'https://qexbtubfoyfsllaiecvv.supabase.co/functions/v1/asheng-pullback-watch';
       // Cloudflare's verified workers.dev origin is configured only after live /health check.
@@ -4311,10 +4314,10 @@ h1 {
           if (cleanedText !== originalText) node.nodeValue = cleanedText;
         });
       };
-      const stableListRender = html => {
+      const stableListRender = (html, {force=false}={}) => {
         const list=$('#list'); if(!list)return;
         const stageSwitchPending = !!list.querySelector('[data-stage-loading="1"]');
-        if(!stageSwitchPending && (detailReadingActive() || viewportMoving())) return;
+        if(!force && !stageSwitchPending && (detailReadingActive() || viewportMoving())) return;
         const anchor=visibleStockAnchor();
         const t=document.createElement('template'); t.innerHTML=html;
         sanitizeMemberTextNodes(t.content);
@@ -4942,7 +4945,7 @@ h1 {
         // 不再等待 FinMind / 完整模型重算後才出現報價。
         let baseResults = [];
         try {
-          const batchResult = await fetchJsonWithTimeout(API + '&' + new URLSearchParams({ symbols:symbols.join(',') }).toString(), { cache:'no-store' }, 7000);
+          const batchResult = await fetchJsonWithTimeout(HOLDING_SNAPSHOT_API + '?' + new URLSearchParams({ symbols:symbols.join(',') }).toString(), { cache:'no-store' }, 14000);
           const response=batchResult.response, data=batchResult.data;
           if (!response.ok || !data?.ok || !isLockedRulePayload(data)) throw new Error('holding_batch_read_failed');
           const byId=new Map((data.picks || []).map(item => [String(item.stock_id), item]));
@@ -4958,6 +4961,26 @@ h1 {
         let items = baseResults.map(result => result.item).filter(Boolean);
         let fallbackHtml = baseResults.map(result => result.fallback).filter(Boolean).join('');
         liveBasePicks = items;
+        // Crucial: replace the temporary stock-id-only placeholders AS SOON AS
+        // the verified S EOD snapshot is loaded, even if the tab was backgrounded
+        // during the request or the user is scrolling when the fetch resolves.
+        // Do not wait for today's C quotes or the live-price refresh loop.
+        // This forced upgrade runs once per holdings load, preserving the stable stock anchors.
+        const baselineHtml = items.map(item => {
+          try { return card(item,{hideSignal:true}); }
+          catch (error) {
+            console.error('holding_model_card_render_failed',String(item?.stock_id||''),String(error));
+            return '<div class="box empty error" data-stock-id="'+esc(item?.stock_id||'')+'">'
+              +esc(item?.stock_id||'')+' '+esc(item?.stock_name||'')
+              +'｜📌 持股資料保留｜模型顯示異常，暫不提供動作建議；請重新載入。</div>';
+          }
+        }).join('') + fallbackHtml;
+        stableListRender(baselineHtml,{force:true});
+        const freshHoldingCount = items.filter(item => String(item.as_of||'') === expectedSignalDataDate()).length;
+        $('#note').textContent = items.length
+          ? '📌 已買進 '+symbols.length+' 檔｜已載入 '+items.length+' 檔盤後模型（最近有效日K '
+            +expectedSignalDataDate()+'：'+freshHoldingCount+' 檔）｜今日成交價待 C 開盤後確認。'
+          : '⚠️ 已買進 '+symbols.length+' 檔｜持股資料仍保留，但完整模型快照未取得；請勿依暫存卡下單。';
         let lastHoldingQuoteRequestAt = 0;
         const render = async () => {
           if (!holdingStillCurrent() || document.hidden || holdingQuoteRefreshing) return;
@@ -4998,7 +5021,7 @@ h1 {
           holdingModelRefreshing = true;
           try {
             const query = new URLSearchParams({ symbols:symbols.join(',') });
-            const batchResult = await fetchJsonWithTimeout(API + '&' + query.toString(), { cache:'no-store' }, 7000);
+            const batchResult = await fetchJsonWithTimeout(HOLDING_SNAPSHOT_API + '?' + query.toString(), { cache:'no-store' }, 14000);
             const response = batchResult.response, data = batchResult.data;
             if (!response.ok || !data?.ok || !isLockedRulePayload(data)) return;
             const byId = new Map((data.picks || []).map(item => [String(item.stock_id), item]));
