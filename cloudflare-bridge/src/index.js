@@ -75,7 +75,7 @@ async function readTwseQuotes(items) {
     const tradePrice=directTrade ?? nestedTrade;
     const v=finitePositive(q.v); // cumulative market volume, not trade.v (single print)
     const tradeTime=directTrade!==null ? String(q.t||"") : String(q?.trade?.t||q.t||"");
-    const hasTodayTrade=d===today && tradePrice!==null && v!==null && /^\\d{1,2}:\\d{2}(:\\d{2})?$/.test(tradeTime);
+    const hasTodayTrade=d===today && tradePrice!==null && v!==null && /^\d{1,2}:\d{2}(:\d{2})?$/.test(tradeTime);
     return {
       stock_id:stockId,stock_name:String(q.n||""),market:String(q.ex||""),
       price:hasTodayTrade?tradePrice:null,prev_close:finitePositive(q.y),
@@ -251,6 +251,7 @@ export default {
         deployment_marker:"admin-auth-market-bridge-20261010",
         source:"TWSE MIS",
         twse_mis_enabled:true,
+        quote_parser_version:"trade-z-time-regex-fixed-20261012",
         supabase_quote_requests:0,
         admin_auth_check:"existing_supabase_member_api",
         note:"報價走 Cloudflare，僅管理員；身分驗證仍低頻呼叫 Supabase，不含持股清單"
