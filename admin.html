@@ -2279,13 +2279,19 @@ h1 {
         const ma20=Number(m.ma20), ma60=Number(m.ma60), pos=Number(m.position_1y_pct);
         const k=Number(m.daily_k), d=Number(m.daily_d);
         const gap=price>0&&ma20>0?(price/ma20-1)*100:null;
-        const structuralBreak=g.main_bull===false
-          || hm.strong_breakdown===true
-          || (price>0&&ma20>0&&ma60>0&&price<ma20&&price<ma60);
+        const structuralBreak=hm.strong_breakdown===true
+          || (price>0&&ma20>0&&ma60>0&&price<ma20&&price<ma60
+            && (g.main_bull===false||g.weak_after_breakout===true));
         if(structuralBreak) return {
           kind:'hard',key:'blocked',phase:'blocked',rank:0,className:'blocked',
           text:'🔴 結構風險｜暫不新買',
           detail:'主要均線或價格結構已破壞；不是單純位置高，等待重新建立趨勢',buyable:false,trialable:false
+        };
+        if(g.main_bull===false) return {
+          kind:'incomplete',key:'wait',rank:8,className:'wait',
+          text:'🟡 均線結構未齊｜等轉強',
+          detail:'MA10／20／60主要多頭條件尚未成立，暫不新買；不等於趨勢已破壞',
+          keep_candidate:true,buyable:false,trialable:false
         };
         if(gap!=null&&gap>5 || Number.isFinite(pos)&&pos>=85) return {
           kind:'position',key:'wait',rank:10,className:'wait',
