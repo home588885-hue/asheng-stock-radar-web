@@ -2270,6 +2270,37 @@ h1 {
         }));
         return items;
       };
+      // One consistent new-entry risk interpretation across 發動前 and 進場雷達.
+      // A genuine structural breakdown is a red risk warning. An extended but bullish
+      // stock is not called a "failed stock"; its new entry is paused until pullback.
+      const newEntryRiskGate = (item, quote = null) => {
+        const m=item?.metrics||{}, g=m.entry_candle_guard||{}, hm=m.holding_management||{};
+        const price=validTodayQuote(quote)?Number(quote.price):Number(m.close);
+        const ma20=Number(m.ma20), ma60=Number(m.ma60), pos=Number(m.position_1y_pct);
+        const k=Number(m.daily_k), d=Number(m.daily_d);
+        const gap=price>0&&ma20>0?(price/ma20-1)*100:null;
+        const structuralBreak=g.main_bull===false
+          || hm.strong_breakdown===true
+          || (price>0&&ma20>0&&ma60>0&&price<ma20&&price<ma60);
+        if(structuralBreak) return {
+          kind:'hard',key:'blocked',phase:'blocked',rank:0,className:'blocked',
+          text:'🔴 結構風險｜暫不新買',
+          detail:'主要均線或價格結構已破壞；不是單純位置高，等待重新建立趨勢',buyable:false,trialable:false
+        };
+        if(gap!=null&&gap>5 || Number.isFinite(pos)&&pos>=85) return {
+          kind:'position',key:'wait',rank:10,className:'wait',
+          text:'🔵 趨勢仍在｜位置偏高等回踩',
+          detail:(gap!=null&&gap>5?'距MA20 +'+num(gap,1)+'% 已超過新進場5%上限':'1年位階 '+num(pos,1)+'%')
+            +'｜不宜追價不等於股票不能繼續漲，等回踩再核對',keep_candidate:true,buyable:false,trialable:false
+        };
+        if((Number.isFinite(k)&&Number.isFinite(d)&&k>80&&k<d)
+          || g.weak_after_breakout===true) return {
+          kind:'momentum',key:'wait',rank:10,className:'wait',
+          text:'🟡 短線轉弱｜等重新轉強',
+          detail:'KD／K棒動能轉弱，暫不新買；守住支撐後再評估',keep_candidate:true,buyable:false,trialable:false
+        };
+        return null;
+      };
       const entryCandleGuard = (item, quote = null) => {
         const m=item?.metrics||{},g=m.entry_candle_guard||{};
         const known=g.version==='2026-10-06-kbar-ma10-20-60-v3';
@@ -2304,7 +2335,12 @@ h1 {
       };
 
       const tradeSignal = item => {
-        if (!holdings.has(String(item.stock_id))) { const guard=entryCandleGuard(item); if(guard)return {className:'wait',text:guard.text}; }
+        if (!holdings.has(String(item.stock_id))) {
+          const risk=newEntryRiskGate(item);
+          if(risk)return {className:risk.kind==='hard'?'sell':'wait',text:risk.text};
+          const guard=entryCandleGuard(item);
+          if(guard)return {className:'wait',text:guard.text};
+        }
         const metrics = item.metrics || {};
         const scores = item.scores || {};
         const bt = metrics.backtest || {};
@@ -2728,6 +2764,8 @@ h1 {
         }
         const base=baseSimpleActionState(item,quote);
         if(holdings.has(String(item.stock_id)))return base;
+        const entryRisk=newEntryRiskGate(item,quote);
+        if(entryRisk)return entryRisk;
         const guard=entryCandleGuard(item,quote);
         if(guard)return guard;
         const bottomConfirmed=item?.metrics?.bottom_start?.confirmed===true;
@@ -2953,6 +2991,9 @@ h1 {
         const quoteValid = marketBridgeReady() && validTodayQuote(quote);
         const firstBreakoutNow = quoteValid && baseAction.intraday_early_launch === true;
         const watchBreakoutNow = quoteValid && baseAction.intraday_early_watch === true;
+        const risk = newEntryRiskGate(item, quoteValid ? quote : null);
+        if(risk) return {...risk,live_quote_verified:quoteValid,phase:risk.kind==='hard'?'blocked':'observe',
+          buyable:false,trialable:false};
         return {...baseAction, phase:firstBreakoutNow?'starter':watchBreakoutNow?'observe':'candidate', buyable:false, trialable:firstBreakoutNow,
           live_quote_verified:quoteValid,
           detail:(quoteValid ? 'Cloudflare 盤中成交價＋既有日K模型條件｜'
@@ -3075,7 +3116,8 @@ h1 {
         const market = taipeiMarketState();
         const afterClose = market.weekday && market.totalMinutes >= 810;
 
-        const blockedRows = rows.filter(row => row.action?.phase === 'blocked');
+        const blockedRows = rows.filter(row => row.action?.phase === 'blocked'
+          || newEntryRiskGate(row.item,row.quote)?.kind==='hard');
 
         // 轉弱優先，不可被一般 candidate / observe 黃燈吃掉。
         const weakeningRows = rows.filter(row => {
@@ -3110,7 +3152,7 @@ h1 {
           const t=String(row.action?.text||'')+'｜'+String(row.action?.detail||'');
           const cautions=(row.item?.cautions||[]).map(v=>String(v)).join('｜');
           return (Number.isFinite(pos)&&pos>=85)
-            || (ext!=null&&ext>10)
+            || (ext!=null&&ext>5)
             || (Number.isFinite(k)&&k>80)
             || cautions.includes('日KD偏高')
             || t.includes('位置過高');
@@ -3123,7 +3165,7 @@ h1 {
           const k=Number(m.daily_k), d=Number(m.daily_d);
           const reason=[];
           if(Number.isFinite(pos)&&pos>=85) reason.push('1年位階 '+num(pos,1)+'%');
-          if(ext!=null&&ext>10) reason.push('距MA20 +'+num(ext,1)+'%');
+          if(ext!=null&&ext>5) reason.push('距MA20 +'+num(ext,1)+'%（新買上限5%）');
           if(Number.isFinite(k)&&k>80) reason.push('KD過熱 K '+num(k,1)+(Number.isFinite(d)?'／D '+num(d,1):''));
           return {
             ...row,
@@ -3328,6 +3370,7 @@ h1 {
         }
         // Original active-launch S predicate, now in prelaunch. Only presentation
         // order changes; stock model, holdings and trading rules are untouched.
+        if (newEntryRiskGate(item)?.kind==='hard') return {keep:false,rank:0,className:'blocked',label:'🔴 結構風險｜暫不新買'};
         if (isActiveLaunchItem(item)) return {keep:true,rank:110,className:'active-launch',
           label:'🔥 發動中｜S模型已發動，尚待正式進場確認'};
         if (isEntryRadarItem(item)) return { keep:false, rank:0, className:'promoted', label:'🎯 已進進場雷達' };
