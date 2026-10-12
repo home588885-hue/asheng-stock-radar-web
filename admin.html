@@ -3252,14 +3252,14 @@ h1 {
           recalcDisplayRows.length+waitRows.length+pullbackRows.length+avoidRows.length;
         const banner=`<div class="entry-list-overview" data-stable-key="entry-overview">
           <strong>🎯 進場雷達｜${displayedTotal} 檔追蹤</strong>
-          <span>⭐ 優先 ${focusRows.length}　🟠 進場候選 ${signalRows.length}　🌱 待發動 ${queuedDisplayRows.length}　🟡 待確認 ${waitRows.length}　⚡ 待補算 ${recalcDisplayRows.length}　🔵 等回踩 ${pullbackRows.length}　🔴 風險避開 ${avoidRows.length}</span>
+          <span>⭐ 優先 ${focusRows.length}　🟠 進場訊號 ${signalRows.length}　🌱 等發動 ${queuedDisplayRows.length}　🟡 條件未齊 ${waitRows.length}　⚡ 待補算 ${recalcDisplayRows.length}　🔵 等回踩 ${pullbackRows.length}　🔴 風險避開 ${avoidRows.length}</span>
           <small>基準交易日 ${esc(expectedSignalDataDate())}｜舊模型僅觀察、不列新買點｜非盤中即時買進指令｜點股票名稱展開資料${staleRows.length?'｜另有 '+staleRows.length+' 檔過期快照未列入':''}</small>
         </div>`;
         const outHtml = banner+
           entryBucketHtml('focus','⭐ 優先查看','原模型條件相對成熟，仍須核對當日行情',focusRows,{open:true,tone:'focus',preview:6})+
-          entryBucketHtml('signal','🟠 起漲／進場候選','原模型已有追蹤、試單或突破訊號；仍須核對今日成交與風險，並非直接買進指令',signalRows,{open:!focusRows.length,tone:'focus',preview:5})+
-          entryBucketHtml('queued','🌱 底部確認｜等待發動','底部型態成立不代表已突破，須再等量價與均線確認',queuedDisplayRows,{open:!focusRows.length&&!signalRows.length,tone:'near',preview:5})+
-          entryBucketHtml('wait','🟡 等待確認','尚缺量價、位置或其他條件，並非可直接買進',waitRows,{open:!focusRows.length&&!signalRows.length&&!queuedDisplayRows.length,tone:'near',preview:5})+
+          entryBucketHtml('signal','🟠 進場訊號｜先核對','已有模型追蹤、試單或突破訊號，先核對今日量價與風險，不代表可以直接買進',signalRows,{open:!focusRows.length,tone:'focus',preview:5})+
+          entryBucketHtml('queued','🌱 底部已成形｜等發動','底部型態已確認，但尚未出現符合條件的起漲訊號，持續觀察量價與均線',queuedDisplayRows,{open:!focusRows.length&&!signalRows.length,tone:'near',preview:5})+
+          entryBucketHtml('wait','🟡 條件未齊｜先觀察','量價、位置或其他進場條件尚未到位，等待補齊，不列可買進訊號',waitRows,{open:!focusRows.length&&!signalRows.length&&!queuedDisplayRows.length,tone:'near',preview:5})+
           entryBucketHtml('recalc','⚡ 收盤資料待補算','資料尚未齊全，不列進場候選或一般等確認',recalcDisplayRows,{open:false,tone:'near',preview:5})+
           entryBucketHtml('pullback','🔵 位置偏高｜等回踩','避免追高，觀察支撐與短均線',pullbackRows,{open:!focusRows.length&&!signalRows.length&&!queuedDisplayRows.length&&!waitRows.length,tone:'high',preview:5})+
           entryBucketHtml('avoid','🔴 風險警戒｜先避開','已觸發風險或轉弱條件，不列買進候選',avoidRows,{open:!focusRows.length&&!signalRows.length&&!queuedDisplayRows.length&&!waitRows.length&&!pullbackRows.length,tone:'blocked',preview:5});
