@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>阿勝底部起漲雷達｜管理員</title>
     <meta name="theme-color" content="#0b1020" />
-    <meta name="asheng-build" content="admin-pages-v8-shared-s-model-cache-20261012" />
+    <meta name="asheng-build" content="admin-pages-v9-session-s-model-cache-20261012" />
     <style>
 @tailwind base;
 @tailwind components;
@@ -1832,22 +1832,55 @@ h1 {
       };
       // Shared S model snapshots ONLY. Never alter Cloudflare quotes or private holdings.
       const sharedModelSnapshots=new Map(), sharedModelInFlight=new Map();
+      // Session-only persistence avoids refetch on reload; portfolio/C quotes stay separate.
+      const SHARED_MODEL_STORAGE_PREFIX='asheng-s-model-v2:';
+      const readStoredModelSnapshot=key=>{
+        try{
+          const raw=sessionStorage.getItem(SHARED_MODEL_STORAGE_PREFIX+key);
+          if(!raw)return null;
+          const value=JSON.parse(raw);
+          if(!value || Date.now()-Number(value.savedAt)>=sharedSnapshotTTL()
+             || !value.data?.ok || !Array.isArray(value.data.picks)
+             || !isLockedRulePayload(value.data)){
+            sessionStorage.removeItem(SHARED_MODEL_STORAGE_PREFIX+key);
+            return null;
+          }
+          return value;
+        }catch{return null;}
+      };
+      const storeModelSnapshot=(key,entry)=>{
+        try{
+          for(let i=sessionStorage.length-1;i>=0;i--){
+            const k=sessionStorage.key(i);
+            if(k?.startsWith(SHARED_MODEL_STORAGE_PREFIX) && !k.includes(expectedSignalDataDate()+'|'))
+              sessionStorage.removeItem(k);
+          }
+          sessionStorage.setItem(SHARED_MODEL_STORAGE_PREFIX+key,JSON.stringify(entry));
+        }catch{/* keep memory cache when storage quota is unavailable */}
+      };
       let sharedModelGeneration=0;
       const sharedSnapshotTTL=()=>{
         const hour=Number(new Intl.DateTimeFormat('en-US',{
           timeZone:'Asia/Taipei',hour:'2-digit',hourCycle:'h23'
         }).format(new Date()));
         // Fresh S batches arrive at night: shorten TTL without additional polling.
-        return hour>=21 ? 180000 : 900000;
+        return hour>=21 && hour<=22 ? 60000 : 900000;
       };
       const invalidateSharedModelSnapshots=()=>{
         sharedModelGeneration++;
         sharedModelSnapshots.clear();
         sharedModelInFlight.clear();
+        try{
+          for(let i=sessionStorage.length-1;i>=0;i--){
+            const k=sessionStorage.key(i);
+            if(k?.startsWith(SHARED_MODEL_STORAGE_PREFIX))sessionStorage.removeItem(k);
+          }
+        }catch{}
       };
       const fetchSharedModelSnapshot=async(url,timeoutMs=15000)=>{
         const key=expectedSignalDataDate()+'|'+String(url);
-        const cache=sharedModelSnapshots.get(key);
+        const cache=sharedModelSnapshots.get(key) || readStoredModelSnapshot(key);
+        if(cache && !sharedModelSnapshots.has(key))sharedModelSnapshots.set(key,cache);
         if(cache && Date.now()-cache.savedAt<sharedSnapshotTTL()
           && cache.data?.ok && isLockedRulePayload(cache.data))
           return {response:{ok:true},data:cache.data,fromSharedCache:true};
@@ -1860,7 +1893,9 @@ h1 {
             isLockedRulePayload(result.data) && Array.isArray(result.data.picks) &&
             generation===sharedModelGeneration &&
             key.startsWith(expectedSignalDataDate()+'|')){
-            sharedModelSnapshots.set(key,{savedAt:Date.now(),data:result.data});
+            const snapshot={savedAt:Date.now(),data:result.data};
+            sharedModelSnapshots.set(key,snapshot);
+            storeModelSnapshot(key,snapshot);
             if(sharedModelSnapshots.size>6)
               sharedModelSnapshots.delete(sharedModelSnapshots.keys().next().value);
           }
