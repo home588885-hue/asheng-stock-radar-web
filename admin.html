@@ -4205,7 +4205,7 @@ h1 {
         const map = holdingCloseWatchMap();
         const existing = map.get(id) || null;
         if (!watch.active) return existing;
-        const quoteClock = String(quote.quote_time || '').match(/^(\\d{1,2}):(\\d{2})(?::\\d{2})?$/);
+        const quoteClock = String(quote.quote_time || '').match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
         const quoteMinute = quoteClock ? Number(quoteClock[1]) * 60 + Number(quoteClock[2]) : NaN;
         if (!Number.isFinite(quoteMinute) || quoteMinute < 770 || quoteMinute >= 800
           || Number(quoteClock[1]) > 23 || Number(quoteClock[2]) > 59
