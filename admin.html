@@ -1557,6 +1557,12 @@ h1 {
       const liveQuoteRequestAt = new Map();
       const LIVE_QUOTE_REUSE_MS = 150000;
       const LIVE_QUOTE_FAILURE_BACKOFF_MS = 30000;
+      // DB source market values: "twse"/"tpex"; MIS requires "tse"/"otc".
+      // Normalize only transport symbols, never alter the stored market or model.
+      const marketForMis = market => {
+        const raw = String(market || '').toLowerCase().trim();
+        return ['tpex','otc','櫃','上櫃'].some(v => raw.includes(v)) ? 'otc' : 'tse';
+      };
       window.getLiveQuotes = async items => {
         // 網頁在背景或非交易時段，禁止發出新的即時行情請求。
         const candidatesViaBridge = marketBridgeReady() && ['LAUNCH','ENTRY'].includes(stage);
@@ -1568,7 +1574,7 @@ h1 {
           const id = String(item?.stock_id || '');
           if (!id || seen.has(id) || (!candidatesViaBridge && !holdings.has(id))) continue;
           seen.add(id);
-          unique.push({ stock_id:id, market:item?.market || 'tse' });
+          unique.push({ stock_id:id, market:marketForMis(item?.market) });
         }
         // Do not spend additional Supabase requests on recently queried holdings.
         // Missing trades use only a short failure backoff; no stale price is invented.
