@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>阿勝底部起漲雷達｜管理員</title>
     <meta name="theme-color" content="#0b1020" />
-    <meta name="asheng-build" content="admin-pages-v6-c-active-20261012" />
+    <meta name="asheng-build" content="admin-pages-v7-merge-active-20261012" />
     <style>
 @tailwind base;
 @tailwind components;
@@ -1036,9 +1036,9 @@ h1 {
                 <figcaption>📱 管理員網址可加入手機主畫面，捷徑名稱「穩」；電腦可存為書籤。原會員選股頁已取消。</figcaption>
               </figure>
               <div class="risk-note"><b>1｜登入與使用入口</b><br>使用原本的管理員 Email 和密碼登入。現在只有管理員雷達，已取消獨立會員登入、會員選股頁與會員名單介面。個人已買進股票仍保存在原帳號中，不會因取消會員版而消失。</div>
-              <div class="risk-note"><b>2｜S 算模型，C 提供盤中報價</b><br><b>S（Supabase）</b>保留完整 A／B／C、V5、MA10／MA20／MA60、KD、MACD、量價、籌碼及持股風控模型，不搬到 C。<br><b>C（Cloudflare）</b>只為 S 完整模型已選出的「發動前、發動中、進場雷達」候選，以及管理員「已買進」股票取得盤中價；不掃全市場、不自行增刪候選，也不修改 A／B／C、V5 或籌碼結果。只有報價 Worker 健康檢查及登入驗證通過才啟用；失敗不冒充已有即時價。</div>
-              <div class="risk-note"><b>3｜每天什麼時候更新？</b><br><b>交易日 09:00～13:30</b>：C 報價橋接成功後，🌱發動前、🔥發動中、🎯進場雷達、📌已買進在網頁前景時約每 <b>3 分鐘</b>低頻更新今日有效成交價。沒有今日有效價時不顯示 0.00，也不以昨收冒充。<br><b>交易日 13:00～13:29</b>：C 未啟用時，已買進才使用原本的收盤前低頻 S 備援，不是整天從 S 抓價。<br><b>交易日 21:00～21:55</b>：S 依原排程分批更新完整日 K 選股，並非每檔在 21:00 就全部更新完成。</div>
-              <div class="risk-note"><b>4｜簡單看四區</b><br>🌱 <b>發動前</b>：底部整理、均線轉強、接近發動，追蹤尚未突破且位置不過熱的股票。<br>🔥 <b>發動中</b>：S盤後模型已出現首根發動、突破或發動初期但尚未正式確認進場；開盤由C提供真實成交價。<br>🎯 <b>進場雷達</b>：已起漲、突破或適合回踩觀察的候選，仍須判斷風險和位置，不代表每檔都能立刻買。<br>📌 <b>已買進</b>：只顯示自己已記錄的持股、成本與風控，沒有盤中報價時也不會刪除持股。</div>
+              <div class="risk-note"><b>2｜S 算模型，C 提供盤中報價</b><br><b>S（Supabase）</b>保留完整 A／B／C、V5、MA10／MA20／MA60、KD、MACD、量價、籌碼及持股風控模型，不搬到 C。<br><b>C（Cloudflare）</b>只為 S 完整模型已選出的「發動前（含原發動中）、進場雷達」候選，以及管理員「已買進」股票取得盤中價；不掃全市場、不自行增刪候選，也不修改 A／B／C、V5 或籌碼結果。只有報價 Worker 健康檢查及登入驗證通過才啟用；失敗不冒充已有即時價。</div>
+              <div class="risk-note"><b>3｜每天什麼時候更新？</b><br><b>交易日 09:00～13:30</b>：C 報價橋接成功後，🟠發動前、🎯進場雷達、📌已買進在網頁前景時約每 <b>3 分鐘</b>低頻更新今日有效成交價。沒有今日有效價時不顯示 0.00，也不以昨收冒充。<br><b>交易日 13:00～13:29</b>：C 未啟用時，已買進才使用原本的收盤前低頻 S 備援，不是整天從 S 抓價。<br><b>交易日 21:00～21:55</b>：S 依原排程分批更新完整日 K 選股，並非每檔在 21:00 就全部更新完成。</div>
+              <div class="risk-note"><b>4｜簡單看三區</b><br>🟠 <b>發動前</b>：底部整理、均線轉強及接近發動，收錄原發動中 S 候選並顯示 🔥 發動中標籤。<br>🎯 <b>進場雷達</b>：已起漲、突破或適合回踩觀察的候選，仍須判斷風險和位置，不代表每檔都能立刻買。<br>📌 <b>已買進</b>：只顯示自己已記錄的持股、成本與風控，沒有盤中報價時也不會刪除持股。</div>
               <div class="risk-note"><b>5｜四種買點顏色與防追高</b><br>🔴 <b>明確不能買</b>：突破失敗、均線結構破壞、爆量轉弱或跌破支撐。<br>🟡 <b>近買點／等確認</b>：條件缺量或位置，先觀察。<br>🟠 <b>可小量試單</b>：風險過濾通過，部位保守。<br>🟢 <b>正式買點</b>：完整條件成立，再評估分批進場。<br>還要核對 MA10／20／60、K 棒、KD／MACD、成交量至少 1,000 張與距 MA20 的乖離。距 MA20 超過 5% 不作為適合追價的買點；盤後訊號不是即時成交保證。</div>
               <div class="risk-note"><b>6｜已買進怎麼管理？</b><br>先看「今日動作」：<b>續抱、可加碼、警戒或出清</b>，再看 MA20 是否守住及下方「續抱理由與持股規則」。獲利約 20% 可評估分批停利；跌破 MA20 或量價明顯轉弱，優先處理風險。系統不會自動下單。買進、減碼或全部賣出後，在持股卡更新成本與數量。</div>
               <div class="risk-note"><b>7｜看清三種時間</b><br><b>技術模型基準</b>：最新完整日 K 日期；盤中顯示上一有效交易日是正常的。<br><b>系統最新掃描</b>：S 最近一次模型快照掃描時間；排程執行成功不代表全市場更新完。<br><b>今日報價時間</b>：僅代表有效成交價取得時間，不等於 KD、MACD 等完整選股模型盤中重算。休市日不會有新的當日成交價。</div>
@@ -1050,10 +1050,9 @@ h1 {
         <section id="buySignalNotice" class="box" role="status" aria-live="polite" hidden></section>
 
         <section class="box control-panel">
-          <div class="nav-label">四區追蹤｜S 模型・C 今日成交</div>
+          <div class="nav-label">三區追蹤｜S 模型・C 今日成交</div>
           <div class="tabs primary-tabs">
             <button class="tab on" data-stage="LAUNCH">🟠 發動前</button>
-            <button class="tab" data-stage="PREATTACK">🔥 發動中</button>
             <button class="tab" data-stage="ENTRY">🎯 進場雷達</button>
             <button class="tab" data-stage="HOLDING">📌 已買進</button>
             <button class="refresh" id="refresh">重新整理</button>
@@ -1066,7 +1065,7 @@ h1 {
           <div class="entry-phase" id="entryPhase"></div>
           <div class="holding-note">📌 已買進：只顯示管理員自己的持股｜C 驗證成功後交易時段約每3分鐘抓價；C 未啟用時僅13:00～13:29低頻備援；S 完整模型晚上9點後分批更新。<span id="memberIdentity"></span><button class="holding-sync" id="syncHoldingsBtn">登出</button></div>
         </section>
-                <p id="timeInfoExplanation" class="time-info-explanation" hidden>管理員四區在 C 報價驗證成功時，交易時段約每3分鐘更新有效成交價；C 未啟用時，已買進僅於13:00～13:29使用低頻備援。MA10／MA20／MA60、KD、MACD 等完整模型仍以 S 的盤後完整日 K 更新為準。</p>
+                <p id="timeInfoExplanation" class="time-info-explanation" hidden>管理員三區在 C 報價驗證成功時，交易時段約每3分鐘更新有效成交價；C 未啟用時，已買進僅於13:00～13:29使用低頻備援。MA10／MA20／MA60、KD、MACD 等完整模型仍以 S 的盤後完整日 K 更新為準。</p>
         <main class="list" id="list">
           <div class="box empty loading">正在載入候選股…</div>
         </main>
@@ -1547,7 +1546,7 @@ h1 {
         // Cloudflare may quote ONLY the current S-model picks of the active radar
         // section plus the admin's own saved holdings. It NEVER creates new picks.
         const isModelSelected = marketBridgeReady()
-          && ['LAUNCH','ENTRY','PREATTACK'].includes(stage)
+          && ['LAUNCH','ENTRY'].includes(stage)
           && liveBasePicks.some(item => String(item?.stock_id || '') === id);
         if (!holdings.has(id) && !isModelSelected) return null;
         if (validTodayQuote(quote)) return quote;
@@ -1567,7 +1566,7 @@ h1 {
       };
       window.getLiveQuotes = async items => {
         // 網頁在背景或非交易時段，禁止發出新的即時行情請求。
-        const candidatesViaBridge = marketBridgeReady() && ['LAUNCH','ENTRY','PREATTACK'].includes(stage);
+        const candidatesViaBridge = marketBridgeReady() && ['LAUNCH','ENTRY'].includes(stage);
         const quoteWindow = marketBridgeReady() && taipeiMarketState().open;
         // Stock quotes in these UI sections are C-only; never bill S for a fallback.
         if (document.hidden || !quoteWindow) return {
@@ -2021,7 +2020,7 @@ h1 {
         }
         return current.toISOString().slice(0, 10);
       };
-      // Shared status for LAUNCH / PREATTACK / ENTRY / HOLDING. Uses the picks response,
+      // Shared status for LAUNCH / ENTRY / HOLDING. Uses the picks response,
       // so no extra quote request, scheduled job, or technical-model recomputation.
       const renderCoverageWarning = progress => {
         const warning = document.getElementById('scanFreshnessWarning');
@@ -3204,15 +3203,15 @@ h1 {
         const expected=expectedSignalDataDate();
         const expectedMs=expected ? Date.parse(expected+'T00:00:00Z') : NaN;
 
-        // 已經發動就交棒到「發動中」，不再留在發動前。
-        if (isActiveLaunchItem(item)) return { keep:false, rank:0, className:'active-launch', label:'🔥 已進發動中' };
-        // 已經進入進場雷達的股票，不再重複留在發動前。
-        if (isEntryRadarItem(item)) return { keep:false, rank:0, className:'promoted', label:'🎯 已進進場雷達' };
-
-        // 明顯過期模型直接排除，避免舊資料卡在發動前。
+        // Keep stale or outdated models out of both merged groups.
         if (Number.isFinite(expectedMs) && (!Number.isFinite(asOfMs) || asOfMs < expectedMs - 5*86400000)) {
           return { keep:false, rank:0, className:'stale', label:'⚪ 模型資料過期' };
         }
+        // Original active-launch S predicate, now in prelaunch. Only presentation
+        // order changes; stock model, holdings and trading rules are untouched.
+        if (isActiveLaunchItem(item)) return {keep:true,rank:110,className:'active-launch',
+          label:'🔥 發動中｜S模型已發動，尚待正式進場確認'};
+        if (isEntryRadarItem(item)) return { keep:false, rank:0, className:'promoted', label:'🎯 已進進場雷達' };
 
         const price=Number(m.close);
         const ma20=Number(m.ma20);
@@ -3365,7 +3364,7 @@ h1 {
         return '<div class=\"metrics\"><span class=\"pill\">'+esc(p.label)+rev+'</span>'+firstBar+'<span class=\"pill\">'+esc(p.detail)+'</span></div>';
       };
 
-      const timeInfoStages = () => ['HOLDING','LAUNCH','PREATTACK','LIVE','ENTRY'].includes(stage);
+      const timeInfoStages = () => ['HOLDING','LAUNCH','LIVE','ENTRY'].includes(stage);
       const timeMonthDay = value => {
         const s = String(value || '').replace(/[^0-9]/g, '');
         if (s.length < 8) return '';
@@ -3391,7 +3390,7 @@ h1 {
       function card(item, options = {}) {
         const metrics = item.metrics || {};
         const displayQuote = bestTodayQuote(options.quote, item?.stock_id);
-        const todayOnly = ['LAUNCH','PREATTACK','ENTRY','HOLDING'].includes(stage);
+        const todayOnly = ['LAUNCH','ENTRY','HOLDING'].includes(stage);
         const quotedPrice = Number(displayQuote?.price);
         const displayClose = displayQuote ? quotedPrice : Number(metrics.close);
         const quoteTimeText = String(displayQuote?.quote_time || '');
@@ -3426,6 +3425,8 @@ h1 {
         const launch = metrics.launch_candidate || {};
         const launchQuality = launchQualityState(item);
         const launchQualityHtml = stage === 'LAUNCH' && launchQuality.keep ? '<div class="signal-note">' + esc(memberFacingText(launchQuality.label)) + '</div>' : '';
+        const activeLaunchVisibleHtml = stage === 'LAUNCH' && isActiveLaunchItem(item)
+          ? '<div class="signal-note">🔥 發動中｜S 模型已發動，但不代表可直接買入；請核對風險與位置</div>' : '';
         const launchOverhead = Array.isArray(launch.overhead) ? launch.overhead : [];
         const launchStructureText = launch.structure === 'all_above' ? '✅ 全部均線站上' : launch.structure === 'one_overhead' ? `🟡 剩 ${launchOverhead[0]?.label || '1條均線'} 反壓` : '⚠️ 上方仍有多條均線';
         const launchHtml = launch.eligible === true ? `<div class="signal-note">🌱 蓄勢候選｜底部結構 ${Number(launch.a_score || scores.A || 0)}｜1年位階 ${num(launch.position_1y_pct ?? metrics.position_1y_pct, 1)}%｜${launchStructureText}${launch.recent_bc_date ? `｜最近轉強紀錄 ${esc(launch.recent_bc_date)}` : ''}｜負責提早發現，不等於可買</div>` : '';
@@ -3476,7 +3477,7 @@ h1 {
         const hiddenModelHtml = `${launchQualityHtml}${precisionHtml}${warrant ? `<div class="signal-note">${warrant}</div>` : ''}${bottomHtml}${launchHtml}${launchSequenceHtml}${holding ? '' : guideHtml}`;
         const detailHtml = `<details class="card-details"><summary>完整判斷與數據</summary><div class="detail-body">${hiddenModelHtml}${v5Html}${chipHtml}${holding ? '' : liquidityHtml}${playbookHtml}<div class="metrics"><span class="pill">3年位階 ${num(metrics.position_3y_pct)}%</span><span class="pill">週K ${num(metrics.weekly_k)}｜${gradeText(weeklyKGrade(metrics.weekly_k))}</span><span class="pill">月K ${num(metrics.monthly_k)}｜${gradeText(monthlyKGrade(metrics.monthly_k))}</span><span class="pill">${backtestSignal(item)}</span>${metrics.backtest ? `<span class="pill">5日 ${num(metrics.backtest.win_rate_5d_pct)}%</span><span class="pill">20日 ${num(metrics.backtest.win_rate_20d_pct)}%</span>` : ''}</div><div class="why">${reasons}</div>${cautions ? `<div class="warn">${cautions}</div>` : ''}</div></details>`;
         const actionHtml = options.hideSignal ? '' : `<div class="trade-signal ${signal.className}">${esc(memberFacingText(signal.text))}<small style="display:block;margin-top:4px;font-weight:500">${esc(memberFacingText(signal.detail || ''))}</small></div>`;
-        return `<article class="card" data-stock-id="${esc(item.stock_id)}"><div class="top"><div><div class="name">${esc(item.stock_id)} ${esc(item.stock_name)}</div><div class="meta">${esc(item.market)}${item.industry ? '・' + esc(item.industry) : ''}${timeInfoStages() ? '' : '｜資料日 ' + esc(item.as_of || '-')}</div></div><div class="badge ${esc(item.stage)}">模型 ${Number(item.score || 0)}分</div></div>${companyProfileHtml(item)}${volumePriceHtml(item, displayQuote)}${pullbackWatchHtml(item, displayQuote)}${holding ? holdingTodayHtml : actionHtml + quickHtml + deviationWarningHtml + riskSummary}${holdingHtml}${holdingStatusHtml}${detailHtml}${timeInfoStages() ? timeInfoHtml(item, displayQuote) : '<div class="time">背景模型掃描：' + updated + '</div>'}</article>`;
+        return `<article class="card" data-stock-id="${esc(item.stock_id)}"><div class="top"><div><div class="name">${esc(item.stock_id)} ${esc(item.stock_name)}</div><div class="meta">${esc(item.market)}${item.industry ? '・' + esc(item.industry) : ''}${timeInfoStages() ? '' : '｜資料日 ' + esc(item.as_of || '-')}</div></div><div class="badge ${esc(item.stage)}">模型 ${Number(item.score || 0)}分</div></div>${companyProfileHtml(item)}${activeLaunchVisibleHtml}${volumePriceHtml(item, displayQuote)}${pullbackWatchHtml(item, displayQuote)}${holding ? holdingTodayHtml : actionHtml + quickHtml + deviationWarningHtml + riskSummary}${holdingHtml}${holdingStatusHtml}${detailHtml}${timeInfoStages() ? timeInfoHtml(item, displayQuote) : '<div class="time">背景模型掃描：' + updated + '</div>'}</article>`;
       }
 
       async function load() {
@@ -3557,21 +3558,9 @@ h1 {
             };
             const results = await Promise.all(['A', 'B', 'C'].map(fetchStage));
             data = { ...results[0], picks: results.flatMap(result => result.picks || []) };
-          } else if (stage === 'PREATTACK') {
-            // Reuse S prelaunch model snapshot instead of triggering redundant
-            // queries or any full technical recalculation.
-            data = readLaunchDataCache();
-            if (!data || !isLockedRulePayload(data)) {
-              const query = new URLSearchParams({limit:'100',fresh_hours:'144',mode:'launch'});
-              const result = await fetchJsonWithTimeout(API+'&'+query.toString(),{cache:'no-store'},10000);
-              if (!result.response.ok || !result.data?.ok || !isLockedRulePayload(result.data))
-                throw new Error('發動中既有 S 快照暫時無法讀取');
-              data = result.data;
-              writeLaunchDataCache(data);
-            }
           } else {
             const query = new URLSearchParams({ limit: '80', fresh_hours:'144' });
-            if (stage && stage !== 'ENTRY' && stage !== 'PREATTACK') query.set('stage', stage);
+            if (stage && stage !== 'ENTRY') query.set('stage', stage);
             const result = await fetchJsonWithTimeout(API + '&' + query.toString(), { cache: 'no-store' }, 10000);
             const response = result.response;
             data = result.data;
@@ -3607,7 +3596,7 @@ h1 {
           const actionableSignals = new Set(['highwin', 'v5buy']);
           // 發動前先把股票畫出來，不等待逐檔K棒重算。新版切換時舊資料很多，
           // 若在這裡 await 會讓畫面長時間卡在「載入中」。
-          const allPicks = ['LAUNCH','PREATTACK'].includes(stage) ? (data.picks || []) : await loadCandleGuards(data.picks || []);
+          const allPicks = stage === 'LAUNCH' ? (data.picks || []) : await loadCandleGuards(data.picks || []);
           if (stage === 'LAUNCH') {
             setTimeout(async () => {
               try {
@@ -3618,7 +3607,7 @@ h1 {
             }, 0);
           }
           const launchFiltered = stage === 'LAUNCH' ? allPicks.filter(item => launchQualityState(item).keep) : allPicks;
-          const picks = stage === 'ENTRY' ? allPicks.filter(item => actionableSignals.has(tradeSignal(item).className) || isActiveLaunchItem(item)) : stage === 'PREATTACK' ? allPicks.filter(isActiveLaunchItem) : launchFiltered;
+          const picks = stage === 'ENTRY' ? allPicks.filter(item => actionableSignals.has(tradeSignal(item).className) || isActiveLaunchItem(item)) : launchFiltered;
           const stageRank = { C: 3, B: 2, A: 1, WATCH: 0 };
           const signalRank = { highwin: 12, v5buy: 10, first: 6, add: 5, early: 4, position: 3, attack: 2, scout: 1 };
           const rankedPicks = [...picks].sort((a, b) => {
@@ -3638,7 +3627,7 @@ h1 {
               if (companyDiff) return companyDiff;
               return Number(b.scores?.A || 0) - Number(a.scores?.A || 0) || Number(a.metrics?.position_1y_pct || 999) - Number(b.metrics?.position_1y_pct || 999);
             }
-            if (stage === 'ENTRY' || stage === 'PREATTACK') {
+            if (stage === 'ENTRY') {
               const signalDiff = (signalRank[tradeSignal(b).className] || 0) - (signalRank[tradeSignal(a).className] || 0);
               if (signalDiff) return signalDiff;
             }
@@ -3651,20 +3640,18 @@ h1 {
             const bCombined = Number(b.metrics?.chip?.combined_score ?? b.score ?? 0);
             return bCombined - aCombined || Number(b.score || 0) - Number(a.score || 0);
           });
-          if (stage === 'PREATTACK') {
-            $('#note').textContent = `🔥 發動中｜目前 ${rankedPicks.length} 檔｜已出現第一根／突破或仍在發動早期，尚未完成正式進場確認。`;
-          }
           if (stage === 'LAUNCH') {
             const actionRows = rankedPicks.map(item => ({item,action:simpleActionState(item)})).filter(row=>row.action);
             updateBuySignalNotice(actionRows);
-            const pre = actionRows.filter(row=>row.action.key==='pre').length;
-            const breakout = actionRows.filter(row=>row.action.key==='breakout').length;
-            const add = actionRows.filter(row=>row.action.key==='add').length;
+            const activeCount = rankedPicks.filter(isActiveLaunchItem).length;
+            const pre = actionRows.filter(row=>!isActiveLaunchItem(row.item)&&row.action.key==='pre').length;
+            const breakout = actionRows.filter(row=>!isActiveLaunchItem(row.item)&&row.action.key==='breakout').length;
+            const add = actionRows.filter(row=>!isActiveLaunchItem(row.item)&&row.action.key==='add').length;
             const launchIncomplete = progress.latest_complete !== true || String(progress.latest_as_of || '') !== expectedSignalDataDate();
             const scanText = launchIncomplete
               ? `｜⚠️ 最新交易日僅更新 ${Number(progress.latest_count || 0)}/${Number(progress.total_stocks || 0)} 檔；未掃齊，不能判定全市場為零`
               : '';
-            $('#note').textContent = `🌱 高品質發動前｜目前已驗證達標 ${rankedPicks.length} 檔｜🟠發動前 ${pre}｜🟢突破 ${breakout}｜🔁回踩 ${add}${scanText}`
+            $('#note').textContent = `🌱 發動前｜追蹤 ${rankedPicks.length} 檔｜🔥發動中 ${activeCount}｜🟠發動前 ${pre}｜🟢突破 ${breakout}｜🔁回踩 ${add}${scanText}`
               + (data.quality_total > rankedPicks.length ? `｜另有 ${Number(data.quality_total)-rankedPicks.length} 檔尚未呈現` : '');
           }
           const launchStillIncomplete = progress.latest_complete !== true || String(progress.latest_as_of || '') !== expectedSignalDataDate();
@@ -3674,7 +3661,7 @@ h1 {
                 ? (launchStillIncomplete
                     ? '⚠️ 發動前最新模型尚未掃齊｜目前已驗證達標 0 檔，不代表市場沒有候選。最新完整日K ' + Number(progress.latest_count || 0) + '/' + Number(progress.total_stocks || 0) + ' 檔，未更新的股票不冒充新買點；原有追蹤資料不會因此刪除。'
                     : '本輪已更新模型中，沒有符合原定發動前量價、均線與風險條件的股票；不放寬條件湊數。')
-                : stage === 'ENTRY' ? '目前沒有符合正式可進場條件的股票。' : stage === 'PREATTACK' ? '目前沒有需要轉入進場雷達的起漲候選。' : '目前這個階段沒有候選股。'}</div>`);
+                : stage === 'ENTRY' ? '目前沒有符合正式可進場條件的股票。' : '目前這個階段沒有候選股。'}</div>`);
           if (stage === 'LAUNCH' && rankedPicks.length) {
             liveBasePicks = rankedPicks.slice(0,100);
             await refreshSimpleQuotes();
@@ -3682,25 +3669,6 @@ h1 {
             liveTimer = marketBridgeReady() && taipeiMarketState().open
               ? setInterval(() => { if (stage === 'LAUNCH' && !document.hidden) refreshSimpleQuotes(); },180000)
               : null;
-          }
-          if (stage === 'PREATTACK') {
-            // Only the currently selected S model candidates are eligible for C.
-            // Previous tab timer was cancelled by the navigation handler.
-            liveBasePicks = rankedPicks.slice(0,100);
-            if (!rankedPicks.length) {
-              $('#note').textContent = '🔥 發動中｜目前 S 快照沒有已驗證的發動中候選'
-                +(progress.latest_complete!==true
-                  ? '｜⚠️ 未掃齊 '+Number(progress.latest_count||0)+'/'+Number(progress.total_stocks||0)+'，不代表全市場沒有發動股'
-                  : '')
-                +'｜不自行放寬原有選股條件。';
-            } else {
-              await refreshActiveQuotes();
-              if (navigationSeq!==navToken || stage!==requestedStage) return;
-              if (liveTimer) clearInterval(liveTimer);
-              liveTimer = marketBridgeReady() && taipeiMarketState().open
-                ? setInterval(() => { if (stage==='PREATTACK' && !document.hidden) refreshActiveQuotes(); },180000)
-                : null;
-            }
           }
         } catch (error) {
           if (navigationSeq !== navToken || stage !== requestedStage) return;
@@ -4452,6 +4420,8 @@ h1 {
             .filter(row => {
               const item=row.item, q=validTodayQuote(row.quote) ? row.quote : null;
               if (!launchQualityState(item).keep) return false;
+              // The same S-active model candidate stays visible when C price breaks out.
+              if (isActiveLaunchItem(item)) return true;
               if (!q) return true;
               const m=item?.metrics||{}, mc=m.ma_cluster||{};
               const price=Number(q.price), high=Number(q.high), ma10=Number(m.ma10), ma20=Number(m.ma20), ma60=Number(m.ma60);
@@ -4473,46 +4443,11 @@ h1 {
           const quoteTimes = rows.map(row => row.quote?.quote_time).filter(Boolean);
           const latestQuote = quoteTimes.length ? quoteTimes.sort().at(-1) : '-';
           const missing=liveBasePicks.filter(item=>!quoteMap.has(String(item.stock_id))).map(item=>String(item.stock_id)).slice(0,9);
-          $('#note').textContent = `🌱 發動前｜追蹤 ${rows.length} 檔｜C 今日有效成交 ${quoteMap.size}/${liveBasePicks.length} 檔｜最後成交 ${latestQuote}｜${payload.cached_last_trade||0} 檔沿用今日前次有效成交${missing.length?'｜尚未取得 '+missing.join('、'):''}｜約3分鐘取樣｜日K不盤中重算。`;
+          $('#note').textContent = `🌱 發動前｜追蹤 ${rows.length} 檔｜🔥發動中 ${rows.filter(row=>isActiveLaunchItem(row.item)).length}｜C 今日有效成交 ${quoteMap.size}/${liveBasePicks.length} 檔｜最後成交 ${latestQuote}｜${payload.cached_last_trade||0} 檔沿用今日前次有效成交${missing.length?'｜尚未取得 '+missing.join('、'):''}｜約3分鐘取樣｜日K不盤中重算。`;
         } catch (error) {
           if (navigationSeq !== renderNavToken || stage !== renderStage) return;
           stableListRender(liveBasePicks.filter(item=>launchQualityState(item).keep).map(item => intradayCard(item,null)).join(''));
           $('#note').textContent = `🌱 發動前｜盤中報價暫時無法讀取，先依最新日K分類；不顯示明顯過熱、轉弱或過期候選。`;
-        }
-      }
-
-      // Independent active-launch C quote UI; never launches an S scanner or
-      // reclassifies the saved model. Uses the shared 3-minute batch/cache.
-      async function refreshActiveQuotes() {
-        if (stage!=='PREATTACK' || document.hidden || !liveBasePicks.length) return;
-        const navToken=navigationSeq,requestedStage=stage;
-        if (!marketBridgeReady() || !taipeiMarketState().open) {
-          $('#note').textContent='🔥 發動中｜S盤後追蹤 '+liveBasePicks.length+' 檔｜'
-            +(!taipeiMarketState().open?'目前非交易時段，顯示完整日K模型':'C授權尚未通過，僅顯示S盤後模型')
-            +'｜不以模型收盤冒充今日成交。'+scanProgressSuffix();
-          return;
-        }
-        try {
-          const payload=await window.getLiveQuotes(liveBasePicks.map(item=>({
-            stock_id:String(item.stock_id),market:String(item.market||'')
-          })));
-          if (navigationSeq!==navToken || stage!==requestedStage) return;
-          if (!payload?.ok) throw new Error('active_c_quote_unavailable');
-          const quoteMap=new Map((payload.quotes||[]).map(q=>[String(q.stock_id||''),q]));
-          // Keep every S-selected stock visible even if C has no verified trade.
-          stableListRender(liveBasePicks.map(item=>{
-            const quote=quoteMap.get(String(item.stock_id))||null;
-            return quote ? intradayCard(item,quote) : card(item);
-          }).join(''),{quoteUpdate:true});
-          const missing=liveBasePicks.filter(item=>!quoteMap.has(String(item.stock_id))).map(item=>String(item.stock_id)).slice(0,8);
-          $('#note').textContent='🔥 發動中｜S模型追蹤 '+liveBasePicks.length
-            +' 檔｜C今日有效成交 '+quoteMap.size+'/'+liveBasePicks.length+' 檔'
-            +(payload.cached_last_trade?'｜'+payload.cached_last_trade+' 檔沿用今日前次成交':'')
-            +(missing.length?'｜未取得 '+missing.join('、'):'')
-            +'｜約3分鐘取樣｜完整MA／KD仍以S盤後日K為準。'+scanProgressSuffix();
-        } catch(error) {
-          if (navigationSeq!==navToken || stage!==requestedStage) return;
-          $('#note').textContent='🔥 發動中｜C報價暫時無法驗證，保留S模型候選與先前有效成交；請勿把模型收盤當成盤中價。';
         }
       }
 
@@ -5246,9 +5181,7 @@ h1 {
             ? '📌 已切換到已買進｜正在更新持股…'
             : stage === 'ENTRY'
               ? '🎯 已切換到進場雷達｜正在更新…'
-              : stage === 'PREATTACK'
-                ? '🔥 已切換到發動中｜讀取 S 候選與 C 成交價…'
-                : '🟠 已切換到發動前｜正在更新…';
+              : '🟠 已切換到發動前｜正在更新…';
           $('#list').innerHTML = '<div class="box empty loading" data-stage-loading="1">'+loadingText+'</div>';
           if (stage === 'HOLDING') loadHoldingCards();
           else if (stage === 'ENTRY') loadLiveMonitor();
@@ -5330,8 +5263,6 @@ h1 {
           if (now - lastEntryPoolRefreshAt >= 300000) refreshV5MonitorPool();
         } else if (stage === 'LAUNCH') {
           refreshSimpleQuotes();
-        } else if (stage === 'PREATTACK') {
-          refreshActiveQuotes();
         } else if (stage === 'HOLDING') {
           if (!$('#list')?.querySelector('[data-stock-id]')) loadHoldingCards();
           else if (typeof holdingVisibilityControl === 'function') holdingVisibilityControl();
@@ -5348,7 +5279,7 @@ h1 {
       window.addEventListener('focus', refreshEntryOnResume);
       document.addEventListener('visibilitychange', checkExternalScanCommit);
       window.addEventListener('focus', checkExternalScanCommit);
-      const PAGE_BUILD = 'admin-pages-v6-c-active-20261012';
+      const PAGE_BUILD = 'admin-pages-v7-merge-active-20261012';
       let pageVersionCheckAt = 0;
       const checkLatestPageBuild = async () => {
         if (document.hidden) return;
