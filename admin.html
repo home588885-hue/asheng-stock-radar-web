@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>阿勝底部起漲雷達｜管理員</title>
     <meta name="theme-color" content="#0b1020" />
-    <meta name="asheng-build" content="admin-pages-v4-quote-marketcode-20261012" />
+    <meta name="asheng-build" content="admin-pages-v5-c-3stage-quote-20261012" />
     <style>
 @tailwind base;
 @tailwind components;
@@ -1472,13 +1472,14 @@ h1 {
           const { data: authData } = await authClient.auth.getSession();
           const jwt = authData?.session?.access_token;
           if (!jwt) return;
-          const probe = await fetch(url + '/quotes?symbols=2330:tse', {
+          // Authenticate with C without depending on MIS upstream availability.
+          // The Worker checks admin BEFORE it checks the invalid-market argument.
+          const probe = await fetch(url + '/eod-prefilter?market=invalid', {
             headers:{Authorization:'Bearer '+jwt,Accept:'application/json'},
-            cache:'no-store',signal:AbortSignal.timeout(12000)
+            cache:'no-store',signal:AbortSignal.timeout(8500)
           });
-          if (!probe.ok) return;
-          const json = await probe.json();
-          if (json?.ok !== true || !Array.isArray(json.quotes)) return;
+          const result = await probe.json();
+          if (probe.status !== 400 || result?.error !== 'market_must_be_tse_or_otc') return;
           MARKET_BRIDGE_URL = url;
         } catch (error) {}
       };
@@ -1545,7 +1546,7 @@ h1 {
         // Cloudflare may quote ONLY the current S-model picks of the active radar
         // section plus the admin's own saved holdings. It NEVER creates new picks.
         const isModelSelected = marketBridgeReady()
-          && ['LAUNCH','ENTRY'].includes(stage)
+          && ['LAUNCH','ENTRY','PREATTACK'].includes(stage)
           && liveBasePicks.some(item => String(item?.stock_id || '') === id);
         if (!holdings.has(id) && !isModelSelected) return null;
         if (validTodayQuote(quote)) return quote;
@@ -1565,9 +1566,13 @@ h1 {
       };
       window.getLiveQuotes = async items => {
         // 網頁在背景或非交易時段，禁止發出新的即時行情請求。
-        const candidatesViaBridge = marketBridgeReady() && ['LAUNCH','ENTRY'].includes(stage);
-        const quoteWindow = marketBridgeReady() ? taipeiMarketState().open : closeWatchState().active;
-        if (document.hidden || !quoteWindow) return { ok:true, quotes:[] };
+        const candidatesViaBridge = marketBridgeReady() && ['LAUNCH','ENTRY','PREATTACK'].includes(stage);
+        const quoteWindow = marketBridgeReady() && taipeiMarketState().open;
+        // Stock quotes in these UI sections are C-only; never bill S for a fallback.
+        if (document.hidden || !quoteWindow) return {
+          ok:true,source:'C',quotes:[],bridge_ready:marketBridgeReady(),
+          reason:marketBridgeReady()?'outside_trading_hours':'C_auth_not_ready'
+        };
         const unique = [];
         const seen = new Set();
         for (const item of (items || [])) {
@@ -1598,16 +1603,21 @@ h1 {
         const incoming = new Map(results.flat().map(quote => [String(quote?.stock_id || ''), quote]));
         const quotes = unique.map(item => {
           const id = String(item.stock_id);
-          const quote = incoming.get(id) || null;
+          const quote = incoming.get(id) || null, cached = liveQuoteCache.get(id);
           if (validTodayQuote(quote)) {
-            liveQuoteCache.set(id, { ...quote });
+            // Never replace a later matched trade with an older MIS response.
+            if (validTodayQuote(cached) && String(cached.quote_time||'') > String(quote.quote_time||'')) {
+              return {...cached,cached_last_trade:true};
+            }
+            liveQuoteCache.set(id,{...quote,cached_last_trade:false});
             return quote;
           }
-          const cached = liveQuoteCache.get(id);
-          return validTodayQuote(cached) ? { ...cached, cached_last_trade:true } : null;
+          return validTodayQuote(cached) ? {...cached,cached_last_trade:true} : null;
         }).filter(validTodayQuote);
         persistLiveQuoteCache();
-        return { ok:true, source:'TWSE MIS', quotes };
+        const fetchedNow=quotes.filter(q=>!q.cached_last_trade && incoming.has(String(q.stock_id))).length;
+        return {ok:true,source:'Cloudflare TWSE MIS',bridge_ready:true,
+          requested:unique.length,fetched_now:fetchedNow,cached_last_trade:quotes.length-fetchedNow,quotes};
       };
       const HOLDINGS_CACHE_PREFIX = 'asheng-radar-member-holdings-';
       let portfolioId = memberSession.user.id;
@@ -1845,19 +1855,9 @@ h1 {
             const data = await response.json();
             if (response.ok && data?.ok && Array.isArray(data.quotes)) return data.quotes;
           } catch (error) {}
-          // Never fall back to old Supabase for a candidate pool. Holdings retain existing emergency fallback.
-          return []; // Worker unavailable: leave quote unavailable rather than consuming Supabase quote budget.
+          return []; // C unavailable: never invent a trade or consume S quote budget.
         }
-        // Primary/fallback currently point to the same Edge Function: never double-call it.
-        for (const base of new Set([LIVE_API, LIVE_FALLBACK_API])) {
-          if (document.hidden) return []; // 防止切背景後補送備援請求
-          try {
-            const response = await fetch(base + suffix, { cache:'no-store' });
-            const data = await response.json();
-            if (response.ok && data?.ok && Array.isArray(data.quotes)) return data.quotes;
-          } catch (error) {}
-        }
-        return [];
+        return []; // C not authorized yet; keep displaying the S EOD model.
       };
       const fetchScanStatusShared = async () => {
         const stamp = '&_=' + Date.now();
@@ -2960,7 +2960,7 @@ h1 {
             + '｜下單前須核對今日股價、量能與風險</div>').join('')
           + (changes.length>8?'<div class="risk-note">其餘 '+(changes.length-8)+' 檔請查看進場雷達。</div>':'');
       };
-      const renderEntrySections = rows => {
+      const renderEntrySections = (rows,{quoteUpdate=false}={}) => {
         rows=[...new Map((rows||[]).map(row=>[String(row?.item?.stock_id||''),row])).values()].filter(row=>row?.item?.stock_id);
 
         // 過期模型不進進場雷達。以本批最新模型日為基準，超過5個日曆日直接排除，
@@ -3146,7 +3146,7 @@ h1 {
           entryBucketHtml('pullback','🔵 位置偏高｜等回踩','避免追高，觀察支撐與短均線',pullbackRows,{open:!focusRows.length&&!waitRows.length,tone:'high',preview:5})+
           entryBucketHtml('avoid','🔴 風險警戒｜先避開','已觸發風險或轉弱條件，不列買進候選',avoidRows,{open:!focusRows.length&&!waitRows.length&&!pullbackRows.length,tone:'blocked',preview:5});
         updateBuySignalNotice(focusRows);
-        stableListRender(outHtml);
+        stableListRender(outHtml,{quoteUpdate});
         return { earlyRows, starterRows, completedRows, recalcRows, blockedRows, highRows,
           weakeningRows, queuedRows, nearRows, trackingRows, staleRows,
           focusRows, waitRows, pullbackRows, avoidRows, displayedTotal };
@@ -4320,10 +4320,26 @@ h1 {
           if (cleanedText !== originalText) node.nodeValue = cleanedText;
         });
       };
-      const stableListRender = (html, {force=false}={}) => {
+      let pendingQuoteUi=null,quoteUiRetryTimer=null;
+      const stableListRender = (html, {force=false,quoteUpdate=false}={}) => {
         const list=$('#list'); if(!list)return;
         const stageSwitchPending = !!list.querySelector('[data-stage-loading="1"]');
-        if(!force && !stageSwitchPending && (detailReadingActive() || viewportMoving())) return;
+        const activelyMoving = viewportMoving() || !!$('#holdingDialog')?.open;
+        // For price updates, preserve expanded panels using keyed DOM reconciliation below.
+        // If scrolling/editing, defer PAINT only: never re-fetch C or S to refresh the screen.
+        if (!force && !stageSwitchPending && (activelyMoving || (!quoteUpdate && detailReadingActive()))) {
+          if (quoteUpdate) {
+            pendingQuoteUi={html,stage,navigationSeq};
+            if (!quoteUiRetryTimer) quoteUiRetryTimer=setTimeout(()=>{
+              quoteUiRetryTimer=null;
+              const saved=pendingQuoteUi;pendingQuoteUi=null;
+              if(saved && saved.stage===stage && saved.navigationSeq===navigationSeq)
+                stableListRender(saved.html,{quoteUpdate:true});
+            },350);
+          }
+          return;
+        }
+        if (quoteUpdate) pendingQuoteUi=null;
         const anchor=visibleStockAnchor();
         const t=document.createElement('template'); t.innerHTML=html;
         sanitizeMemberTextNodes(t.content);
@@ -4427,10 +4443,11 @@ h1 {
               return true;
             });
 
-          stableListRender(rows.length ? rows.map(row => intradayCard(row.item, row.quote)).join('') : '<div class="box empty">目前沒有仍符合發動前條件的股票；只有明確轉弱、跌離發動區或位置過熱才會移出。</div>');
+          stableListRender(rows.length ? rows.map(row => intradayCard(row.item, row.quote)).join('') : '<div class="box empty">目前沒有仍符合發動前條件的股票；只有明確轉弱、跌離發動區或位置過熱才會移出。</div>',{quoteUpdate:true});
           const quoteTimes = rows.map(row => row.quote?.quote_time).filter(Boolean);
           const latestQuote = quoteTimes.length ? quoteTimes.sort().at(-1) : '-';
-          $('#note').textContent = `🌱 發動前｜目前 ${rows.length} 檔｜Cloudflare 有效成交報價 ${latestQuote}｜約3分鐘低頻更新｜日K模型不盤中重算。`;
+          const missing=liveBasePicks.filter(item=>!quoteMap.has(String(item.stock_id))).map(item=>String(item.stock_id)).slice(0,9);
+          $('#note').textContent = `🌱 發動前｜追蹤 ${rows.length} 檔｜C 今日有效成交 ${quoteMap.size}/${liveBasePicks.length} 檔｜最後成交 ${latestQuote}｜${payload.cached_last_trade||0} 檔沿用今日前次有效成交${missing.length?'｜尚未取得 '+missing.join('、'):''}｜約3分鐘取樣｜日K不盤中重算。`;
         } catch (error) {
           if (navigationSeq !== renderNavToken || stage !== renderStage) return;
           stableListRender(liveBasePicks.filter(item=>launchQualityState(item).keep).map(item => intradayCard(item,null)).join(''));
@@ -4657,12 +4674,16 @@ h1 {
               .filter(row => row.action)
               .sort((a,b)=>b.action.rank-a.action.rank);
             if (finalQuoteWindow) refreshEntryEodPriority(rows);
-            const groups = renderEntrySections(rows);
+            const groups = renderEntrySections(rows,{quoteUpdate:true});
+            const missingQuoteIds=liveBasePicks.filter(item=>!quoteMap.has(String(item.stock_id))).map(item=>String(item.stock_id)).slice(0,9);
+            const quoteCoverage='｜C今日成交 '+quoteMap.size+'/'+liveBasePicks.length+' 檔'
+              +(payload.cached_last_trade?'｜'+payload.cached_last_trade+' 檔沿用今日前次成交':'')
+              +(missingQuoteIds.length?'｜未回 '+missingQuoteIds.join('、'):'');
             const confirmed = rows.filter(row => row.action.phase === 'confirmed').length;
             const finalWait = rows.filter(row => row.action.phase === 'final_wait').length;
             $('#note').textContent = finalQuoteWindow
               ? `🎯 盤後整理｜📌明日優先 ${groups.completedRows.length}｜⚡日K補算 ${groups.recalcRows.length}｜🔵等回踩 ${groups.highRows.length}｜🟠轉弱 ${groups.weakeningRows.length}｜過期排除 ${groups.staleRows.length}｜資料完成後自動更新。${scanProgressSuffix()}`
-              : `🎯 進場雷達｜🚀盤中起漲 ${groups.earlyRows.length}｜🔵小量試單 ${groups.starterRows.length}｜🟡等確認 ${groups.nearRows.length}｜🔵等回踩 ${groups.highRows.length}｜🟠轉弱 ${groups.weakeningRows.length}｜盤中起漲優先看最上方。${scanProgressSuffix()}`;
+              : `🎯 進場雷達｜🚀盤中起漲 ${groups.earlyRows.length}｜🔵小量試單 ${groups.starterRows.length}｜🟡等確認 ${groups.nearRows.length}｜🔵等回踩 ${groups.highRows.length}｜🟠轉弱 ${groups.weakeningRows.length}${quoteCoverage}｜盤中起漲優先看最上方。${scanProgressSuffix()}`;
             return;
           }
           const ranked = liveBasePicks.map(item => ({ item, quote: quoteMap.get(String(item.stock_id)) })).filter(row => row.quote).sort((a, b) => {
@@ -5009,10 +5030,11 @@ h1 {
               const quote = quoteMap.get(String(item.stock_id)) || null;
               if (quote) recordHoldingCloseWatch(item, quote);
               return quote ? intradayCard(item, quote) : card(item,{hideSignal:true});
-            }).join('') + fallbackHtml);
+            }).join('') + fallbackHtml,{quoteUpdate:true});
             const freshCount = items.filter(item => String(item.as_of || '') === expectedSignalDataDate()).length;
+            const absent=items.filter(item=>!quoteMap.has(String(item.stock_id))).map(item=>String(item.stock_id)).slice(0,9);
             $('#note').textContent = marketBridgeReady()
-              ? `📌 已買進 ${symbols.length} 檔｜C 今日有效成交報價 ${quoteMap.size}/${items.length} 檔${quoteMap.size ? '｜約3分鐘取樣' : '｜暫無核實的今日成交價，不顯示委買委賣價'}｜日K模型 ${freshCount}/${items.length} 檔｜盤後完整更新。`
+              ? `📌 已買進 ${symbols.length} 檔｜C 今日有效成交報價 ${quoteMap.size}/${items.length} 檔${payload.cached_last_trade?'｜'+payload.cached_last_trade+' 檔沿用今日前次成交':''}${absent.length?'｜未取得 '+absent.join('、'):''}｜約3分鐘取樣｜日K模型 ${freshCount}/${items.length} 檔｜盤後完整更新。`
               : `⚠️ 已買進 ${symbols.length} 檔｜C 目前未通過登入／資料來源驗證，盤中報價未啟用（不代表股票沒有成交）｜只顯示 ${freshCount}/${items.length} 檔既有日K模型｜不冒用舊價。`;
           } catch (error) {
             stableListRender(items.map(item => card(item,{hideSignal:true})).join('') + fallbackHtml);
@@ -5261,7 +5283,7 @@ h1 {
       window.addEventListener('focus', refreshEntryOnResume);
       document.addEventListener('visibilitychange', checkExternalScanCommit);
       window.addEventListener('focus', checkExternalScanCommit);
-      const PAGE_BUILD = 'admin-pages-v4-quote-marketcode-20261012';
+      const PAGE_BUILD = 'admin-pages-v5-c-3stage-quote-20261012';
       let pageVersionCheckAt = 0;
       const checkLatestPageBuild = async () => {
         if (document.hidden) return;
