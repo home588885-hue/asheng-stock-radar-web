@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>阿勝底部起漲雷達｜管理員</title>
     <meta name="theme-color" content="#0b1020" />
-    <meta name="asheng-build" content="admin-pages-v10-holding-survival-1250-1320-20261012" />
+    <meta name="asheng-build" content="admin-pages-v11-sold-holding-sync-20261012" />
     <style>
 @tailwind base;
 @tailwind components;
@@ -5046,16 +5046,21 @@ h1 {
         }
       };
 
+      let holdingsLastReadSucceeded = false;
       async function loadHoldings() {
         if (holdingsFetchPromise) return holdingsFetchPromise;
         holdingsFetchPromise = (async () => {
           try {
             const response = await fetchWithTimeout(HOLDINGS_API, { cache: 'no-store' }, 4500);
             const data = await response.json();
-            if (!response.ok || !data.ok) throw new Error('持股讀取失敗');
-            holdings = new Map((data.holdings || []).map(item => [String(item.stock_id), item]));
+            if (!response.ok || !data.ok || !Array.isArray(data.holdings)) throw new Error('持股讀取失敗');
+            // Only an authoritative active holding may appear as a currently owned stock.
+            holdings = new Map(data.holdings.filter(item => item?.active === true)
+              .map(item => [String(item.stock_id), item]));
+            holdingsLastReadSucceeded = true;
             cacheHoldings();
           } catch (error) {
+            holdingsLastReadSucceeded = false;
             if (!holdings.size) restoreCachedHoldings();
           } finally {
             holdingsFetchPromise = null;
@@ -5075,21 +5080,19 @@ h1 {
         const holdingStillCurrent = () => holdingToken === holdingLoadSeq && navigationSeq === navToken && stage === requestedStage && stage === 'HOLDING';
         if (liveTimer) { clearInterval(liveTimer); liveTimer = null; }
         if (livePoolTimer) { clearInterval(livePoolTimer); livePoolTimer = null; }
-        const cachedHoldingView = stageViewCache.get('HOLDING');
-        $('#list').innerHTML = cachedHoldingView || '<div class="box empty loading">📌 已切換到已買進｜正在更新持股…</div>';
-        $('#note').textContent = '📌 已買進｜先顯示持股區，最新報價與模型正在背景補上。';
+        // Never show a previous holding HTML card or a stale local holding as confirmed.
+        stageViewCache.delete('HOLDING');
+        const cachedHoldingView = null;
+        $('#list').innerHTML = '<div class="box empty loading">📌 已買進｜正在核對伺服器持股清單…</div>';
+        $('#note').textContent = '📌 已買進｜確認持股後再載入最新模型與報價。';
         renderCoverageWarning(latestScanProgress);
-        if (!cachedHoldingView && holdings.size) {
-          const instantHtml=Array.from(holdings.keys()).map(symbol=>{
-            const h=holdings.get(String(symbol))||{}, cost=Number(h.avg_cost), qty=Number(h.quantity||0);
-            const q=bestTodayQuote(null,symbol), price=q?.price == null ? NaN : Number(q.price), prev=q?.prev_close == null ? NaN : Number(q.prev_close), vol=q?.volume_lots == null ? NaN : Number(q.volume_lots), qt=String(q?.quote_time||'');
-            const pct=Number.isFinite(price)&&Number.isFinite(prev)&&prev>0?(price/prev-1)*100:null;
-            return '<article class="card" data-stock-id="'+esc(symbol)+'"><div class="top"><div><div class="name">'+esc(symbol)+'</div><div class="meta">📌 已買進｜先顯示持股</div></div><div class="badge">持股</div></div><div class="holding-row"><span>成本 '+(Number.isFinite(cost)?num(cost,2):'-')+'｜數量 '+(Number.isFinite(qty)?qty.toLocaleString('zh-TW'):'-')+'</span></div><div class="quick-grid"><div><span>今日成交價</span><b>'+(Number.isFinite(price)?num(price,2):'-')+'</b></div><div><span>今日漲跌</span><b>'+(pct==null?'-':(pct>=0?'+':'')+num(pct,2)+'%')+'</b></div><div><span>成交量</span><b>'+(Number.isFinite(vol)?vol.toLocaleString('zh-TW')+'張':'-')+'</b></div></div>'+timeInfoHtml(null,q)+'<div class="meta">模型背景更新中…</div></article>';
-          }).join('');
-          stableListRender(instantHtml);
-        }
         await loadHoldings();
         if (!holdingStillCurrent()) return;
+        if (!holdingsLastReadSucceeded) {
+          $('#list').innerHTML = '<div class="box empty error">持股清單暫時無法與伺服器核對，為避免已賣出股票再次出現，這次先不顯示舊快取。請稍後重新整理。</div>';
+          $('#note').textContent = '⚠️ 已買進資料未完成伺服器驗證；持股紀錄沒有刪除。';
+          return;
+        }
         const symbols = Array.from(holdings.keys());
         if (!symbols.length) {
           $('#list').innerHTML = '<div class="box empty">目前沒有標記為已買進的股票。</div>';
@@ -5274,8 +5277,15 @@ h1 {
         const data = await response.json();
         if (!response.ok || !data.ok) { alert('持股資料暫時無法更新，請稍後再試。'); return; }
         holdings.delete(String(stockId));
+        stageViewCache.delete('HOLDING');
         cacheHoldings();
         await loadHoldings();
+        // The API acknowledges member sales before its admin mirror update.
+        // Verify the one existing holdings GET; never silently claim completion.
+        if (!holdingsLastReadSucceeded || holdings.has(String(stockId))) {
+          alert('賣出操作尚未確認同步到管理員持股。請重新整理核對；若仍顯示持有，暫勿重複按賣出。');
+        }
+        stageViewCache.delete('HOLDING');
         refreshCurrent();
       }
 
