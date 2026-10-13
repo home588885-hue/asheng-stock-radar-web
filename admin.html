@@ -3620,7 +3620,7 @@ h1 {
         const preRisk=newEntryRiskGate(item);
         // Display-only exclusivity: candidates already shown in ENTRY never repeat in LAUNCH.
         // Use existing S signal states; no new candidate selection or weighting.
-        if (['highwin','v5buy'].includes(tradeSignal(item).className) || isActiveLaunchItem(item))
+        if (['highwin','v5buy'].includes(tradeSignal(item).className))
           return {keep:false,rank:0,className:'promoted',label:'🎯 進場雷達'};
         if(preRisk?.kind==='hard') return {keep:false,rank:0,className:'blocked',label:'🔴 結構風險｜暫不新買'};
         if(preRisk?.late_chase===true){
@@ -5543,6 +5543,11 @@ h1 {
       }
 
       const buildEntryPool = (v5Picks = [], launchPicks = []) => {
+        // UI exclusivity: exclude only stocks actually supplied to the visible LAUNCH
+        // list; never hide a candidate absent from that source or change S selection.
+        const launchShownIds = new Set(launchPicks
+          .filter(item => launchQualityState(item).keep)
+          .map(item => String(item.stock_id || '')));
         const merged = new Map();
         [...launchPicks, ...v5Picks].forEach(item => {
           const key = String(item?.stock_id || '');
@@ -5567,7 +5572,7 @@ h1 {
           return 0;
         };
         return [...merged.values()]
-          .filter(item => rankItem(item) > 0)
+          .filter(item => rankItem(item) > 0 && !launchShownIds.has(String(item.stock_id || '')))
           .sort((a,b) => rankItem(b) - rankItem(a) || companyProfileState(b).rank - companyProfileState(a).rank)
           .slice(0, 60);
       };
