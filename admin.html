@@ -5328,14 +5328,9 @@ h1 {
           return;
         }
         if (!cachedHoldingView) {
-          const quickHoldingHtml = symbols.map(symbol => {
-            const h=holdings.get(String(symbol)) || {};
-            const cost=Number(h.avg_cost), qty=Number(h.quantity || 0);
-            const q=bestTodayQuote(null,symbol), price=q?.price == null ? NaN : Number(q.price), prev=q?.prev_close == null ? NaN : Number(q.prev_close), vol=q?.volume_lots == null ? NaN : Number(q.volume_lots), qt=String(q?.quote_time||'');
-            const pct=Number.isFinite(price)&&Number.isFinite(prev)&&prev>0?(price/prev-1)*100:null;
-            return '<article class="card" data-stock-id="'+esc(symbol)+'"><div class="top"><div><div class="name">'+esc(symbol)+'</div><div class="meta">📌 已買進｜持股資料已載入</div></div><div class="badge">持股</div></div><div class="holding-row"><span>成本 '+(Number.isFinite(cost)?num(cost,2):'-')+'｜數量 '+(Number.isFinite(qty)?qty.toLocaleString('zh-TW'):'-')+'</span></div><div class="quick-grid"><div><span>今日成交價</span><b>'+(Number.isFinite(price)?num(price,2):'-')+'</b></div><div><span>今日漲跌</span><b>'+(pct==null?'-':(pct>=0?'+':'')+num(pct,2)+'%')+'</b></div><div><span>成交量</span><b>'+(Number.isFinite(vol)?vol.toLocaleString('zh-TW')+'張':'-')+'</b></div></div>'+timeInfoHtml(null,q)+'<div class="meta">最新模型背景更新中…</div></article>';
-          }).join('');
-          stableListRender(quickHoldingHtml);
+          // Only server-verified active holdings can be shown, never stale sold cards.
+          stableListRender(holdingOverviewHtml(symbols.length,0)
+            + symbols.map(symbol => holdingPlaceholderHtml(symbol)).join(''));
         }
 
         // 第一階段只讀資料庫快照，先把持股卡和官方成交價顯示出來。
@@ -5348,10 +5343,10 @@ h1 {
           const byId=new Map((data.picks || []).map(item => [String(item.stock_id), item]));
           baseResults=symbols.map(symbol => {
             const item=byId.get(String(symbol)) || null;
-            return { symbol, item, master:null, fresh:item ? String(item.as_of || '') === expectedSignalDataDate() : false, fallback:item ? '' : `<div class="box empty">${esc(symbol)}｜📌 持股仍已保存｜模型快照待更新，不會從持股池消失。</div>` };
+            return { symbol, item, master:null, fresh:item ? String(item.as_of || '') === expectedSignalDataDate() : false, fallback:item ? '' : holdingPlaceholderHtml(symbol,'持股仍已保存；模型快照待更新，不會從持股池消失。') };
           });
         } catch (error) {
-          baseResults=symbols.map(symbol => ({ symbol, item:null, master:null, fresh:false, fallback:`<div class="box empty error">${esc(symbol)}｜📌 持股仍已保存｜模型快照暫時讀取不到，不會從持股池消失。</div>` }));
+          baseResults=symbols.map(symbol => ({ symbol, item:null, master:null, fresh:false, fallback:holdingPlaceholderHtml(symbol,'持股仍已保存；模型快照暫時讀取不到，不會從持股池消失。',true) }));
         }
 
         if (!holdingStillCurrent()) return;
@@ -5363,13 +5358,11 @@ h1 {
         // during the request or the user is scrolling when the fetch resolves.
         // Do not wait for today's C quotes or the live-price refresh loop.
         // This forced upgrade runs once per holdings load, preserving the stable stock anchors.
-        const baselineHtml = items.map(item => {
-          try { return card(item,{hideSignal:true}); }
+        const baselineHtml = holdingOverviewHtml(symbols.length,items.length) + items.map(item => {
+          try { return holdingMiniHtml(item); }
           catch (error) {
             console.error('holding_model_card_render_failed',String(item?.stock_id||''),String(error));
-            return '<div class="box empty error" data-stock-id="'+esc(item?.stock_id||'')+'">'
-              +esc(item?.stock_id||'')+' '+esc(item?.stock_name||'')
-              +'｜📌 持股資料保留｜模型顯示異常，暫不提供動作建議；請重新載入。</div>';
+            return holdingPlaceholderHtml(item.stock_id,'持股資料保留；模型顯示異常，暫不提供動作建議。',true);
           }
         }).join('') + fallbackHtml;
         stableListRender(baselineHtml,{force:true});
@@ -5382,7 +5375,8 @@ h1 {
         const render = async () => {
           if (!holdingStillCurrent() || document.hidden || holdingQuoteRefreshing) return;
           if (!items.length || typeof window.getLiveQuotes !== 'function') {
-            stableListRender(items.map(item => card(item,{hideSignal:true})).join('') + fallbackHtml);
+            stableListRender(holdingOverviewHtml(symbols.length,items.length)
+              + items.map(item => holdingMiniHtml(item)).join('') + fallbackHtml);
             const freshCount = items.filter(item => String(item.as_of || '') === expectedSignalDataDate()).length;
             $('#note').textContent = `📌 已買進 ${symbols.length} 檔｜持股優先更新中｜模型 ${freshCount}/${items.length} 檔已到 ${expectedSignalDataDate()}。`;
             return;
@@ -5396,10 +5390,10 @@ h1 {
               : { ok:true,quotes:items.map(item => bestTodayQuote(null, item.stock_id)).filter(Boolean) };
             if (!payload?.ok) throw new Error('live_quote_failed');
             const quoteMap = new Map((payload.quotes || []).map(quote => [String(quote.stock_id || ''), quote]));
-            stableListRender(items.map(item => {
+            stableListRender(holdingOverviewHtml(symbols.length,items.length) + items.map(item => {
               const quote = quoteMap.get(String(item.stock_id)) || null;
               if (quote) recordHoldingCloseWatch(item, quote);
-              return quote ? intradayCard(item, quote) : card(item,{hideSignal:true});
+              return holdingMiniHtml(item, quote);
             }).join('') + fallbackHtml,{quoteUpdate:true});
             const freshCount = items.filter(item => String(item.as_of || '') === expectedSignalDataDate()).length;
             const absent=items.filter(item=>!quoteMap.has(String(item.stock_id))).map(item=>String(item.stock_id)).slice(0,9);
@@ -5407,7 +5401,8 @@ h1 {
               ? `📌 已買進 ${symbols.length} 檔｜C 今日有效成交報價 ${quoteMap.size}/${items.length} 檔${payload.cached_last_trade?'｜'+payload.cached_last_trade+' 檔沿用今日前次成交':''}${absent.length?'｜未取得 '+absent.join('、'):''}｜約3分鐘取樣｜日K模型 ${freshCount}/${items.length} 檔｜盤後完整更新。`
               : `⚠️ 已買進 ${symbols.length} 檔｜C 目前未通過登入／資料來源驗證，盤中報價未啟用（不代表股票沒有成交）｜只顯示 ${freshCount}/${items.length} 檔既有日K模型｜不冒用舊價。`;
           } catch (error) {
-            stableListRender(items.map(item => card(item,{hideSignal:true})).join('') + fallbackHtml);
+            stableListRender(holdingOverviewHtml(symbols.length,items.length)
+              + items.map(item => holdingMiniHtml(item)).join('') + fallbackHtml);
             $('#note').textContent = `📌 持股 ${symbols.length} 檔已保留｜收盤前行情暫時未回；不補抓全天盤中報價，晚上9點再更新完整模型。`;
           } finally {
             holdingQuoteRefreshing = false;
@@ -5584,6 +5579,16 @@ h1 {
       $('#holdingForm').addEventListener('submit', saveHolding);
       $('#holdingCancel').addEventListener('click', () => $('#holdingDialog').close());
       $('#syncHoldingsBtn').addEventListener('click', syncHoldings);
+      // Capture native details toggles to preserve expanded holdings across quote
+      // updates and tab re-entry. Never persist private portfolio HTML on disk.
+      $('#list').addEventListener('toggle', event => {
+        const node=event.target;
+        if(stage!=='HOLDING'||!node?.matches?.('details.holding-mini[data-stock-key]')||!node.isConnected)return;
+        const id=String(node.dataset.stockKey||'');
+        if(!id||!holdings.has(id))return;
+        if(node.open)holdingExpandedIds.add(id);
+        else holdingExpandedIds.delete(id);
+      },true);
       $('#list').addEventListener('click', event => {
         const summary = event.target.closest('.card-details > summary');
         if (summary) {
