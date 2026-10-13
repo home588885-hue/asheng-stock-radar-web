@@ -525,6 +525,39 @@ h1 {
 .entry-extra { margin-top:3px; background:#15233b; border:1px solid #364b6a; border-radius:10px; padding:4px 7px 8px; }
 .entry-extra > summary { color:#bdd6fb; font-weight:700; padding:9px; }
 .entry-extra .entry-mini { margin:6px 0; }
+/* 已買進：與進場雷達相同的逐檔收合，僅改視覺。 */
+.holding-list-overview { padding:13px 14px; border:1px solid #64748b55; border-radius:14px; background:#142039; display:grid; gap:5px; margin:8px 0 12px; }
+.holding-list-overview strong { font-size:18px; }
+.holding-list-overview span { color:#c3d4eb; font-size:13px; line-height:1.55; }
+.holding-mini-wrap { margin:8px 0; min-width:0; }
+.holding-mini { background:#16233b; border:1px solid #354762; border-radius:12px; overflow:hidden; }
+.holding-mini[open] { border-color:#79a5e4; }
+.holding-mini > summary { list-style:none; cursor:pointer; padding:12px 13px; display:grid; grid-template-columns:minmax(0,1fr) auto auto; align-items:center; gap:6px 9px; }
+.holding-mini > summary::-webkit-details-marker { display:none; }
+.holding-mini > summary:focus-visible { outline:2px solid #93c5fd; outline-offset:-3px; }
+.holding-mini-name { display:grid; gap:3px; min-width:0; }
+.holding-mini-name strong { font-size:18px; color:#eef6ff; overflow-wrap:anywhere; }
+.holding-mini-name small { font-size:12px; color:#a8bdd7; }
+.holding-mini-action { display:inline-block; padding:5px 9px; border-radius:8px; font-size:14px; font-weight:800; white-space:nowrap; background:#1d4d40; color:#bff9dc; }
+.holding-mini-action.warn { background:#533c1a; color:#fde68a; }
+.holding-mini-action.reduce { background:#613c20; color:#fed7aa; }
+.holding-mini-action.exit { background:#5b2934; color:#fecdd3; }
+.holding-mini-expand { font-size:12px; white-space:nowrap; color:#a8bdd7; }
+.holding-mini[open] .holding-mini-expand::after { content:' ▲'; }
+.holding-mini:not([open]) .holding-mini-expand::after { content:' ▼'; }
+.holding-mini-stats, .holding-mini-date { grid-column:1 / -1; color:#d7e3f5; font-size:13px; line-height:1.6; }
+.holding-mini-stats b { color:#f8fafc; }
+.holding-mini-stats .pnl-up { color:#fca5a5; }
+.holding-mini-stats .pnl-down { color:#86efac; }
+.holding-mini-date { font-size:12px; color:#a0b5d2; }
+.holding-mini-body { padding:8px; border-top:1px solid #344762; }
+.holding-mini-body > .card, .holding-mini-body > .live-wrap { margin:0; }
+@media (max-width:640px) {
+  .holding-mini > summary { grid-template-columns:minmax(0,1fr) auto; padding:11px; gap:5px 8px; }
+  .holding-mini-expand { display:none; }
+  .holding-mini-name strong { font-size:17px; }
+  .holding-mini-action { font-size:13px; }
+}
 @media (max-width:640px) {
   .entry-bucket-head { padding:11px; gap:6px; }
   .entry-bucket-headline b { font-size:16px; }
@@ -4502,6 +4535,65 @@ h1 {
         return `<details class="card-details holding-rules-details"><summary>📋 ${rulesTitle}與持股規則</summary><div class="holding-analysis holding-rules-body"><dl class="holding-rule-grid">${fields.map(([label,value]) => `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl><div class="holding-rule-line"><b>短線判斷：</b>${esc(short)}。有效跌破採 0.4%；同時量比 ≥ 1.2x 升級放量警戒，隔日收復解除。</div><div class="holding-rule-line"><b>加碼條件：</b>兩條路：①回踩MA20守住＋量價轉強，量比約0.8～2x；②突破前高／突破位後續強，量比約1～2.2x、日K≤85。共同限制：MA10／20／60多頭、距MA20≤5%、成本損益0～未滿12%、日量至少1,000張、20日均量至少500張。盤中僅觀察、模型確認才評估；追加一筆不超過原先觀察持股約1/3，偵測加碼後停止重複提示，嚴禁虧損攤平。</div><div class="holding-rule-line"><b>出場條件：</b>連續 3 個交易日收盤低於 MA20 且未收回，標示「出清股票」。</div>${strongNote}${riskNote}${profitNote}<div class="holding-rule-line"><b>核心規則：</b>昨日低點管短線節奏，MA20 管主要趨勢。</div></div></details>`;
       };
 
+      // UI-only folding. The holdings Map remains verified by the server.
+      // The full card() and intradayCard() keep all risk rules and trading controls.
+      const holdingExpandedIds = new Set();
+      const holdingMiniHtml = (item, quote = null) => {
+        const id=String(item.stock_id||''),saved=holdings.get(id)||{};
+        const cost=Number(saved.avg_cost),qty=Number(saved.quantity);
+        const safeQuote=bestTodayQuote(validTodayQuote(quote)?quote:null,id);
+        const m=item.metrics||{},modelDate=String(item.as_of||'');
+        const modelFresh=modelDate===expectedSignalDataDate(),modelClose=Number(m.close);
+        const price=safeQuote?Number(safeQuote.price):(modelFresh&&modelClose>0?modelClose:null);
+        const priceOkay=price!=null&&Number.isFinite(price)&&price>0;
+        const costOkay=Number.isFinite(cost)&&cost>0;
+        const pnl=priceOkay&&costOkay?(price/cost-1)*100:null;
+        const {main}=holdingDisplay(item,safeQuote);
+        const displayMain=priceOkay?main:'待更新';
+        const cls=displayMain==='出清'?'exit':displayMain==='減碼'?'reduce':displayMain==='警戒'||displayMain==='待更新'?'warn':'';
+        const signal=({出清:'🔴 出清',減碼:'🟠 減碼',警戒:'🟡 警戒',可加碼:'🟢 可加碼',續抱:'🟢 續抱',待更新:'⚪ 待更新'})[displayMain]||'⚪ 觀察';
+        const ma20=Number(m.ma20);
+        const maStatus=priceOkay&&ma20>0?(price>=ma20?'MA20 守住':'MA20 未守'):'MA20 待更新';
+        const priceLabel=safeQuote?'今日成交':'模型收盤';
+        const timeLabel=safeQuote?'今日成交 '+String(safeQuote.quote_time||'時間待補'):modelFresh?'模型 '+modelDate:'模型 '+(modelDate||'待更新')+'（待補）';
+        const gainText=pnl==null?'待資料':(pnl>=0?'+':'')+num(pnl,2)+'%';
+        const gainClass=pnl==null?'':pnl>0?'pnl-up':pnl<0?'pnl-down':'';
+        const expanded=holdingExpandedIds.has(id)?' open':'';
+        const body=safeQuote?intradayCard(item,safeQuote):card(item,{hideSignal:true});
+        return `<section class="holding-mini-wrap" data-stock-id="${esc(id)}">
+          <details class="holding-mini" data-stock-key="${esc(id)}"${expanded}>
+            <summary class="holding-mini-summary" aria-label="${esc(id+' '+String(item.stock_name||'')+' '+signal)}">
+              <span class="holding-mini-name"><strong>${esc(id)} ${esc(item.stock_name||'')}</strong><small>${esc(maStatus)}</small></span>
+              <span class="holding-mini-action ${cls}">${signal}</span>
+              <span class="holding-mini-expand">詳情</span>
+              <span class="holding-mini-stats">成本 <b>${costOkay?esc(num(cost,2)):'-'}</b>｜${esc(priceLabel)} <b>${priceOkay?esc(num(price,2)):'-'}</b>｜損益 <b class="${gainClass}">${esc(gainText)}</b></span>
+              <span class="holding-mini-date">持有 ${Number.isFinite(qty)&&qty>0?esc(qty.toLocaleString('zh-TW')):'-'} 股｜${esc(timeLabel)}｜點擊查看完整判斷</span>
+            </summary>
+            <div class="holding-mini-body">${body}</div>
+          </details>
+        </section>`;
+      };
+      const holdingPlaceholderHtml = (symbol, note = '完整模型載入中…', isError = false) => {
+        const id=String(symbol||''),h=holdings.get(id)||{},cost=Number(h.avg_cost),qty=Number(h.quantity);
+        return `<section class="holding-mini-wrap" data-stock-id="${esc(id)}">
+          <details class="holding-mini" data-stock-key="${esc(id)}"${holdingExpandedIds.has(id)?' open':''}>
+            <summary class="holding-mini-summary">
+              <span class="holding-mini-name"><strong>${esc(id)}</strong><small>已核對持股紀錄，模型待更新</small></span>
+              <span class="holding-mini-action warn">⚪ 待更新</span><span class="holding-mini-expand">詳情</span>
+              <span class="holding-mini-stats">成本 <b>${Number.isFinite(cost)&&cost>0?esc(num(cost,2)):'-'}</b>｜最新成交及損益待核對</span>
+              <span class="holding-mini-date">持有 ${Number.isFinite(qty)&&qty>0?esc(qty.toLocaleString('zh-TW')):'-'} 股｜點擊查看狀態</span>
+            </summary>
+            <div class="holding-mini-body"><div class="box empty ${isError?'error':''}">${esc(note)}</div></div>
+          </details>
+        </section>`;
+      };
+      const holdingOverviewHtml = (total,modelCount = 0) =>
+        `<div class="holding-list-overview" data-stable-key="holding-overview">
+          <strong>📌 已買進｜${Number(total)||0} 檔</strong>
+          <span>收合先看成本、現價、損益與今日動作；點股票展開完整風控與持股操作。</span>
+          <span>已載入模型 ${Number(modelCount)||0}/${Number(total)||0} 檔｜僅使用已核對的持股清單，沒有今日有效價就不冒用舊價。</span>
+        </div>`;
+
       const recoveryPattern = (item, quote) => {
         const metrics = item.metrics || {};
         const priorOpen = Number(metrics.prev_open ?? metrics.open);
@@ -4547,8 +4639,9 @@ h1 {
         const list=$('#list'); if(!list)return null;
         const listRect=list.getBoundingClientRect();
         if(listRect.top > 120 || listRect.bottom < 80) return null;
-        const nodes=Array.from(list.querySelectorAll('.live-wrap[data-stock-id], .card[data-stock-id]'))
-          .filter(node => !node.closest('.live-wrap') || node.classList.contains('live-wrap'));
+        const nodes=Array.from(list.querySelectorAll('.holding-mini-wrap[data-stock-id], .live-wrap[data-stock-id], .card[data-stock-id]'))
+          .filter(node => (!node.closest('.holding-mini-wrap') || node.classList.contains('holding-mini-wrap'))
+            && (!node.closest('.live-wrap') || node.classList.contains('live-wrap')));
         const anchor=nodes.find(node => node.getBoundingClientRect().bottom > 110) || nodes[0];
         if(!anchor)return null;
         return { id:String(anchor.dataset.stockId||''), top:anchor.getBoundingClientRect().top };
@@ -4558,8 +4651,10 @@ h1 {
         requestAnimationFrame(() => {
           if(viewportMoving())return;
           const list=$('#list'); if(!list)return;
-          const candidates=Array.from(list.querySelectorAll('.live-wrap[data-stock-id], .card[data-stock-id]'))
-            .filter(node => (!node.closest('.live-wrap') || node.classList.contains('live-wrap')) && String(node.dataset.stockId||'')===anchor.id);
+          const candidates=Array.from(list.querySelectorAll('.holding-mini-wrap[data-stock-id], .live-wrap[data-stock-id], .card[data-stock-id]'))
+            .filter(node => (!node.closest('.holding-mini-wrap') || node.classList.contains('holding-mini-wrap'))
+              && (!node.closest('.live-wrap') || node.classList.contains('live-wrap'))
+              && String(node.dataset.stockId||'')===anchor.id);
           const current=candidates[0];
           if(!current)return;
           const delta=current.getBoundingClientRect().top-anchor.top;
