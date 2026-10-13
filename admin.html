@@ -4929,7 +4929,7 @@ h1 {
         const dataCaution = !isLive
           ? '<small class="model-only-note">目前無今日有效成交報價；以下判斷以'+esc(modelDate||'待更新')+'完整日K為基準，不代表當下即時股價。</small>'
           : '';
-        return `<section class="live-banner holding-action ${action.className}"><h2>${actionIcon} ${esc(actionDateLabel)}</h2><div class="holding-main-action">${main}</div><span>${esc(modelPrefix)}：${held}</span><span>${esc(reminder)}</span>${holdingMa20DaysHtml(item,safeQuote)}${dataCaution}<dl class="holding-quote-grid">${fields.map(([label,value]) => `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl>${holdingCloseWatchHtml(item, safeQuote)}</section>`;
+        return `<section class="live-banner holding-action ${action.className}"><h2>${actionIcon} ${esc(actionDateLabel)}</h2><div class="holding-main-action">${main}</div><span>${esc(modelPrefix)}：${held}</span><span>${esc(reminder)}</span>${dataCaution}<dl class="holding-quote-grid">${fields.map(([label,value]) => `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl>${holdingCloseWatchHtml(item, safeQuote)}</section>`;
       };
       const holdingRulesHtml = (item, quote = null, embedded = false) => {
         const { action, main, rulesTitle } = holdingDisplay(item, quote);
