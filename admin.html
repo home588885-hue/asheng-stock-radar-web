@@ -4967,7 +4967,7 @@ h1 {
         const early=earlyTurnWatchState(item);
         const status=risk?.kind==='hard'?String(risk.text||'🔴 盤中風險｜暫不新買')
           :risk?.kind==='momentum'?String(risk.text||'🟡 短線轉弱｜等重新轉強')
-          :risk?.kind==='position'?'🔵 位置偏高｜等回踩'
+          :risk?.kind==='position'?String(risk.text||'🔵 位置偏高｜等回踩')
           :early?'🌱 早期轉強｜優先追蹤，不可直接試單'
           :risk?.kind==='incomplete'?'🟡 均線結構未齊'
           :String(launchState?.label||'🟠 發動前｜等確認');
