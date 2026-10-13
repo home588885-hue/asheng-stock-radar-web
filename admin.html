@@ -4502,6 +4502,16 @@ h1 {
           title:nowRisk.text,detail:nowRisk.detail,
           extra:'當日有效成交價風險優先，任何舊日K卡位／突破提示暫不構成買點；不自動下單'
         };
+        if(nowRisk?.kind==='hard') return {
+          className:'live-late',title:nowRisk.text,
+          detail:nowRisk.detail||'個股結構已破壞，暫不新買',
+          extra:'個股紅色風險優先於市場模式；仍不等於自動下單'
+        };
+        if(nowRisk?.kind==='momentum') return {
+          className:'live-warm',title:nowRisk.text,
+          detail:nowRisk.detail||'短線動能轉弱，先看支撐',
+          extra:'此為觀察警戒，不因改變大盤模式直接升級成可買進'
+        };
         if(earlyTurnWatchState(item)) return {
           className:'live-wait',title:'🌱 早期轉強｜優先追蹤',
           detail:'底部確認、低位階、量價與KD／MACD改善，但MA10／20／60尚未全部上揚',
