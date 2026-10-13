@@ -2534,6 +2534,7 @@ h1 {
           if(risk)return {className:risk.kind==='hard'?'sell':'wait',text:risk.text};
           const guard=entryCandleGuard(item);
           if(guard)return {className:'wait',text:guard.text};
+          if(marketProtectionBlocked())return {className:'wait',text:marketProtectionNote()};
         }
         const metrics = item.metrics || {};
         const scores = item.scores || {};
@@ -2962,6 +2963,11 @@ h1 {
         if(entryRisk)return entryRisk;
         const guard=entryCandleGuard(item,quote);
         if(guard)return guard;
+        if(marketProtectionBlocked() && base && ['pre','breakout','add'].includes(base.key))return {
+          key:'wait',rank:8,className:'wait',text:marketProtectionNote(),
+          detail:'底層訊號仍在追蹤，但今日市場未核對，不將候選當新買點',
+          keep_candidate:true,market_guard:true,buyable:false,trialable:false
+        };
         const bottomConfirmed=item?.metrics?.bottom_start?.confirmed===true;
         if(bottomConfirmed&&base?.key==='wait')return {...base,keep_candidate:true};
         if(bottomConfirmed)return {key:'bottom',rank:35,className:'scout',text:'🌱 底部型態已確認｜等盤中起漲',detail:'型態已成立；尚未出現盤中發動前只列等待起漲，不當成已起漲',keep_candidate:true};
@@ -3188,6 +3194,10 @@ h1 {
         const risk = newEntryRiskGate(item, quoteValid ? quote : null);
         if(risk) return {...risk,live_quote_verified:quoteValid,phase:risk.kind==='hard'?'blocked':'observe',
           buyable:false,trialable:false};
+        if(marketProtectionBlocked())return {...baseAction,phase:'observe',rank:Math.min(8,Number(baseAction.rank)||8),
+          key:'wait',className:'wait',text:marketProtectionNote(),
+          detail:'先保留候選，等核對今日大盤才恢復個股訊號｜'+String(baseAction.detail||''),
+          buyable:false,trialable:false,market_guard:true,live_quote_verified:quoteValid};
         return {...baseAction, phase:firstBreakoutNow?'starter':watchBreakoutNow?'observe':'candidate', buyable:false, trialable:firstBreakoutNow,
           live_quote_verified:quoteValid,
           detail:(quoteValid ? 'Cloudflare 盤中成交價＋既有日K模型條件｜'
@@ -4296,6 +4306,7 @@ h1 {
         try { localStorage.setItem(key, JSON.stringify(rec)); } catch (error) {}
         if (!signals.addReady && !signals.strongAddReady) return null;
         const blocked = (reason) => ({ eligible:false, reason, live:validTodayQuote(quote) });
+        if(marketProtectionBlocked())return blocked('今日市場風險尚未確認／已啟用防守：暫停持股加碼，不改既有續抱及出場規則');
         if (!boughtDate) return blocked('買進日期不足，暫不判斷首次加碼');
         if (rec.added) return blocked('本裝置已觀察到本筆持股增加，先管理既有部位');
         const plan = holdingRiskPlan(item, quote);
@@ -4488,6 +4499,11 @@ h1 {
           className:'live-wait',title:'🌱 早期轉強｜優先追蹤',
           detail:'底部確認、低位階、量價與KD／MACD改善，但MA10／20／60尚未全部上揚',
           extra:'只提高觀察順序，不是可以小量試單；等待三線及即時量價完成確認'
+        };
+        if(marketProtectionBlocked())return {
+          className:'live-wait',title:marketProtectionNote(),
+          detail:'股票模型照常追蹤，尚無今日已核對的大盤環境，不提供新買／加碼提示',
+          extra:'使用管理員上方的市場防守開關；指數行情以已授權券商資訊核對'
         };
         if (bottomState) return bottomState;
         const simple = simpleActionState(item, quote);
@@ -4785,6 +4801,7 @@ h1 {
         const status=risk?.kind==='hard'?String(risk.text||'🔴 盤中風險｜暫不新買')
           :risk?.kind==='momentum'?String(risk.text||'🟡 短線轉弱｜等重新轉強')
           :risk?.kind==='position'?'🔵 位置偏高｜等回踩'
+          :marketProtectionBlocked()?marketProtectionNote()
           :early?'🌱 早期轉強｜優先追蹤，不可直接試單'
           :risk?.kind==='incomplete'?'🟡 均線結構未齊'
           :String(launchState?.label||'🟠 發動前｜等確認');
