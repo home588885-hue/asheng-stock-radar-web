@@ -3941,10 +3941,10 @@ h1 {
           latestScanProgress = progress;
           renderCoverageWarning(progress);
           const counts = data.stage_counts || {};
-          $('#done').textContent = progress.scanned_fresh ?? 0;
+          $('#done').textContent = progress.latest_count ?? progress.scanned_fresh ?? 0;
           $('#total').textContent = progress.total_stocks ?? 0;
           $('#bar').style.width =
-            Math.min(100, Number(progress.percent || 0)) + '%';
+            Math.min(100, Number(progress.latest_percent ?? progress.percent ?? 0)) + '%';
           const latestShownScan = (data.picks || []).reduce((latest, item) => {
             const time = item.scanned_at ? new Date(item.scanned_at).getTime() : 0;
             return time > latest ? time : latest;
@@ -5394,9 +5394,9 @@ h1 {
               const progress = launchData.progress || {};
               latestScanProgress = progress;
               renderCoverageWarning(progress);
-              $('#done').textContent = progress.scanned_fresh ?? 0;
+              $('#done').textContent = progress.latest_count ?? progress.scanned_fresh ?? 0;
               $('#total').textContent = progress.total_stocks ?? 0;
-              $('#bar').style.width = Math.min(100, Number(progress.percent || 0)) + '%';
+              $('#bar').style.width = Math.min(100, Number(progress.latest_percent ?? progress.percent ?? 0)) + '%';
             }
             await refreshLiveQuotes();
             lastEntryPoolRefreshAt = Date.now();
@@ -5435,9 +5435,9 @@ h1 {
           }).slice(0, stage === 'ENTRY' ? 50 : 30);
           const progress = cData.progress || {};
           const counts = cData.stage_counts || {};
-          $('#done').textContent = progress.scanned_fresh ?? 0;
+          $('#done').textContent = progress.latest_count ?? progress.scanned_fresh ?? 0;
           $('#total').textContent = progress.total_stocks ?? 0;
-          $('#bar').style.width = Math.min(100, Number(progress.percent || 0)) + '%';
+          $('#bar').style.width = Math.min(100, Number(progress.latest_percent ?? progress.percent ?? 0)) + '%';
           await refreshLiveQuotes();
           liveTimer = null; // 停止一般候選盤中報價
         } catch (error) {
