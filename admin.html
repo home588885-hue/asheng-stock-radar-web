@@ -3902,7 +3902,7 @@ h1 {
           }
           const launchStillIncomplete = progress.latest_complete !== true || String(progress.latest_as_of || '') !== expectedSignalDataDate();
           stableListRender(rankedPicks.length
-            ? launchListHtml(rankedPicks)
+            ? (stage === 'LAUNCH' ? launchListHtml(rankedPicks) : rankedPicks.map(card).join(''))
             : `<div class="box empty">${stage === 'LAUNCH'
                 ? (launchStillIncomplete
                     ? '⚠️ 發動前最新模型尚未掃齊｜目前已驗證達標 0 檔，不代表市場沒有候選。最新完整日K ' + Number(progress.latest_count || 0) + '/' + Number(progress.total_stocks || 0) + ' 檔，未更新的股票不冒充新買點；原有追蹤資料不會因此刪除。'
