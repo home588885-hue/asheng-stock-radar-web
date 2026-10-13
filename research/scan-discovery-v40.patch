@@ -1,0 +1,8 @@
+--- a/index.ts
++++ b/index.ts
+@@
+-  const discoverySlots=Math.max(0,safeBatch-priority.length);
++  const discoverySlots=Math.max(0,Math.min(3,safeBatch-priority.length));
+@@
+-    const dr=await db(root+'&and=('+pending+',is_held.eq.0,is_entry.eq.0,is_prelaunch.eq.0,is_candidate.eq.0)&order=never_scanned.desc,as_of.asc.nullsfirst,stock_id.asc&limit='+discoverySlots);
++    const dr=await db(root+'&and=('+pending+',is_held.eq.0,is_entry.eq.0,is_prelaunch.eq.0,is_candidate.eq.0)&order=never_scanned.desc,last_attempt_target.asc.nullsfirst,as_of.asc.nullsfirst,stock_id.asc&limit='+discoverySlots);
