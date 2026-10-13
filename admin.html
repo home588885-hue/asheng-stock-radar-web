@@ -1035,18 +1035,6 @@ h1 {
 .shortcut-guide-figure{margin:10px 0 12px;padding:8px;border:1px solid var(--line);border-radius:12px;background:#10192a}
 .shortcut-guide-figure img{display:block;width:100%;height:auto;border-radius:10px}
 .shortcut-guide-figure figcaption{margin-top:7px;color:#aebbd0;font-size:13px;line-height:1.5}
-.market-risk-panel {border:1px solid #526988;display:grid;gap:10px;padding:14px 16px;}
-.market-risk-panel[data-mode="defense"] {border-color:#b45353;background:#291c29;}
-.market-risk-panel[data-mode="unverified"] {border-color:#b79242;background:#282318;}
-.market-risk-panel[data-mode="normal"] {border-color:#47856d;background:#152b28;}
-.market-risk-title {display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;}
-.market-risk-title strong {font-size:18px;}
-.market-risk-title span,.market-risk-panel small {font-size:12px;color:#c7d2e1;line-height:1.6;}
-.market-risk-panel #marketRiskDetail {line-height:1.6;font-size:14px;}
-.market-risk-actions {display:flex;gap:9px;flex-wrap:wrap;}
-.market-risk-actions button {border:1px solid #778aa3;border-radius:9px;background:#17253c;color:#eff5ff;font-size:14px;font-weight:700;padding:10px 12px;cursor:pointer;min-height:40px;}
-.market-risk-actions button[aria-pressed="true"] {border-color:#fbbf24;box-shadow:0 0 0 1px #fbbf24 inset;}
-@media(max-width:640px){.market-risk-actions button{flex:1 1 100%;}.market-risk-panel{padding:12px}}
 </style>
   
     <link rel="manifest" href="./admin.webmanifest">
@@ -1074,16 +1062,6 @@ h1 {
         <h1>📈 阿勝底部起漲雷達｜管理員</h1>
         <p class="lead">先看顏色，再看 MA20：🔴不能買｜🟡等確認｜🟠小量試單｜🟢正式買點。已買進依 S 模型判斷續抱、加碼、警戒與出場。</p>
 
-        <section class="box market-risk-panel" id="marketRiskPanel">
-          <div class="market-risk-title"><strong id="marketRiskStatus">🛡️ 今日市場風險｜確認中</strong><span id="marketRiskDate"></span></div>
-          <div id="marketRiskDetail">尚未取得經驗證的加權／櫃買即時指數。新買訊號先當追蹤，不代表可直接試單。</div>
-          <div class="market-risk-actions">
-            <button type="button" id="marketDefenseBtn">🔴 啟用今日防守</button>
-            <button type="button" id="marketNormalBtn">✅ 我已核對今日大盤，解除防守</button>
-          </div>
-          <small id="marketRiskProvenance">人工防護開關，只保留當日選擇；不使用未授權即時指數、不額外抓行情。已買進依原 MA20 與停損規則。</small>
-          <small id="marketBreadthStatus">市場廣度：尚無全市場驗證資料，不以雷達候選比例冒充。</small>
-        </section>
         <section class="box">
           <div class="stats">
             <div class="stat"><small>已取得模型資料</small><b id="done">-</b><span class="stat-explain">近期可用的股票快照</span></div>
@@ -1110,7 +1088,7 @@ h1 {
               <div class="risk-note"><b>5｜四種買點顏色與防追高</b><br>🔴 <b>暫不新買</b>：突破失敗、均線結構破壞，或今日有效成交價出現放量下跌且跌破短均線；今日紅燈優先於昨日橘色卡位／突破訊號。<br>🟡 <b>近買點／等確認</b>：條件缺量或位置，先觀察。<br>🟠 <b>可小量試單</b>：風險過濾通過，部位保守。<br>🟢 <b>正式買點</b>：完整條件成立，再評估分批進場。<br>還要核對 MA10／20／60、K 棒、KD／MACD、成交量至少 1,000 張與距 MA20 的乖離。距 MA20 超過 5% 不作為適合追價的買點；盤後訊號不是即時成交保證。</div>
               <div class="risk-note"><b>6｜已買進怎麼管理？</b><br>先看「今日動作」：<b>續抱、可加碼、警戒或出清</b>，再看 MA20 是否守住及下方「續抱理由與持股規則」。買進後不因跌破成本就攤平；盤中跌破短線突破支撐先警戒，放量有效跌破昨日低點則評估減碼風險，不必等 MA20 才開始留意。主要出場仍沿用 MA20 原規則，獲利約 20% 可評估分批停利。盤中提示不是收盤確認，系統不會自動下單。買進、減碼或全部賣出後，在持股卡更新成本與數量。</div>
               <div class="risk-note"><b>7｜看清三種時間</b><br><b>技術模型基準</b>：最新完整日 K 日期；盤中顯示上一有效交易日是正常的。<br><b>系統最新掃描</b>：S 最近一次模型快照掃描時間；排程執行成功不代表全市場更新完。<br><b>今日報價時間</b>：僅代表有效成交價取得時間，不等於 KD、MACD 等完整選股模型盤中重算。休市日不會有新的當日成交價。</div>
-              <div class="risk-note"><b>8｜大盤風險防護與掃描完整率</b><br>管理員頂部「今日市場風險」為<b>人工確認防護</b>，目前未接入獲授權的加權／櫃買即時行情。未核對時預設暫緩新倉與持股加碼，按「🔴 啟用今日防守」會保留候選但暫停試單提示；只有自行核對市場後，按「✅ 我已核對今日大盤」才恢復原個股訊號。每天重置，不會沿用昨日解除狀態。<br>掃描完整率看<b>最新完整交易日的筆數與最後完整循環時間</b>；掃不齊不能說全市場只剩幾檔。市場廣度目前未取得，不拿候選股上漲比例冒充全市場。所有出場仍依原持股風控，非自動下單。</div>
+              <div class="risk-note"><b>8｜掃描資料完整率</b><br>以<b>最新完整交易日的模型筆數與最後完整掃描循環時間</b>判斷資料是否齊全；尚未掃齊時，顯示的候選檔數不能視為全市場結果。個股仍依 MA10／MA20／MA60、KD、MACD、量價、籌碼及持股風控判斷；不額外抓大盤指數。</div>
               <div class="risk-note"><b>9｜最簡單的每日流程</b><br><b>晚上盤後</b>看發動前、進場雷達與模型日期，整理隔日觀察名單。<br><b>盤中</b>若 C 報價橋接正常，核對今日價格、成交量與追高風險；若沒報價，手動核對券商行情。<br><b>已買進</b>看 MA20、今日動作及風控，必要時自行下單並更新持股。<br><b>資料仍舊</b>時先觀察，不把舊快照當作當日正式買點。</div>
               <div class="risk-note">⚠️ 雷達是研究與持股管理輔助工具，不保證獲利。實際報價與下單請以券商資訊核對。取消會員版不修改 S 完整模型、房產網站或 LINE。</div>
             </div>
@@ -1777,47 +1755,6 @@ h1 {
       let lastEntryPoolRefreshAt = 0;
       let lastEntryResumeAt = 0;
       let latestScanProgress = {};
-      // No authorized index feed is installed. Daily account-local acknowledgement
-      // is a protective presentation gate, never an index price or model rewrite.
-      const MARKET_GUARD_KEY='asheng-market-defense-v1-'+portfolioId;
-      let marketGuardInMemory=null;
-      const readMarketGuard=()=>{
-        if(marketGuardInMemory?.date===todayQuoteDate())return marketGuardInMemory.mode;
-        try{
-          const saved=JSON.parse(localStorage.getItem(MARKET_GUARD_KEY)||'null');
-          if(saved?.date===todayQuoteDate()&&['defense','normal'].includes(saved.mode))return saved.mode;
-        }catch(error){}
-        return 'unverified';
-      };
-      const marketProtectionBlocked=()=>readMarketGuard()!=='normal';
-      const marketProtectionNote=()=>readMarketGuard()==='defense'?'🔴 今日防守｜暫停新買及加碼':'🟡 大盤未經核對｜新買及加碼先觀察';
-      const renderMarketProtection=()=>{
-        const root=document.getElementById('marketRiskPanel');
-        if(!root)return;
-        const mode=readMarketGuard(),progress=latestScanProgress||{};
-        root.dataset.mode=mode;
-        const status=document.getElementById('marketRiskStatus');
-        const description=document.getElementById('marketRiskDetail');
-        const date=document.getElementById('marketRiskDate');
-        if(status)status.textContent=mode==='defense'?'🔴 市場防守｜暫停新倉與加碼':mode==='normal'?'🟢 今日已人工核對｜恢復個股條件檢查':'🟡 大盤風險未驗證｜先防守';
-        if(description)description.textContent=mode==='defense'
-          ? '逆勢轉強股照常追蹤，所有新買試單及持股加碼訊號暫緩。原持股的MA20出場、短線風控和停利不變。'
-          :mode==='normal'
-            ? '此狀態僅代表你已自行核對今日大盤，不代表即時指數已串接。個股仍須遵守量價、MA20乖離及風險過濾。'
-            : '目前沒有經驗證的加權／櫃買即時指數。為防昨天的橘燈／綠燈在今日急跌時誤導下單，新買及加碼先列觀察；可啟用防守或核對行情後解除。';
-        if(date)date.textContent='台灣日期 '+todayQuoteDate()+'｜選擇於次日自動失效';
-        const on=document.getElementById('marketDefenseBtn'),off=document.getElementById('marketNormalBtn');
-        if(on)on.setAttribute('aria-pressed',String(mode==='defense'));
-        if(off)off.setAttribute('aria-pressed',String(mode==='normal'));
-        const breadth=document.getElementById('marketBreadthStatus');
-        if(breadth){
-          const n=Number(progress.latest_count??0),total=Number(progress.total_stocks??0);
-          const pct=total>0?(n/total*100).toFixed(1):'-';
-          breadth.textContent='完整日K覆蓋：'+(total?n+'/'+total+' 檔（'+pct+'%）':'尚未取得')
-            +'｜資料日 '+String(progress.latest_as_of||'未知')
-            +'｜加權／櫃買即時跌幅及全市場漲跌家數未取得，不拿候選股當市場廣度。';
-        }
-      };
       // 進場雷達僅保留最近完整日K快照，不建立盤中存活計時器。
       const scanProgressSuffix = () => latestScanProgress?.latest_complete === false ? `｜🔄 最新資料 ${Number(latestScanProgress.latest_count || 0)}/${Number(latestScanProgress.total_stocks || 0)}，訊號數尚未代表全市場` : '';
       const $ = selector => document.querySelector(selector);
@@ -2267,7 +2204,6 @@ h1 {
         const expected = expectedSignalDataDate();
         const completed = Number(progress?.latest_count ?? progress?.scanned_fresh ?? 0);
         const incomplete = progress?.latest_complete !== true || latest !== expected;
-        renderMarketProtection();
         warning.hidden = !incomplete;
         if (incomplete) {
           const pct = Number.isFinite(Number(progress?.latest_percent)) ? Number(progress.latest_percent).toFixed(1) : '-';
@@ -2537,7 +2473,6 @@ h1 {
           if(risk)return {className:risk.kind==='hard'?'sell':'wait',text:risk.text};
           const guard=entryCandleGuard(item);
           if(guard)return {className:'wait',text:guard.text};
-          if(marketProtectionBlocked())return {className:'wait',text:marketProtectionNote()};
         }
         const metrics = item.metrics || {};
         const scores = item.scores || {};
@@ -2800,7 +2735,7 @@ h1 {
           planText=heavyBreak?'停止加碼，先看MA20能否守住；放量跌破比一般整理更需要警戒。':'先停止加碼；仍在MA20上方，暫視為短線節奏轉弱，不直接出清。';
         } else if(recovered){
           className='green'; labelText='🟢 警示解除｜已收復昨日低點'; planText='前一日短線跌破已修復，重新回到MA20趨勢管理。';
-        } else if(addReady && !marketProtectionBlocked()){
+        } else if(addReady){
           className='green'; labelText='🟢 可加碼｜回踩MA20守住・量價跟上'; planText=`量比約 ${Number.isFinite(volumeRatio)?num(volumeRatio,2)+'x':'達標'}，且價格重新轉強，可依分批節奏加一筆。`;
         }
         const recoveryText = pnl == null ? '損益待更新' : `目前 ${pnl>=0?'+':''}${num(pnl)}%`;
@@ -2966,11 +2901,6 @@ h1 {
         if(entryRisk)return entryRisk;
         const guard=entryCandleGuard(item,quote);
         if(guard)return guard;
-        if(marketProtectionBlocked() && base && ['pre','breakout','add'].includes(base.key))return {
-          key:'wait',rank:8,className:'wait',text:marketProtectionNote(),
-          detail:'底層訊號仍在追蹤，但今日市場未核對，不將候選當新買點',
-          keep_candidate:true,market_guard:true,buyable:false,trialable:false
-        };
         const bottomConfirmed=item?.metrics?.bottom_start?.confirmed===true;
         if(bottomConfirmed&&base?.key==='wait')return {...base,keep_candidate:true};
         if(bottomConfirmed)return {key:'bottom',rank:35,className:'scout',text:'🌱 底部型態已確認｜等盤中起漲',detail:'型態已成立；尚未出現盤中發動前只列等待起漲，不當成已起漲',keep_candidate:true};
@@ -3197,10 +3127,6 @@ h1 {
         const risk = newEntryRiskGate(item, quoteValid ? quote : null);
         if(risk) return {...risk,live_quote_verified:quoteValid,phase:risk.kind==='hard'?'blocked':'observe',
           buyable:false,trialable:false};
-        if(marketProtectionBlocked())return {...baseAction,phase:'observe',rank:Math.min(8,Number(baseAction.rank)||8),
-          key:'wait',className:'wait',text:marketProtectionNote(),
-          detail:'先保留候選，等核對今日大盤才恢復個股訊號｜'+String(baseAction.detail||''),
-          buyable:false,trialable:false,market_guard:true,live_quote_verified:quoteValid};
         return {...baseAction, phase:firstBreakoutNow?'starter':watchBreakoutNow?'observe':'candidate', buyable:false, trialable:firstBreakoutNow,
           live_quote_verified:quoteValid,
           detail:(quoteValid ? 'Cloudflare 盤中成交價＋既有日K模型條件｜'
@@ -4118,11 +4044,7 @@ h1 {
       };
 
       const liveCard = (item, quote) => {
-        const raw=liveState(item,quote);
-        // The legacy watch-card path must not bypass the shared market veto.
-        const live=!holdings.has(String(item.stock_id))&&marketProtectionBlocked()
-          ? {...raw,className:'live-wait',text:marketProtectionNote()}
-          : raw;
+        const live = liveState(item, quote);
         const pctText = live.pct == null ? '-' : `${live.pct >= 0 ? '+' : ''}${num(live.pct, 2)}%`;
         const paceText = live.pace == null ? '-' : `${num(live.pace, 2)}x`;
         const extText = live.ext20 == null ? '-' : `${live.ext20 >= 0 ? '+' : ''}${num(live.ext20, 1)}%`;
@@ -4313,7 +4235,6 @@ h1 {
         try { localStorage.setItem(key, JSON.stringify(rec)); } catch (error) {}
         if (!signals.addReady && !signals.strongAddReady) return null;
         const blocked = (reason) => ({ eligible:false, reason, live:validTodayQuote(quote) });
-        if(marketProtectionBlocked())return blocked('今日市場風險尚未確認／已啟用防守：暫停持股加碼，不改既有續抱及出場規則');
         if (!boughtDate) return blocked('買進日期不足，暫不判斷首次加碼');
         if (rec.added) return blocked('本裝置已觀察到本筆持股增加，先管理既有部位');
         const plan = holdingRiskPlan(item, quote);
@@ -4516,11 +4437,6 @@ h1 {
           className:'live-wait',title:'🌱 早期轉強｜優先追蹤',
           detail:'底部確認、低位階、量價與KD／MACD改善，但MA10／20／60尚未全部上揚',
           extra:'只提高觀察順序，不是可以小量試單；等待三線及即時量價完成確認'
-        };
-        if(marketProtectionBlocked())return {
-          className:'live-wait',title:marketProtectionNote(),
-          detail:'股票模型照常追蹤，尚無今日已核對的大盤環境，不提供新買／加碼提示',
-          extra:'使用管理員上方的市場防守開關；指數行情以已授權券商資訊核對'
         };
         if (bottomState) return bottomState;
         const simple = simpleActionState(item, quote);
@@ -4818,7 +4734,6 @@ h1 {
         const status=risk?.kind==='hard'?String(risk.text||'🔴 盤中風險｜暫不新買')
           :risk?.kind==='momentum'?String(risk.text||'🟡 短線轉弱｜等重新轉強')
           :risk?.kind==='position'?'🔵 位置偏高｜等回踩'
-          :marketProtectionBlocked()?marketProtectionNote()
           :early?'🌱 早期轉強｜優先追蹤，不可直接試單'
           :risk?.kind==='incomplete'?'🟡 均線結構未齊'
           :String(launchState?.label||'🟠 發動前｜等確認');
@@ -5059,12 +4974,6 @@ h1 {
       }
 
       const v5MonitorState = (item, quote = null) => {
-        // Auxiliary V5 label must never publish a buy instruction when defense
-        // applies. Core V5 and its historical model results stay unchanged.
-        if(!holdings.has(String(item?.stock_id||''))&&marketProtectionBlocked())
-          return {rank:0,className:'live-wait',text:marketProtectionNote(),
-            price:Number(quote?.price)>0?Number(quote.price):Number(item?.metrics?.close),
-            proximity:0,missing:['今日市場風險未經核對'],market_guard:true};
         const metrics = item.metrics || {};
         const v5 = metrics.v5 || {};
         const fresh = String(metrics.model?.version || '').startsWith('2026-09-21-v5') && String(item.as_of || '') === expectedSignalDataDate();
@@ -5869,45 +5778,6 @@ h1 {
         else if (edit) openHoldingDialog(edit.dataset.holdingEdit);
         else if (sell) sellHolding(sell.dataset.holdingSell);
       });
-      // One tap changes only the user's daily market policy. Re-render from the
-      // already loaded S models / existing valid C quotes without new API calls.
-      const redrawMarketGuardCards=()=>{
-        renderMarketProtection();
-        const current=Array.isArray(liveBasePicks)?liveBasePicks:[];
-        if(stage==='LAUNCH'&&current.length){
-          const candidates=current.filter(item=>launchQualityState(item).keep);
-          stableListRender(candidates.length?launchListHtml(candidates):'<div class="box empty">今日沒有符合原模型的發動前候選。</div>',{force:true});
-        }else if(stage==='ENTRY'&&current.length){
-          const rows=current.map(item=>{
-            const quote=bestTodayQuote(null,item.stock_id);
-            const base=simpleActionState(item,quote);
-            return {item,quote,action:entrySnapshotState(item,base,quote)};
-          }).filter(row=>row.action);
-          renderEntrySections(rows,{quoteUpdate:true});
-        }else if(stage==='HOLDING'&&holdingsLastReadSucceeded){
-          const lookup=new Map(current.map(item=>[String(item.stock_id),item]));
-          const symbols=[...holdings.keys()];
-          stableListRender(holdingOverviewHtml(symbols.length,lookup.size)+symbols.map(id=>{
-            const item=lookup.get(id);
-            return item?holdingMiniHtml(item,bestTodayQuote(null,id)):holdingPlaceholderHtml(id,'模型快照仍待更新');
-          }).join(''),{force:true});
-        }
-      };
-      const setMarketDefense=mode=>{
-        if(!['defense','normal'].includes(mode))return;
-        marketGuardInMemory={date:todayQuoteDate(),mode};
-        try{localStorage.setItem(MARKET_GUARD_KEY,JSON.stringify(marketGuardInMemory));}catch(error){}
-        redrawMarketGuardCards();
-      };
-      document.getElementById('marketDefenseBtn')?.addEventListener('click',()=>setMarketDefense('defense'));
-      document.getElementById('marketNormalBtn')?.addEventListener('click',()=>setMarketDefense('normal'));
-      window.addEventListener('storage',event=>{
-        if(event.key===MARKET_GUARD_KEY){
-          marketGuardInMemory=null;
-          redrawMarketGuardCards();
-        }
-      });
-      renderMarketProtection();
       $('#refresh').addEventListener('click',()=>{
         invalidateSharedModelSnapshots();
         holdingsLastVerifiedAt=0;
@@ -5915,7 +5785,7 @@ h1 {
       });
       updateEntryPhase();
       // Reuse the existing UI-only timer; no extra S/C fetches or schedules.
-      setInterval(() => {updateEntryPhase(); refreshHoldingSurvivalDisplay(); renderMarketProtection();}, 30000);
+      setInterval(() => {updateEntryPhase(); refreshHoldingSurvivalDisplay();}, 30000);
       let lastSeenExternalCommitAt = '';
       const pageOpenedAt = Date.now();
       let lastCommitProbeAt = 0;
