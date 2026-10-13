@@ -4291,7 +4291,14 @@ h1 {
         const modelFresh=modelDay===expectedSignalDataDate();
         const price=live?Number(quote.price):modelFresh?Number(m.close):null;
         // Don't derive averaging opportunities from stale EOD values.
-        if(!(price>0))return {state:'data',label:'⚪ 模型／價格待確認',reason:'最新完整日K與有效成交價不足，暫不提供攤平加碼判斷',live};
+        if(!(price>0)){
+          // Do not clutter every holding with a downside badge when no recent
+          // verified loss is known. Only alert if older known close was below cost.
+          const lastKnown=Number(m.close);
+          return lastKnown>0&&lastKnown<cost
+            ? {state:'data',label:'⚪ 模型／價格待確認',reason:'最新完整日K與有效成交價不足，暫不提供攤平加碼判斷',live}
+            : null;
+        }
         const pnl=(price/cost-1)*100;
         if(pnl>=0)return null; // Profitable add-ons keep original holdingAddPlan.
         const blocked=(label,reason)=>({state:'avoid',label,reason,price,cost,pnl,live});
