@@ -3162,7 +3162,7 @@ h1 {
         (baseItems || []).forEach(item => { const id=String(item?.stock_id || ''); if(id) merged.set(id,item); });
         let items=await loadCandleGuards([...merged.values()]);
         await syncPullbackWatchPool(items);
-        items=items.filter(item => baseIds.has(String(item.stock_id)) || pullbackWatch.has(String(item.stock_id)));
+        items=items.filter(item => !holdings.has(String(item.stock_id)) && (baseIds.has(String(item.stock_id)) || pullbackWatch.has(String(item.stock_id))));
         return items.map(item => ({ ...item, __pullback_watch: pullbackWatch.get(String(item.stock_id)) || null }));
       };
       const pullbackWatchHtml = (item, quote = null) => {
@@ -3319,7 +3319,8 @@ h1 {
           + (changes.length>8?'<div class="risk-note">其餘 '+(changes.length-8)+' 檔請查看進場雷達。</div>':'');
       };
       const renderEntrySections = (rows,{quoteUpdate=false}={}) => {
-        rows=[...new Map((rows||[]).map(row=>[String(row?.item?.stock_id||''),row])).values()].filter(row=>row?.item?.stock_id);
+        rows=[...new Map((rows||[]).map(row=>[String(row?.item?.stock_id||''),row])).values()]
+          .filter(row=>row?.item?.stock_id && !holdings.has(String(row.item.stock_id)));
 
         // 過期模型不進進場雷達。以本批最新模型日為基準，超過5個日曆日直接排除，
         // 避免下市／停牌／舊資料被誤當成現在的買點候選。
@@ -3537,6 +3538,8 @@ h1 {
       };
 
       const isEntryRadarItem = item => {
+        // A passive early-turn/base stock belongs to 發動前, never both tabs.
+        if (earlyTurnWatchState(item) || lowBaseWatchState(item)) return false;
         const m=item?.metrics||{};
         const mc=m.ma_cluster||{};
         const seq=m.launch_sequence||mc.launch_sequence||{};
@@ -3578,6 +3581,8 @@ h1 {
         return started && !formal && !holdings.has(String(item?.stock_id||''));
       };
       const launchQualityState = item => {
+        // Personal holdings are managed exclusively in 已買進.
+        if (holdings.has(String(item?.stock_id||''))) return {keep:false,rank:0,className:'held',label:'📌 已買進'};
         const m=item?.metrics||{};
         const bottom=m.bottom_start||{};
         const mc=m.ma_cluster||{};
@@ -4791,7 +4796,9 @@ h1 {
         const ma20=Number(m.ma20);
         const raw=hm.below_ma20_days;
         const days=raw==null?null:Number(raw);
-        const usable=modelDate===expectedSignalDataDate()&&ma20>0
+        const expected=expectedSignalDataDate();
+        const confirmedAge=(Date.parse(expected+'T00:00:00Z')-Date.parse(modelDate+'T00:00:00Z'))/86400000;
+        const usable=Number.isFinite(confirmedAge)&&confirmedAge>=0&&confirmedAge<=7&&ma20>0
           &&days!=null&&Number.isInteger(days)&&days>=0;
         if(!usable)return {
           tone:'pending',label:'⚪ MA20 跌破天數：待模型確認',
@@ -4806,6 +4813,15 @@ h1 {
           detail:'既有計數保留，缺少可信的價格與MA20，暫不推估新一天',
           confirmedDays:days
         };
+        // Display last confirmed EOD MA20 days, but never portray them as today's final close.
+        if(confirmedAge>0){
+          const prefix='截至 '+modelDate+' 收盤';
+          const foot='今日完整模型尚未更新；以上是最後已確認的連續天數，不能替今天累加';
+          if(days>=3||hm.exit_ready===true)return {tone:'exit',label:'🔴 '+prefix+'｜MA20 跌破 '+days+'/3 天',detail:foot+'｜請核對最新行情及原出場規則',confirmedDays:days,provisional:false};
+          if(days>0)return {tone:'watch',label:'🟠 '+prefix+'｜MA20 跌破 '+days+'/3 天',detail:foot+'｜等待最新完整日K判斷是否站回',confirmedDays:days,provisional:false};
+          if(modelClose<ma20)return {tone:'pending',label:'⚪ '+prefix+'｜MA20 天數資料待核對',detail:'模型收盤已低於MA20，但後台連續跌破計數為0；不自行改算｜'+foot,confirmedDays:null,provisional:false};
+          return {tone:'pending',label:'⚪ '+prefix+'｜MA20 守住 0/3 天',detail:foot,confirmedDays:0,provisional:false};
+        }
         const isBelow=price<ma20;
         const hitExit=days>=3||hm.exit_ready===true;
         const countText='已確認連續收盤跌破 '+days+'/3 個交易日';
@@ -4937,10 +4953,12 @@ h1 {
         const cls=displayMain==='出清'?'exit':displayMain==='減碼'?'reduce':displayMain==='警戒'||displayMain==='待更新'?'warn':'';
         const signal=({出清:'🔴 出清',減碼:'🟠 減碼',警戒:'🟡 警戒',可加碼:'🟢 可加碼',續抱:'🟢 續抱',待更新:'⚪ 待更新'})[displayMain]||'⚪ 觀察';
         const ma20=Number(m.ma20);
-        const maStatus=priceOkay&&ma20>0?(price>=ma20?'MA20 守住':'MA20 未守'):'MA20 待更新';
+        const maStatus=priceOkay&&ma20>0?(price>=ma20?'MA20 守住':'MA20 未守')
+          :(!modelFresh&&modelClose>0&&ma20>0?'截至 '+modelDate+(modelClose>=ma20?' MA20 守住':' MA20 未守')+'｜今日待更新':'MA20 待更新');
         const maDays=holdingMa20DaysHtml(item,safeQuote);
         const priceLabel=safeQuote?'今日成交':'模型收盤';
-        const timeLabel=safeQuote?'今日成交 '+String(safeQuote.quote_time||'時間待補'):modelFresh?'模型 '+modelDate:'模型 '+(modelDate||'待更新')+'（待補）';
+        const timeLabel=safeQuote?'今日成交 '+String(safeQuote.quote_time||'時間待補')
+          :modelFresh?'模型 '+modelDate:'最近模型 '+(modelDate||'待更新')+(modelClose>0?'｜當日收盤 '+num(modelClose,2)+'（非今日價）':'')+'｜最新完整日K待更新';
         const gainText=pnl==null?'待資料':(pnl>=0?'+':'')+num(pnl,2)+'%';
         const gainClass=pnl==null?'':pnl>0?'pnl-up':pnl<0?'pnl-down':'';
         const expanded=holdingExpandedIds.has(id)?' open':'';
@@ -5504,7 +5522,7 @@ h1 {
         const merged = new Map();
         [...launchPicks, ...v5Picks].forEach(item => {
           const key = String(item?.stock_id || '');
-          if (!key) return;
+          if (!key || holdings.has(key)) return;
           if (!merged.has(key)) merged.set(key, item);
         });
         const rankItem = item => {
