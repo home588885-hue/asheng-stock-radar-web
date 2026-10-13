@@ -559,6 +559,16 @@ h1 {
 .holding-mini[open] .holding-mini-expand::after { content:' ▲'; }
 .holding-mini:not([open]) .holding-mini-expand::after { content:' ▼'; }
 .holding-mini-stats, .holding-mini-date { grid-column:1 / -1; color:#d7e3f5; font-size:13px; line-height:1.6; }
+.holding-mini-stats { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:5px 9px; font-variant-numeric:tabular-nums; }
+.holding-mini-stats > span { min-width:0; overflow-wrap:anywhere; }
+.holding-mini > summary .holding-ma20-days { min-height:51px; }
+.holding-mini-summary { overflow-anchor:none; }
+.holding-mini-body .card > .top { display:none; }
+.holding-mini-body .holding-row > span { display:none; }
+.holding-mini-body .holding-row { justify-content:flex-end; }
+.holding-mini-body .holding-combined { margin-top:8px; }
+.entry-mini-metrics, .holding-mini-stats { font-variant-numeric:tabular-nums; }
+@media(max-width:640px) { .holding-mini-stats { grid-template-columns:repeat(2,minmax(0,1fr)); } .holding-mini-stats > span:last-child { grid-column:1 / -1; } }
 .holding-mini-stats b { color:#f8fafc; }
 .holding-mini-stats .pnl-up { color:#fca5a5; }
 .holding-mini-stats .pnl-down { color:#86efac; }
@@ -3248,7 +3258,7 @@ h1 {
             <span class="entry-mini-score">模型 ${Number.isFinite(score)?esc(num(score,0)):'-'} 分</span>
             <span class="entry-mini-expand">詳情 ▾</span>
             <span class="entry-mini-metrics">${q?'今日成交':'模型收盤'} <b>${close>0?esc(num(close,2)):'-'}</b>｜距MA20 ${dist==null?'-':(dist>=0?'+':'')+esc(num(dist,1))+'%'}｜成交量 ${Number.isFinite(vol)?esc(num(vol,0))+'張':'-'}</span>
-            <span class="entry-mini-date">模型基準 ${esc(item.as_of||'待更新')}｜${tradeContext}｜</span>
+            <span class="entry-mini-date">S 模型 ${esc(item.as_of||'待更新')}｜${tradeContext}</span>
           </summary>
           <div class="entry-mini-full">${expanded}</div>
         </details>`;
@@ -3608,6 +3618,10 @@ h1 {
         // Original active-launch S predicate, now in prelaunch. Only presentation
         // order changes; stock model, holdings and trading rules are untouched.
         const preRisk=newEntryRiskGate(item);
+        // Display-only exclusivity: candidates already shown in ENTRY never repeat in LAUNCH.
+        // Use existing S signal states; no new candidate selection or weighting.
+        if (['highwin','v5buy'].includes(tradeSignal(item).className) || isActiveLaunchItem(item))
+          return {keep:false,rank:0,className:'promoted',label:'🎯 進場雷達'};
         if(preRisk?.kind==='hard') return {keep:false,rank:0,className:'blocked',label:'🔴 結構風險｜暫不新買'};
         if(preRisk?.late_chase===true){
           // Do not duplicate an ENTRY candidate back into the prelaunch tab.
@@ -3864,7 +3878,7 @@ h1 {
         const pnl = holding && Number.isFinite(close) && Number.isFinite(avg) && avg > 0 ? ((close / avg) - 1) * 100 : null;
         const pnlLabel = displayQuote ? (quoteFinal ? '今日收盤損益' : '即時損益') : '模型收盤損益';
         const holdingHtml = holding ? `<div class="holding-row"><span>📌 持有 ${Number(holding.quantity)}股｜成本 ${num(avg, 2)}${pnl == null ? '' : `｜${pnlLabel} ${pnl >= 0 ? '+' : ''}${num(pnl, 1)}%`}</span><div class="holding-actions"><button class="holding-btn" data-holding-edit="${esc(item.stock_id)}">部分賣出／調整</button><button class="holding-btn danger" data-holding-sell="${esc(item.stock_id)}">全部賣出</button></div></div>` : `<div class="holding-row holding-empty"><button class="holding-btn buy" data-holding-buy="${esc(item.stock_id)}">✅ 我已買進</button></div>`;
-        const holdingStatusHtml = holding ? holdingRulesHtml(item, displayQuote) : '';
+        const holdingStatusHtml = holding ? holdingRulesHtml(item, displayQuote, options.compactHolding === true) : '';
         const holdingTodayHtml = holding ? holdingActionHtml(item, displayQuote) : '';
         const holdingDipHtml = holding ? holdingDipReviewHtml(item,displayQuote) : '';
         const chip = metrics.chip;
@@ -3874,7 +3888,7 @@ h1 {
         const v5 = metrics.v5;
         const precision = v5?.precision || {};
         const precisionHtml = v5?.precision_confirmed === true ? `<div class="signal-note">💎 高品質確認｜籌碼 ${num(v5.chip_score, 0)}｜收盤位置 ${num(precision.close_location_pct, 1)}%｜上影 ${num(precision.upper_wick_pct, 2)}%｜日量/20日均量 ${num(precision.day_volume_ratio, 2)}x</div>` : '';
-        const v5Html = v5?.entry_confirmed === true ? `<div class="metrics"><span class="pill">🟢 回踩再攻確認</span><span class="pill">拉回 ${Number(v5.pullback_days || 0)}天｜深度 ${num(v5.pullback_depth_pct, 1)}%</span><span class="pill">歷史研究：2025 10日62.7%｜樣本75；2026僅供回顧</span></div>` : '';
+        const v5Html = v5?.entry_confirmed === true ? `<div class="metrics"><span class="pill">🟢 回踩再攻確認</span><span class="pill">拉回 ${Number(v5.pullback_days || 0)}天｜深度 ${num(v5.pullback_depth_pct, 1)}%</span></div>` : '';
         const playbook = metrics.playbook;
         const playbookHtml = playbook ? `<div class="metrics"><span class="pill">📚 綜合判斷 ${Number(playbook.score || 0)}｜${esc(playbook.label || '中性觀察')}</span>${(playbook.signals || []).slice(0, 4).map(text => `<span class="pill">${esc(memberFacingText(text))}</span>`).join('')}${(playbook.warnings || []).slice(0, 3).map(text => `<span class="pill">${esc(memberFacingText(text))}</span>`).join('')}</div>` : ((item.stage === 'B' || item.stage === 'C') ? '<div class="metrics"><span class="pill">📚 綜合判斷｜待更新</span></div>' : '');
         const combinedScore = Number(chip?.combined_score ?? item.score ?? 0);
@@ -3886,9 +3900,10 @@ h1 {
         const priceValue = Number.isFinite(quoteUi.value) ? num(quoteUi.value, 2) : (todayOnly ? quoteUi.text : (Number.isFinite(displayClose) ? num(displayClose,2) : '-'));
         const quickHtml = `<div class="quick-grid"><div><span>${priceLabel}</span><b>${priceValue}</b></div><div><span>技術＋籌碼</span><b>${combinedScore}</b></div><div><span>1年位階</span><b>${num(metrics.position_1y_pct)}%</b></div><div><span>5日/20日均量</span><b>${num(metrics.volume_5_20_ratio, 2)}x</b></div></div>`;
         const hiddenModelHtml = `${launchQualityHtml}${precisionHtml}${warrant ? `<div class="signal-note">${warrant}</div>` : ''}${bottomHtml}${launchHtml}${launchSequenceHtml}${holding ? '' : guideHtml}`;
-        const detailHtml = `<details class="card-details"><summary>完整判斷與數據</summary><div class="detail-body">${hiddenModelHtml}${v5Html}${chipHtml}${holding ? '' : liquidityHtml}${playbookHtml}<div class="metrics"><span class="pill">3年位階 ${num(metrics.position_3y_pct)}%</span><span class="pill">週K ${num(metrics.weekly_k)}｜${gradeText(weeklyKGrade(metrics.weekly_k))}</span><span class="pill">月K ${num(metrics.monthly_k)}｜${gradeText(monthlyKGrade(metrics.monthly_k))}</span><span class="pill">${backtestSignal(item)}</span>${metrics.backtest ? `<span class="pill">5日 ${num(metrics.backtest.win_rate_5d_pct)}%</span><span class="pill">20日 ${num(metrics.backtest.win_rate_20d_pct)}%</span>` : ''}</div><div class="why">${reasons}</div>${cautions ? `<div class="warn">${cautions}</div>` : ''}</div></details>`;
+        const detailBody = `<div class="detail-body">${hiddenModelHtml}${v5Html}${chipHtml}${holding ? '' : liquidityHtml}${playbookHtml}<div class="metrics"><span class="pill">3年位階 ${num(metrics.position_3y_pct)}%</span><span class="pill">週K ${num(metrics.weekly_k)}｜${gradeText(weeklyKGrade(metrics.weekly_k))}</span><span class="pill">月K ${num(metrics.monthly_k)}｜${gradeText(monthlyKGrade(metrics.monthly_k))}</span><span class="pill">${backtestSignal(item)}</span>${metrics.backtest ? `<span class="pill">5日 ${num(metrics.backtest.win_rate_5d_pct)}%</span><span class="pill">20日 ${num(metrics.backtest.win_rate_20d_pct)}%</span>` : ''}</div><div class="why">${reasons}</div>${cautions ? `<div class="warn">${cautions}</div>` : ''}</div>`;
+        const detailHtml = options.compactHolding && holding ? detailBody : `<details class="card-details"><summary>完整判斷與數據</summary>${detailBody}</details>`;
         const actionHtml = options.hideSignal ? '' : `<div class="trade-signal ${signal.className}">${esc(memberFacingText(signal.text))}<small style="display:block;margin-top:4px;font-weight:500">${esc(memberFacingText(signal.detail || ''))}</small></div>`;
-        return `<article class="card" data-stock-id="${esc(item.stock_id)}"><div class="top"><div><div class="name">${esc(item.stock_id)} ${esc(item.stock_name)}</div><div class="meta">${esc(item.market)}${item.industry ? '・' + esc(item.industry) : ''}${timeInfoStages() ? '' : '｜資料日 ' + esc(item.as_of || '-')}</div></div><div class="badge ${esc(item.stage)}">模型 ${Number(item.score || 0)}分</div></div>${companyProfileHtml(item)}${activeLaunchVisibleHtml}${volumePriceHtml(item, displayQuote)}${pullbackWatchHtml(item, displayQuote)}${holding ? holdingTodayHtml + holdingDipHtml : actionHtml + quickHtml + deviationWarningHtml + riskSummary}${holdingHtml}${holdingStatusHtml}${detailHtml}${timeInfoStages() ? timeInfoHtml(item, displayQuote) : '<div class="time">背景模型掃描：' + updated + '</div>'}</article>`;
+        return `<article class="card" data-stock-id="${esc(item.stock_id)}"><div class="top"><div><div class="name">${esc(item.stock_id)} ${esc(item.stock_name)}</div><div class="meta">${esc(item.market)}${item.industry ? '・' + esc(item.industry) : ''}${timeInfoStages() ? '' : '｜資料日 ' + esc(item.as_of || '-')}</div></div><div class="badge ${esc(item.stage)}">模型 ${Number(item.score || 0)}分</div></div>${companyProfileHtml(item)}${activeLaunchVisibleHtml}${volumePriceHtml(item, displayQuote)}${pullbackWatchHtml(item, displayQuote)}${holding ? (options.compactHolding ? '' : holdingTodayHtml + holdingDipHtml) : actionHtml + quickHtml + deviationWarningHtml + riskSummary}${holdingHtml}${options.compactHolding && holding ? `<details class="card-details holding-combined"><summary>完整判斷與技術數據</summary>${holdingStatusHtml}${detailHtml}</details>` : holdingStatusHtml+detailHtml}${timeInfoStages() ? timeInfoHtml(item, displayQuote) : '<div class="time">背景模型掃描：' + updated + '</div>'}</article>`;
       }
 
       async function load() {
@@ -4791,7 +4806,7 @@ h1 {
         }
         const survival=survivalState.label;
         const ratioText = ratio == null ? '量能待資料' : `推估日量約 ${num(ratio,2)}x 20日均量`;
-        return `<div class="holding-status ${cls}" data-holding-watch-id="${esc(String(item?.stock_id||''))}"><b>${action}</b><span data-watch-survival-label>${survival}｜${ratioText}</span><small>${volumeTip}｜有效成交樣本 ${Number(row.samples || 0)} 次｜最後 ${esc(row.quoteTime || '-')}｜13:20截止</small><div class="survival-progress ${survivalState.passed ? 'done' : ''}" style="width:100%"><div class="survival-progress-head"><span>收盤前存活</span><span data-watch-survival-minutes>${survivalState.elapsed}/12 分</span></div><div class="survival-progress-track"><div class="survival-progress-fill" data-watch-survival-fill style="width:${survivalState.progress}%"></div></div></div></div>`;
+        return `<div class="holding-status ${cls}" data-holding-watch-id="${esc(String(item?.stock_id||''))}"><span data-watch-survival-label>${survival}｜${ratioText}</span><small>${volumeTip}｜有效成交樣本 ${Number(row.samples || 0)} 次｜最後 ${esc(row.quoteTime || '-')}｜13:20 截止</small></div>`;
       };
 
       // Always show the MA20 consecutive CLOSE-BELOW counter independently of
@@ -4921,7 +4936,7 @@ h1 {
           : '';
         return `<section class="live-banner holding-action ${action.className}"><h2>${actionIcon} ${esc(actionDateLabel)}</h2><div class="holding-main-action">${main}</div><span>${esc(modelPrefix)}：${held}</span><span>${esc(reminder)}</span>${holdingMa20DaysHtml(item,safeQuote)}${dataCaution}<dl class="holding-quote-grid">${fields.map(([label,value]) => `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl>${holdingCloseWatchHtml(item, safeQuote)}</section>`;
       };
-      const holdingRulesHtml = (item, quote = null) => {
+      const holdingRulesHtml = (item, quote = null, embedded = false) => {
         const { action, main, rulesTitle } = holdingDisplay(item, quote);
         const metrics = item.metrics || {};
         const hm = metrics.holding_management || {};
@@ -4941,50 +4956,51 @@ h1 {
         const profitNote = profitGuard
           ? '<div class="holding-rule-line"><b>獲利回吐保護（研究中）：</b>已觀察最高獲利 ' + (profitGuard.maxGain >= 0 ? '+' : '') + num(profitGuard.maxGain,1) + '%｜目前 ' + (profitGuard.currentGain >= 0 ? '+' : '') + num(profitGuard.currentGain,1) + '%｜自紀錄高點回落 ' + num(profitGuard.retreat,1) + '%。A：最高浮盈≥5%、回吐≥1.5%且短線轉弱，先警戒；B：最高浮盈≥8%、回吐≥2.5%、跌破前低且轉弱，收盤確認後可評估減碼約1/3。共用盤後收盤最高紀錄' + (profitGuard.serverDate ? '（起始觀察日 '+esc(profitGuard.serverDate)+'）' : '尚未建立') + '，加上本機已觀察有效價；買入前後未記錄的歷史高點不可倒填。MA20及20%分批停利不變。</div>'
           : '<div class="holding-rule-line"><b>獲利回吐保護（研究中）：</b>等待最新完整模型／有效報價建立觀察高點；盤後紀錄跨裝置同步，過去未記錄的高點不推測。</div>';
-        return `<details class="card-details holding-rules-details"><summary>📋 ${rulesTitle}與持股規則</summary><div class="holding-analysis holding-rules-body"><dl class="holding-rule-grid">${fields.map(([label,value]) => `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl><div class="holding-rule-line"><b>短線判斷：</b>${esc(short)}。有效跌破採 0.4%；同時量比 ≥ 1.2x 升級放量警戒，隔日收復解除。</div><div class="holding-rule-line"><b>加碼條件：</b>兩條路：①回踩MA20守住＋量價轉強，量比約0.8～2x；②突破前高／突破位後續強，量比約1～2.2x、日K≤85。共同限制：MA10／20／60多頭、距MA20≤5%、成本損益0～未滿12%、日量至少1,000張、20日均量至少500張。盤中僅觀察、模型確認才評估；獲利時追加一筆不超過原先觀察持股約1/3，偵測加碼後停止重複提示。虧損持股另有「跌後攤平評估」，只有下一個完整日K確認回踩MA20守住、重新轉強、量能合適且虧損未達4%時才列為研究候選，單次參考上限約原持股1/4；盤中或風控轉弱都不加碼，不保證成功也非自動下單。</div><div class="holding-rule-line"><b>出場條件：</b>連續 3 個交易日收盤低於 MA20 且未收回，標示「出清股票」。</div>${strongNote}${riskNote}${profitNote}<div class="holding-rule-line"><b>核心規則：</b>昨日低點管短線節奏，MA20 管主要趨勢。</div></div></details>`;
+        const ruleBody = `<div class="holding-analysis holding-rules-body"><dl class="holding-rule-grid">${fields.map(([label,value]) => `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl><div class="holding-rule-line"><b>短線判斷：</b>${esc(short)}。有效跌破採 0.4%；同時量比 ≥ 1.2x 升級放量警戒，隔日收復解除。</div><div class="holding-rule-line"><b>加碼條件：</b>兩條路：①回踩MA20守住＋量價轉強，量比約0.8～2x；②突破前高／突破位後續強，量比約1～2.2x、日K≤85。共同限制：MA10／20／60多頭、距MA20≤5%、成本損益0～未滿12%、日量至少1,000張、20日均量至少500張。盤中僅觀察、模型確認才評估；獲利時追加一筆不超過原先觀察持股約1/3，偵測加碼後停止重複提示。虧損持股另有「跌後攤平評估」，只有下一個完整日K確認回踩MA20守住、重新轉強、量能合適且虧損未達4%時才列為研究候選，單次參考上限約原持股1/4；盤中或風控轉弱都不加碼，不保證成功也非自動下單。</div><div class="holding-rule-line"><b>出場條件：</b>連續 3 個交易日收盤低於 MA20 且未收回，標示「出清股票」。</div>${strongNote}${riskNote}${profitNote}<div class="holding-rule-line"><b>核心規則：</b>昨日低點管短線節奏，MA20 管主要趨勢。</div></div>`;
+        return embedded ? ruleBody : `<details class="card-details holding-rules-details"><summary>📋 ${rulesTitle}與持股規則</summary>${ruleBody}</details>`;
       };
 
       // UI-only folding. The holdings Map remains verified by the server.
       // The full card() and intradayCard() keep all risk rules and trading controls.
       const holdingExpandedIds = new Set();
+      // Summary is deliberately UI-only: S provides confirmed MA20 days,
+      // C provides today's trades; no new rule, quote request or signal is created.
       const holdingMiniHtml = (item, quote = null) => {
         const id=String(item.stock_id||''),saved=holdings.get(id)||{};
-        const cost=Number(saved.avg_cost),qty=Number(saved.quantity);
+        const cost=Number(saved.avg_cost);
         const safeQuote=bestTodayQuote(validTodayQuote(quote)?quote:null,id);
-        const m=item.metrics||{},modelDate=String(item.as_of||'');
-        const modelFresh=modelDate===expectedSignalDataDate(),modelClose=Number(m.close);
-        const price=safeQuote?Number(safeQuote.price):(modelFresh&&modelClose>0?modelClose:null);
-        const priceOkay=price!=null&&Number.isFinite(price)&&price>0;
+        const m=item.metrics||{},modelDate=String(item.as_of||'').slice(0,10);
+        const price=safeQuote?Number(safeQuote.price):null;
+        const priceOkay=Number.isFinite(price)&&price>0;
         const costOkay=Number.isFinite(cost)&&cost>0;
         const pnl=priceOkay&&costOkay?(price/cost-1)*100:null;
         const {main}=holdingDisplay(item,safeQuote);
         const displayMain=priceOkay?main:'待更新';
-        const cls=displayMain==='出清'?'exit':displayMain==='減碼'?'reduce':displayMain==='警戒'||displayMain==='待更新'?'warn':'';
-        const signal=({出清:'🔴 出清',減碼:'🟠 減碼',警戒:'🟡 警戒',可加碼:'🟢 可加碼',續抱:'🟢 續抱',待更新:'⚪ 待更新'})[displayMain]||'⚪ 觀察';
+        const simplifiedAction=displayMain==='減碼'?'警戒':displayMain;
+        const cls=simplifiedAction==='出清'?'exit':simplifiedAction==='警戒'||simplifiedAction==='待更新'?'warn':'';
+        const signal=({出清:'🔴 出清',警戒:'🟡 警戒',可加碼:'🟢 可加碼',續抱:'🟢 續抱',待更新:'⚪ 待更新'})[simplifiedAction]||'⚪ 待更新';
         const ma20=Number(m.ma20);
-        const maStatus=priceOkay&&ma20>0?(price>=ma20?'MA20 守住':'MA20 未守')
-          :(!modelFresh&&modelClose>0&&ma20>0?'截至 '+modelDate+(modelClose>=ma20?' MA20 守住':' MA20 未守')+'｜今日待更新':'MA20 待更新');
-        const maDays=holdingMa20DaysHtml(item,safeQuote);
-        const priceLabel=safeQuote?'今日成交':'模型收盤';
-        const timeLabel=safeQuote?'今日成交 '+String(safeQuote.quote_time||'時間待補')
-          :modelFresh?'模型 '+modelDate:'最近模型 '+(modelDate||'待更新')+(modelClose>0?'｜當日收盤 '+num(modelClose,2)+'（非今日價）':'')+'｜最新完整日K待更新';
-        const gainText=pnl==null?'待資料':(pnl>=0?'+':'')+num(pnl,2)+'%';
+        const maState=holdingMa20DayState(item,safeQuote);
+        const modelClose=Number(m.close);
+        const eodStatus=maState.confirmedDays==null?'連續跌破天數待核對'
+          :maState.confirmedDays>0?'收盤跌破 MA20 '+maState.confirmedDays+'/3 天'
+          :modelClose>0&&ma20>0&&modelClose>=ma20?'收盤守住 MA20｜0/3 天':'MA20 計數待核對';
+        const liveMa=safeQuote&&ma20>0?'｜C 今日成交暫'+(price>=ma20?'守住':'跌破')+'（尚未計入收盤）':'';
+        const maLine='S 盤後模型 '+(modelDate||'待更新')+'：'+eodStatus+liveMa;
+        const gainText=pnl==null?'-':(pnl>=0?'+':'')+num(pnl,2)+'%';
         const gainClass=pnl==null?'':pnl>0?'pnl-up':pnl<0?'pnl-down':'';
         const expanded=holdingExpandedIds.has(id)?' open':'';
-        const dip=holdingDipAddReview(item,safeQuote);
-        const dipMini=dip?'｜跌後評估：'+dip.label:'';
-        const body=safeQuote?intradayCard(item,safeQuote):card(item,{hideSignal:true});
+        const body=card(item,{hideSignal:true,quote:safeQuote,compactHolding:true});
         return `<section class="holding-mini-wrap" data-stock-id="${esc(id)}">
           <details class="holding-mini" data-stock-key="${esc(id)}"${expanded}>
-            <summary class="holding-mini-summary" aria-label="${esc(id+' '+String(item.stock_name||'')+' '+signal)}">
-              <span class="holding-mini-name"><strong>${esc(id)} ${esc(item.stock_name||'')}</strong><small>${esc(maStatus)}</small></span>
-              <span class="holding-mini-action ${cls}">${signal}</span>
+            <summary class="holding-mini-summary" aria-label="${esc(id+' '+String(item.stock_name||'')+' 今日動作 '+simplifiedAction)}">
+              <span class="holding-mini-name"><strong>${esc(id)} ${esc(item.stock_name||'')}</strong></span>
+              <span class="holding-mini-action ${cls}">今日動作：${signal}</span>
               <span class="holding-mini-expand">詳情</span>
-              <span class="holding-mini-stats">成本 <b>${costOkay?esc(num(cost,2)):'-'}</b>｜${esc(priceLabel)} <b>${priceOkay?esc(num(price,2)):'-'}</b>｜損益 <b class="${gainClass}">${esc(gainText)}</b></span>
-              ${maDays}
-              <span class="holding-mini-date">持有 ${Number.isFinite(qty)&&qty>0?esc(qty.toLocaleString('zh-TW')):'-'} 股｜${esc(timeLabel)}<span class="holding-mini-dip">${esc(dipMini)}</span>｜點擊查看完整判斷</span>
+              <span class="holding-mini-stats"><span>成本 <b>${costOkay?esc(num(cost,2)):'-'}</b></span><span>今日成交價 <b>${priceOkay?esc(num(price,2)):'-'}</b></span><span>損益 <b class="${gainClass}">${esc(gainText)}</b></span></span>
+              <span class="holding-ma20-days ${esc(maState.tone)}"><strong>${esc(maLine)}</strong></span>
             </summary>
-            <div class="holding-mini-body">${body}</div>
+            <div class="holding-mini-body">${holdingCloseWatchHtml(item,safeQuote)}${body}</div>
           </details>
         </section>`;
       };
@@ -5006,8 +5022,7 @@ h1 {
       const holdingOverviewHtml = (total,modelCount = 0) =>
         `<div class="holding-list-overview" data-stable-key="holding-overview">
           <strong>📌 已買進｜${Number(total)||0} 檔</strong>
-          <span>收合先看成本、現價、損益與今日動作；點股票展開完整風控與持股操作。</span>
-          <span>已載入模型 ${Number(modelCount)||0}/${Number(total)||0} 檔｜僅使用已核對的持股清單，沒有今日有效價就不冒用舊價。</span>
+          <span>模型已載入 ${Number(modelCount)||0}/${Number(total)||0} 檔｜今日成交價未取得時顯示「-」，點卡片展開技術數據與持股操作。</span>
         </div>`;
 
       // UI-only launch folding. Keep ALL server model selection, ordering,
@@ -5045,7 +5060,7 @@ h1 {
               <span class="entry-mini-score">模型 ${Number.isFinite(score)?esc(num(score,0)):'-'} 分</span>
               <span class="entry-mini-expand">詳情</span>
               <span class="entry-mini-metrics">${source} <b>${price!=null&&price>0?esc(num(price,2)):'-'}</b>｜距MA20 ${gap==null?'-':(gap>=0?'+':'')+esc(num(gap,1))+'%'}｜量 ${Number.isFinite(vol)&&vol>=0?esc(num(vol,0))+'張':'-'}</span>
-              <span class="entry-mini-date">模型基準 ${esc(item?.as_of||'待更新')}${esc(quoteTime)}｜點擊展開完整風控</span>
+              <span class="entry-mini-date">S 模型 ${esc(item?.as_of||'待更新')}${esc(quoteTime)}</span>
             </summary>
             <div class="entry-mini-full">${detailed}</div>
           </details>
