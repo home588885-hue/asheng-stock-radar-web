@@ -2351,8 +2351,55 @@ h1 {
       // One consistent new-entry risk interpretation across 發動前 and 進場雷達.
       // A genuine structural breakdown is a red risk warning. An extended but bullish
       // stock is not called a "failed stock"; its new entry is paused until pullback.
+      // A valid current-day C quote can cancel a stale previous-day starter/first-bar
+      // signal. No extra API calls; never classify yesterday's volume as today's.
+      const liveSelloffRisk = (item, quote = null) => {
+        if(!validTodayQuote(quote))return null;
+        const m=item?.metrics||{},p=Number(quote.price);
+        const prev=Number(quote.prev_close ?? m.close);
+        const avg=Number(m.avg_volume_20_lots),vol=Number(quote.volume_lots);
+        const ma5=Number(m.ma5),ma10=Number(m.ma10);
+        if(!(p>0&&prev>0&&avg>0&&Number.isFinite(vol)&&vol>=0))return null;
+        const dayPct=(p/prev-1)*100;
+        const ratio=vol/Math.max(1,avg*marketFraction(quote.quote_time));
+        const weakShort=(ma5>0&&p<ma5)||(ma10>0&&p<ma10);
+        const belowMa10=ma10>0&&p<ma10;
+        if(dayPct<=-2&&ratio>=1.5&&weakShort) return {
+          kind:'hard',key:'blocked',phase:'blocked',rank:0,className:'blocked',
+          text:'🔴 盤中放量價跌｜暫不新買',
+          detail:'今日 '+num(dayPct,2)+'%｜估算量比 '+num(ratio,2)+'x｜跌破短均線；先等止跌／支撐確認',
+          buyable:false,trialable:false,live_selloff:true
+        };
+        if(dayPct<=-1&&ratio>=1.2&&belowMa10) return {
+          kind:'momentum',key:'wait',phase:'observe',rank:5,className:'wait',
+          text:'🟡 盤中量價轉弱｜停止試單',
+          detail:'今日 '+num(dayPct,2)+'%｜估算量比 '+num(ratio,2)+'x｜低於MA10，等重新站回再核對',
+          buyable:false,trialable:false,keep_candidate:true,live_selloff:true
+        };
+        return null;
+      };
+      // Passive early-turn watch; mirrors the launch API's conservative transport
+      // predicate, but does NOT grant trialable/buyable status.
+      const earlyTurnWatchState = item => {
+        const m=item?.metrics||{},b=m.bottom_start||{},mc=m.ma_cluster||{},g=m.entry_candle_guard||{};
+        const price=Number(m.close),ma20=Number(m.ma20),vol=Number(m.current_volume_lots);
+        const avg=Number(m.avg_volume_20_lots),pos=Number(m.position_1y_pct);
+        const k=Number(m.daily_k),d=Number(m.daily_d),score=Number(item?.score);
+        const macd=Number(g.macd_hist),prior=Number(g.macd_prev_hist);
+        return b.confirmed===true && b.warm_green_pass===true
+          && mc.above_all_mas===true && (mc.all_rising!==true||g.main_bull===false)
+          && score>=80 && pos>=0 && pos<=35
+          && price>ma20 && ma20>0 && (price/ma20-1)*100<=5
+          && vol>=1000 && avg>=500 && vol/avg>=.8 && vol/avg<=1.8
+          && k>=35 && k<=80 && k>=d
+          && Number.isFinite(macd)&&Number.isFinite(prior)&&macd>prior
+          && g.macd_weak!==true && g.kd_high_weak!==true && g.weak_after_breakout!==true
+          && m.holding_management?.strong_breakdown!==true && m.v5?.entry_confirmed!==true;
+      };
       const newEntryRiskGate = (item, quote = null) => {
         const m=item?.metrics||{}, g=m.entry_candle_guard||{}, hm=m.holding_management||{};
+        const intraday=liveSelloffRisk(item,quote);
+        if(intraday)return intraday;
         const price=validTodayQuote(quote)?Number(quote.price):Number(m.close);
         const ma20=Number(m.ma20), ma60=Number(m.ma60), pos=Number(m.position_1y_pct);
         const k=Number(m.daily_k), d=Number(m.daily_d);
@@ -3455,6 +3502,8 @@ h1 {
         // Original active-launch S predicate, now in prelaunch. Only presentation
         // order changes; stock model, holdings and trading rules are untouched.
         if (newEntryRiskGate(item)?.kind==='hard') return {keep:false,rank:0,className:'blocked',label:'🔴 結構風險｜暫不新買'};
+        if (earlyTurnWatchState(item)) return {keep:true,rank:125,className:'early-turn-watch',
+          label:'🌱 早期轉強｜優先追蹤，尚不可試單'};
         if (isActiveLaunchItem(item)) return {keep:true,rank:110,className:'active-launch',
           label:'🔥 發動中｜S模型已發動，尚待正式進場確認'};
         if (isEntryRadarItem(item)) return { keep:false, rank:0, className:'promoted', label:'🎯 已進進場雷達' };
@@ -4330,6 +4379,19 @@ h1 {
           if (addPlan && !addPlan.eligible) return { className:'live-wait', title:'🔵 加碼暫緩｜維持既有持股', detail:addPlan.reason, extra:'原持股仍依MA20、停損與獲利保護規則管理，不因加碼條件未過就自動賣出' };
           return { className:'live-launch', title:'🟢 續抱', detail:`目前守在 MA20 ${Number.isFinite(ma20)?num(ma20,2):'-'} 上方`, extra:'若有效收破昨日低點先停止加碼；回踩MA20守住＋量價轉強才標示可加碼' };
         }
+        // The intraday selling veto outranks yesterday's attractive bottom/launch bar.
+        // A passive early-turn stock remains WATCH, never an instant buy.
+        const nowRisk=newEntryRiskGate(item,quote);
+        if(nowRisk?.live_selloff) return {
+          className:nowRisk.kind==='hard'?'live-late':'live-warm',
+          title:nowRisk.text,detail:nowRisk.detail,
+          extra:'當日有效成交價風險優先，任何舊日K卡位／突破提示暫不構成買點；不自動下單'
+        };
+        if(earlyTurnWatchState(item)) return {
+          className:'live-wait',title:'🌱 早期轉強｜優先追蹤',
+          detail:'底部確認、低位階、量價與KD／MACD改善，但MA10／20／60尚未全部上揚',
+          extra:'只提高觀察順序，不是可以小量試單；等待三線及即時量價完成確認'
+        };
         if (bottomState) return bottomState;
         const simple = simpleActionState(item, quote);
         if (simple?.candle_guard) return {className:'live-warm',title:simple.text,detail:simple.detail,extra:'只限制新進場；原選股條件與持股規則保留'};
@@ -4622,9 +4684,11 @@ h1 {
         const launchState=launchQualityState(item);
         const risk=newEntryRiskGate(item,q);
         // Do not turn a watch candidate into a buy signal merely by opening a card.
-        const status=risk?.kind==='hard'?'🔴 結構風險｜暫不新買'
+        const early=earlyTurnWatchState(item);
+        const status=risk?.kind==='hard'?String(risk.text||'🔴 盤中風險｜暫不新買')
+          :risk?.kind==='momentum'?String(risk.text||'🟡 短線轉弱｜等重新轉強')
           :risk?.kind==='position'?'🔵 位置偏高｜等回踩'
-          :risk?.kind==='momentum'?'🟡 短線轉弱｜等重新轉強'
+          :early?'🌱 早期轉強｜優先追蹤，不可直接試單'
           :risk?.kind==='incomplete'?'🟡 均線結構未齊'
           :String(launchState?.label||'🟠 發動前｜等確認');
         const source=q?'今日有效成交':'盤後模型收盤';
