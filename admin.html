@@ -4351,6 +4351,40 @@ h1 {
             detail:'目前 '+num(riskPlan.pnl,1)+'%｜虧損達4%且短線轉弱',
             extra:'先觀察是否站回支撐；目前僅警戒，不代表停損已成交'
           };
+          // Supplementary holding guard (not an exit-order engine).
+          // MA20 remains the main trend rule; fresh C quotes can warn earlier.
+          const holdingBarGuard = metrics.entry_candle_guard || {};
+          const ma5 = Number(metrics.ma5);
+          const breakthroughSupport = Number(holdingBarGuard.breakout_support);
+          const qPrev = Number(quote?.prev_close ?? metrics.close);
+          const downToday = qPrev>0 && price<qPrev;
+          const todayValid = validTodayQuote(quote);
+          const liveFastBreak = todayValid && prevLow>0 && price < prevLow * .996;
+          const shortSupportBroken = (breakthroughSupport>0 && price<breakthroughSupport)
+            || (ma5>0&&price<ma5);
+          if (todayValid && liveFastBreak && liveVolumeRatio>=1.2) return {
+            className:'live-warm',title:'🟠 盤中跌破昨日低點｜減碼風險升高',
+            detail:'有效跌破昨日低點 '+num(prevLow,2)+'｜預估量比 '+num(liveVolumeRatio,2)+'x'
+              +'｜現在仍以盤中價格核對',
+            extra:'暫停攤平與加碼；如收盤仍未收復且賣壓延續，再評估減碼約1/3；不自動賣出，MA20主要出場不變'
+          };
+          if (todayValid && downToday && price<ma10 && liveVolumeRatio>=1.2) return {
+            className:'live-warm',title:'🟠 盤中跌破MA10｜先檢查部位',
+            detail:'跌破MA10 '+num(ma10,2)+'｜預估量比 '+num(liveVolumeRatio,2)+'x',
+            extra:'先停止加碼，核對是否收復短線支撐；必要時評估減碼，不必機械等到MA20才開始警戒'
+          };
+          if (todayValid && downToday && shortSupportBroken) return {
+            className:'live-wait',title:'🟡 短線轉弱｜先看支撐',
+            detail:'盤中低於'+(breakthroughSupport>0?'突破支撐 '+num(breakthroughSupport,2):'MA5 '+num(ma5,2))
+              +'｜觀察能否重新站回',
+            extra:'不建議下跌時攤平；放量有效跌破昨日低點才升級風險，主要出場仍按MA20規則'
+          };
+          if (!todayValid && price>ma20 && ma10>0 && price<ma10
+              && Number(hm.day_volume_ratio)>=1.2) return {
+            className:'live-wait',title:'🟡 收盤短線轉弱｜暫停加碼',
+            detail:'最近完整日K低於MA10 '+num(ma10,2)+'｜日量放大，仍在MA20之上',
+            extra:'先觀察支撐是否收復；不將短線警戒誤作MA20正式出場'
+          };
           if (riskPlan?.takeTwenty && holdingTakeProfitPending(item, riskPlan)) return {
             className:'live-launch',
             title:riskPlan.live?'🟡 20%分批停利觀察｜盤中待確認':'🟢 20%分批停利｜評估賣出 1/3',
