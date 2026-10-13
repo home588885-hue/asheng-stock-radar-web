@@ -936,6 +936,16 @@ h1 {
 .holding-dip-review.avoid{border-color:#9d4c4e;background:#322128}.holding-dip-review.candidate{border-color:#b59a45;background:#282519}
 .holding-dip-review.observe{border-color:#64748b}
 .holding-mini-dip{color:#fcdba0!important;font-weight:700}
+.holding-ma20-days{display:grid;gap:4px;grid-column:1 / -1;border:1px solid #475569;border-radius:10px;padding:8px 10px;background:#142239;color:#d8e7f9;line-height:1.5}
+.holding-ma20-days strong{font-size:15px;font-weight:800}
+.holding-ma20-days small{font-size:12px;line-height:1.5;color:#bfcee3}
+.holding-ma20-days.safe{border-color:#3c7660;background:#132c29}
+.holding-ma20-days.watch{border-color:#b98839;background:#342818}
+.holding-ma20-days.exit{border-color:#a74e57;background:#382028}
+.holding-ma20-days.pending{border-color:#66748b;background:#202a3d}
+.holding-action .holding-ma20-days{margin:4px 0 5px;padding:9px 11px}
+.holding-action .holding-ma20-days strong{font-size:17px}
+.holding-mini > summary .holding-ma20-days{margin:3px 0 2px}
 .holding-rules-details summary { color:#cbd5e1; }
 .holding-rule-grid { margin-bottom:10px; }
 .holding-rule-grid dd { font-size:14px; }
@@ -1089,7 +1099,7 @@ h1 {
               <div class="risk-note"><b>1｜登入與使用入口</b><br>使用原本的管理員 Email 和密碼登入。現在只有管理員雷達，已取消獨立會員登入、會員選股頁與會員名單介面。個人已買進股票仍保存在原帳號中，不會因取消會員版而消失。</div>
               <div class="risk-note"><b>2｜S 算模型，C 提供盤中報價</b><br><b>S（Supabase）</b>保留完整 A／B／C、V5、MA10／MA20／MA60、KD、MACD、量價、籌碼及持股風控模型，不搬到 C。<br><b>C（Cloudflare）</b>只為 S 完整模型已選出的「發動前（含原發動中）、進場雷達」候選，以及管理員「已買進」股票取得盤中價；不掃全市場、不自行增刪候選，也不修改 A／B／C、V5 或籌碼結果。只有報價 Worker 健康檢查及登入驗證通過才啟用；失敗不冒充已有即時價。</div>
               <div class="risk-note"><b>3｜每天什麼時候更新？</b><br><b>交易日 09:00～13:30</b>：C 報價橋接成功後，🟠發動前、🎯進場雷達、📌已買進在網頁前景時約每 <b>3 分鐘</b>低頻更新今日有效成交價。沒有今日有效價時不顯示 0.00，也不以昨收冒充。<br><b>交易日 13:00～13:29</b>：📌已買進 12 分鐘存活觀察只在 <b>12:50～13:20</b> 累計有效成交；C 無有效報價時不會假裝通過。<br><b>交易日 21:00～21:55</b>：S 依原排程分批更新完整日 K 選股，並非每檔在 21:00 就全部更新完成。</div>
-              <div class="risk-note"><b>4｜簡單看三區</b><br>🟠 <b>發動前</b>：底部整理、均線轉強及接近發動，也收錄原發動中 S 候選；🌱早期轉強代表低位階與量價改善、但三線未全轉強，只能優先追蹤，尚不可試單。<br>🎯 <b>進場雷達</b>：已起漲、突破或適合回踩觀察的候選，仍須判斷風險和位置，不代表每檔都能立刻買。<br>📌 <b>已買進</b>：只顯示自己已記錄的持股、成本與風控，沒有盤中報價時也不會刪除持股。</div>
+              <div class="risk-note"><b>4｜簡單看三區</b><br>🟠 <b>發動前</b>：底部整理、均線轉強及接近發動，也收錄原發動中 S 候選；🌱早期轉強代表低位階與量價改善、但三線未全轉強，只能優先追蹤，尚不可試單。<br>🎯 <b>進場雷達</b>：已起漲、突破或適合回踩觀察的候選，仍須判斷風險和位置，不代表每檔都能立刻買。<br>📌 <b>已買進</b>：只顯示自己已記錄的持股、成本與風控，沒有盤中報價時也不會刪除持股。每檔收合列都固定顯示「收盤跌破 MA20 連續天數（0/3、1/3、2/3、達3天）」；今天盤中首次跌破只顯示暫列，待盤後完整日K才正式累加。</div>
               <div class="risk-note"><b>5｜四種買點顏色與防追高</b><br>🔴 <b>暫不新買</b>：突破失敗、均線結構破壞，或今日有效成交價出現放量下跌且跌破短均線；今日紅燈優先於昨日橘色卡位／突破訊號。<br>🟡 <b>近買點／等確認</b>：條件缺量或位置，先觀察。<br>🟠 <b>可小量試單</b>：風險過濾通過，部位保守。<br>🟢 <b>正式買點</b>：完整條件成立，再評估分批進場。<br>還要核對 MA10／20／60、K 棒、KD／MACD、成交量至少 1,000 張與距 MA20 的乖離。距 MA20 超過 5% 不作為適合追價的買點；盤後訊號不是即時成交保證。</div>
               <div class="risk-note"><b>6｜已買進怎麼管理？</b><br>先看「今日動作」：<b>續抱、可加碼、警戒或出清</b>，再看 MA20 是否守住及下方「續抱理由與持股規則」。買進後不因跌破成本就直接攤平；展開持股可見「🔎 跌後攤平／加碼評估」，要等完整日K止穩、仍守MA20才可能列為小量研究候選；盤中跌破短線突破支撐先警戒，放量有效跌破昨日低點則評估減碼風險，不必等 MA20 才開始留意。主要出場仍沿用 MA20 原規則，獲利約 20% 可評估分批停利。盤中提示不是收盤確認，系統不會自動下單。買進、減碼或全部賣出後，在持股卡更新成本與數量。</div>
               <div class="risk-note"><b>7｜看清三種時間</b><br><b>技術模型基準</b>：最新完整日 K 日期；盤中顯示上一有效交易日是正常的。<br><b>系統最新掃描</b>：S 最近一次模型快照掃描時間；排程執行成功不代表全市場更新完。<br><b>今日報價時間</b>：僅代表有效成交價取得時間，不等於 KD、MACD 等完整選股模型盤中重算。休市日不會有新的當日成交價。</div>
@@ -4676,6 +4686,77 @@ h1 {
         return `<div class="holding-status ${cls}" data-holding-watch-id="${esc(String(item?.stock_id||''))}"><b>${action}</b><span data-watch-survival-label>${survival}｜${ratioText}</span><small>${volumeTip}｜有效成交樣本 ${Number(row.samples || 0)} 次｜最後 ${esc(row.quoteTime || '-')}｜13:20截止</small><div class="survival-progress ${survivalState.passed ? 'done' : ''}" style="width:100%"><div class="survival-progress-head"><span>收盤前存活</span><span data-watch-survival-minutes>${survivalState.elapsed}/12 分</span></div><div class="survival-progress-track"><div class="survival-progress-fill" data-watch-survival-fill style="width:${survivalState.progress}%"></div></div></div></div>`;
       };
 
+      // Always show the MA20 consecutive CLOSE-BELOW counter independently of
+      // actionDecision(). A stop-loss, short-term warning or collapsed card
+      // must never hide the recorded number of confirmed trading days.
+      // Use the S model's below_ma20_days; a C quote only previews today,
+      // without incrementing the confirmed trading-day count.
+      const holdingMa20DayState = (item, quote = null) => {
+        const m=item?.metrics||{},hm=m.holding_management||{};
+        const modelDate=String(item?.as_of||'').slice(0,10);
+        const ma20=Number(m.ma20);
+        const raw=hm.below_ma20_days;
+        const days=raw==null?null:Number(raw);
+        const usable=modelDate===expectedSignalDataDate()&&ma20>0
+          &&days!=null&&Number.isInteger(days)&&days>=0;
+        if(!usable)return {
+          tone:'pending',label:'⚪ MA20 跌破天數：待模型確認',
+          detail:'目前缺少最新完整日K／連續交易日計數，不能自行推算',
+          confirmedDays:null
+        };
+        const live=validTodayQuote(quote);
+        const modelClose=Number(m.close);
+        const price=live?Number(quote.price):modelClose;
+        if(!(modelClose>0&&price>0))return {
+          tone:'pending',label:'⚪ MA20 跌破天數：待價格確認',
+          detail:'既有計數保留，缺少可信的價格與MA20，暫不推估新一天',
+          confirmedDays:days
+        };
+        const isBelow=price<ma20;
+        const hitExit=days>=3||hm.exit_ready===true;
+        const countText='已確認連續收盤跌破 '+days+'/3 個交易日';
+        const closeDate='模型日 '+modelDate;
+        if(hitExit)return {
+          tone:'exit',
+          label:'🔴 '+countText+'｜已達3日門檻',
+          detail:closeDate+'｜'+(live&&price>=ma20?'今天有效成交價暫站回MA20，仍須等盤後模型核對；':'依既有完整日K計數；')
+            +'出場及其他強風控規則不變',
+          confirmedDays:days,provisional:false
+        };
+        if(live&&isBelow)return {
+          tone:'watch',
+          label:'🟠 MA20 下方｜今日暫列第 '+(days+1)+'/3 天',
+          detail:'已確認 '+days+' 天｜今日成交價低於MA20 '+num(ma20,2)
+            +'，尚未計入收盤確認；待完整日K更新才正式增加天數',
+          confirmedDays:days,provisional:true
+        };
+        if(live&&days>0)return {
+          tone:'watch',
+          label:'🟡 盤中站回 MA20｜'+days+'/3 天待解除',
+          detail:'昨日之前已確認連續跌破 '+days+' 天｜今天站回不代表收盤確認，待新完整日K核對',
+          confirmedDays:days,provisional:false
+        };
+        if(days>0)return {
+          tone:'watch',label:'🟠 '+countText+'｜等待站回',
+          detail:closeDate+'收盤在MA20 '+num(ma20,2)+' 下方｜若後續第3個交易日仍收不回，依原規則評估出場',
+          confirmedDays:days,provisional:false
+        };
+        if(!live&&isBelow)return {
+          tone:'pending',label:'⚪ 收盤低於MA20｜連續天數待核對',
+          detail:closeDate+'價格與後台0天計數不一致，不自行改算；等待模型核對',
+          confirmedDays:days,provisional:false
+        };
+        return {
+          tone:'safe',label:'🟢 MA20 守住｜已確認跌破 0/3 天',
+          detail:closeDate+'完整日K已確認0天'+(live?'｜今日有效成交價也仍在MA20之上':''),
+          confirmedDays:0,provisional:false
+        };
+      };
+      const holdingMa20DaysHtml = (item,quote=null) => {
+        const d=holdingMa20DayState(item,quote);
+        return '<div class="holding-ma20-days '+d.tone+'">'
+          +'<strong>'+esc(d.label)+'</strong><small>'+esc(d.detail)+'</small></div>';
+      };
       const holdingActionHtml = (item, quote = null) => {
         const safeQuote = validTodayQuote(quote) ? quote : null;
         const { action, main, reminder } = holdingDisplay(item, safeQuote);
@@ -4717,7 +4798,7 @@ h1 {
         const dataCaution = !isLive
           ? '<small class="model-only-note">目前無今日有效成交報價；以下判斷以'+esc(modelDate||'待更新')+'完整日K為基準，不代表當下即時股價。</small>'
           : '';
-        return `<section class="live-banner holding-action ${action.className}"><h2>${actionIcon} ${esc(actionDateLabel)}</h2><div class="holding-main-action">${main}</div><span>${esc(modelPrefix)}：${held}</span><span>${esc(reminder)}</span>${dataCaution}<dl class="holding-quote-grid">${fields.map(([label,value]) => `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl>${holdingCloseWatchHtml(item, safeQuote)}</section>`;
+        return `<section class="live-banner holding-action ${action.className}"><h2>${actionIcon} ${esc(actionDateLabel)}</h2><div class="holding-main-action">${main}</div><span>${esc(modelPrefix)}：${held}</span><span>${esc(reminder)}</span>${holdingMa20DaysHtml(item,safeQuote)}${dataCaution}<dl class="holding-quote-grid">${fields.map(([label,value]) => `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl>${holdingCloseWatchHtml(item, safeQuote)}</section>`;
       };
       const holdingRulesHtml = (item, quote = null) => {
         const { action, main, rulesTitle } = holdingDisplay(item, quote);
@@ -4761,6 +4842,7 @@ h1 {
         const signal=({出清:'🔴 出清',減碼:'🟠 減碼',警戒:'🟡 警戒',可加碼:'🟢 可加碼',續抱:'🟢 續抱',待更新:'⚪ 待更新'})[displayMain]||'⚪ 觀察';
         const ma20=Number(m.ma20);
         const maStatus=priceOkay&&ma20>0?(price>=ma20?'MA20 守住':'MA20 未守'):'MA20 待更新';
+        const maDays=holdingMa20DaysHtml(item,safeQuote);
         const priceLabel=safeQuote?'今日成交':'模型收盤';
         const timeLabel=safeQuote?'今日成交 '+String(safeQuote.quote_time||'時間待補'):modelFresh?'模型 '+modelDate:'模型 '+(modelDate||'待更新')+'（待補）';
         const gainText=pnl==null?'待資料':(pnl>=0?'+':'')+num(pnl,2)+'%';
@@ -4776,6 +4858,7 @@ h1 {
               <span class="holding-mini-action ${cls}">${signal}</span>
               <span class="holding-mini-expand">詳情</span>
               <span class="holding-mini-stats">成本 <b>${costOkay?esc(num(cost,2)):'-'}</b>｜${esc(priceLabel)} <b>${priceOkay?esc(num(price,2)):'-'}</b>｜損益 <b class="${gainClass}">${esc(gainText)}</b></span>
+              ${maDays}
               <span class="holding-mini-date">持有 ${Number.isFinite(qty)&&qty>0?esc(qty.toLocaleString('zh-TW')):'-'} 股｜${esc(timeLabel)}<span class="holding-mini-dip">${esc(dipMini)}</span>｜點擊查看完整判斷</span>
             </summary>
             <div class="holding-mini-body">${body}</div>
@@ -4790,6 +4873,7 @@ h1 {
               <span class="holding-mini-name"><strong>${esc(id)}</strong><small>已核對持股紀錄，模型待更新</small></span>
               <span class="holding-mini-action warn">⚪ 待更新</span><span class="holding-mini-expand">詳情</span>
               <span class="holding-mini-stats">成本 <b>${Number.isFinite(cost)&&cost>0?esc(num(cost,2)):'-'}</b>｜最新成交及損益待核對</span>
+              <span class="holding-ma20-days pending"><strong>⚪ MA20 跌破天數：模型載入中</strong><small>後台連續交易日計數載入後才顯示，不以舊股價冒充</small></span>
               <span class="holding-mini-date">持有 ${Number.isFinite(qty)&&qty>0?esc(qty.toLocaleString('zh-TW')):'-'} 股｜點擊查看狀態</span>
             </summary>
             <div class="holding-mini-body"><div class="box empty ${isError?'error':''}">${esc(note)}</div></div>
