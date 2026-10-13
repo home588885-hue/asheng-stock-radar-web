@@ -522,6 +522,19 @@ h1 {
 .entry-mini-date { color:#94a7c2; }
 .entry-mini-full { padding:5px 8px 9px; border-top:1px solid #334155; }
 .entry-mini-full > .card { margin:0; }
+/* 發動前：與進場雷達相同的逐檔收合顯示；模型及行情邏輯不變。 */
+.launch-mini-wrap { margin:8px 0; min-width:0; }
+.launch-mini-wrap > .entry-mini { border-color:#46607c; }
+.launch-mini-wrap .entry-mini-name small { line-height:1.5; }
+.launch-mini-wrap .entry-mini-metrics { font-size:13px; line-height:1.65; }
+.launch-mini-wrap .entry-mini-date { font-size:12px; }
+.launch-mini-wrap .entry-mini-full > .live-wrap { margin:0; }
+.launch-mini-wrap .entry-mini-full > .card { margin:0; }
+.launch-mini-wrap .entry-mini[open] > summary { background:#23334f; }
+.launch-mini-wrap .entry-mini-score { background:#254363; color:#e3f2ff; }
+.launch-mini-wrap .entry-mini-summary:focus-visible { outline:2px solid #93c5fd; outline-offset:-3px; }
+.launch-mini-wrap .entry-mini-expand::after { content:' ▼'; }
+.launch-mini-wrap .entry-mini[open] .entry-mini-expand::after { content:' ▲'; }
 .entry-extra { margin-top:3px; background:#15233b; border:1px solid #364b6a; border-radius:10px; padding:4px 7px 8px; }
 .entry-extra > summary { color:#bdd6fb; font-weight:700; padding:9px; }
 .entry-extra .entry-mini { margin:6px 0; }
@@ -3889,7 +3902,7 @@ h1 {
           }
           const launchStillIncomplete = progress.latest_complete !== true || String(progress.latest_as_of || '') !== expectedSignalDataDate();
           stableListRender(rankedPicks.length
-            ? rankedPicks.map(card).join('')
+            ? launchListHtml(rankedPicks)
             : `<div class="box empty">${stage === 'LAUNCH'
                 ? (launchStillIncomplete
                     ? '⚠️ 發動前最新模型尚未掃齊｜目前已驗證達標 0 檔，不代表市場沒有候選。最新完整日K ' + Number(progress.latest_count || 0) + '/' + Number(progress.total_stocks || 0) + ' 檔，未更新的股票不冒充新買點；原有追蹤資料不會因此刪除。'
@@ -4594,6 +4607,44 @@ h1 {
           <span>已載入模型 ${Number(modelCount)||0}/${Number(total)||0} 檔｜僅使用已核對的持股清單，沒有今日有效價就不冒用舊價。</span>
         </div>`;
 
+      // UI-only launch folding. Keep ALL server model selection, ordering,
+      // realtime requests, and full original details/action cards untouched.
+      const launchExpandedIds = new Set();
+      const launchMiniHtml = (item, quote = null) => {
+        const id=String(item?.stock_id||''),m=item?.metrics||{};
+        const q=marketBridgeReady()&&validTodayQuote(quote)?quote:null;
+        const modelClose=Number(m.close);
+        const price=q?Number(q.price):(Number.isFinite(modelClose)&&modelClose>0?modelClose:null);
+        const ma20=Number(m.ma20);
+        const gap=price!=null&&price>0&&ma20>0?(price/ma20-1)*100:null;
+        const vol=q?Number(q.volume_lots):Number(m.current_volume_lots);
+        const score=Number(item?.score);
+        const launchState=launchQualityState(item);
+        const risk=newEntryRiskGate(item,q);
+        // Do not turn a watch candidate into a buy signal merely by opening a card.
+        const status=risk?.kind==='hard'?'🔴 結構風險｜暫不新買'
+          :risk?.kind==='position'?'🔵 位置偏高｜等回踩'
+          :risk?.kind==='momentum'?'🟡 短線轉弱｜等重新轉強'
+          :risk?.kind==='incomplete'?'🟡 均線結構未齊'
+          :String(launchState?.label||'🟠 發動前｜等確認');
+        const source=q?'今日有效成交':'盤後模型收盤';
+        const quoteTime=q?'｜報價 '+String(q.quote_time||'時間待確認'):'｜非即時價';
+        const selected=launchExpandedIds.has(id)?' open':'';
+        const detailed=q?intradayCard(item,q):card(item);
+        return `<section class="launch-mini-wrap" data-stock-id="${esc(id)}">
+          <details class="entry-mini" data-stock-key="${esc(id)}"${selected}>
+            <summary class="entry-mini-summary" aria-label="${esc(id+' '+String(item?.stock_name||'')+' '+status)}">
+              <span class="entry-mini-name"><strong>${esc(id)} ${esc(item?.stock_name||'')}</strong><small>${esc(status)}</small></span>
+              <span class="entry-mini-score">模型 ${Number.isFinite(score)?esc(num(score,0)):'-'} 分</span>
+              <span class="entry-mini-expand">詳情</span>
+              <span class="entry-mini-metrics">${source} <b>${price!=null&&price>0?esc(num(price,2)):'-'}</b>｜距MA20 ${gap==null?'-':(gap>=0?'+':'')+esc(num(gap,1))+'%'}｜量 ${Number.isFinite(vol)&&vol>=0?esc(num(vol,0))+'張':'-'}</span>
+              <span class="entry-mini-date">模型基準 ${esc(item?.as_of||'待更新')}${esc(quoteTime)}｜點擊展開完整風控</span>
+            </summary>
+            <div class="entry-mini-full">${detailed}</div>
+          </details>
+        </section>`;
+      };
+      const launchListHtml = items => items.map(item=>launchMiniHtml(item)).join('');
       const recoveryPattern = (item, quote) => {
         const metrics = item.metrics || {};
         const priorOpen = Number(metrics.prev_open ?? metrics.open);
@@ -4639,8 +4690,9 @@ h1 {
         const list=$('#list'); if(!list)return null;
         const listRect=list.getBoundingClientRect();
         if(listRect.top > 120 || listRect.bottom < 80) return null;
-        const nodes=Array.from(list.querySelectorAll('.holding-mini-wrap[data-stock-id], .live-wrap[data-stock-id], .card[data-stock-id]'))
-          .filter(node => (!node.closest('.holding-mini-wrap') || node.classList.contains('holding-mini-wrap'))
+        const nodes=Array.from(list.querySelectorAll('.launch-mini-wrap[data-stock-id], .holding-mini-wrap[data-stock-id], .live-wrap[data-stock-id], .card[data-stock-id]'))
+          .filter(node => (!node.closest('.launch-mini-wrap') || node.classList.contains('launch-mini-wrap'))
+            && (!node.closest('.holding-mini-wrap') || node.classList.contains('holding-mini-wrap'))
             && (!node.closest('.live-wrap') || node.classList.contains('live-wrap')));
         const anchor=nodes.find(node => node.getBoundingClientRect().bottom > 110) || nodes[0];
         if(!anchor)return null;
@@ -4651,8 +4703,9 @@ h1 {
         requestAnimationFrame(() => {
           if(viewportMoving())return;
           const list=$('#list'); if(!list)return;
-          const candidates=Array.from(list.querySelectorAll('.holding-mini-wrap[data-stock-id], .live-wrap[data-stock-id], .card[data-stock-id]'))
-            .filter(node => (!node.closest('.holding-mini-wrap') || node.classList.contains('holding-mini-wrap'))
+          const candidates=Array.from(list.querySelectorAll('.launch-mini-wrap[data-stock-id], .holding-mini-wrap[data-stock-id], .live-wrap[data-stock-id], .card[data-stock-id]'))
+            .filter(node => (!node.closest('.launch-mini-wrap') || node.classList.contains('launch-mini-wrap'))
+              && (!node.closest('.holding-mini-wrap') || node.classList.contains('holding-mini-wrap'))
               && (!node.closest('.live-wrap') || node.classList.contains('live-wrap'))
               && String(node.dataset.stockId||'')===anchor.id);
           const current=candidates[0];
@@ -4756,7 +4809,7 @@ h1 {
         // 夜間模型快照：發動前不再盤中抓取候選股報價。
         if (LOCKED_SETTINGS.nightlySnapshotOnly && !(marketBridgeReady() && taipeiMarketState().open)) {
           const rows = liveBasePicks.filter(item => launchQualityState(item).keep);
-          stableListRender(rows.length ? rows.map(item => card(item)).join('') : '<div class="box empty">目前沒有符合發動前條件的候選股。</div>');
+          stableListRender(rows.length ? launchListHtml(rows) : '<div class="box empty">目前沒有符合發動前條件的候選股。</div>');
           setCandidateSummary('cCount', rows.length, '目前畫面符合發動前條件');
           $('#note').textContent = `🌱 發動前｜${rows.length} 檔｜日 K 模型於交易日晚上 9 點分批更新，盤中不抓價。`;
           return;
@@ -4798,14 +4851,14 @@ h1 {
               return true;
             });
 
-          stableListRender(rows.length ? rows.map(row => intradayCard(row.item, row.quote)).join('') : '<div class="box empty">目前沒有仍符合發動前條件的股票；只有明確轉弱、跌離發動區或位置過熱才會移出。</div>',{quoteUpdate:true});
+          stableListRender(rows.length ? rows.map(row => launchMiniHtml(row.item, row.quote)).join('') : '<div class="box empty">目前沒有仍符合發動前條件的股票；只有明確轉弱、跌離發動區或位置過熱才會移出。</div>',{quoteUpdate:true});
           const quoteTimes = rows.map(row => row.quote?.quote_time).filter(Boolean);
           const latestQuote = quoteTimes.length ? quoteTimes.sort().at(-1) : '-';
           const missing=liveBasePicks.filter(item=>!quoteMap.has(String(item.stock_id))).map(item=>String(item.stock_id)).slice(0,9);
           $('#note').textContent = `🌱 發動前｜追蹤 ${rows.length} 檔｜🔥發動中 ${rows.filter(row=>isActiveLaunchItem(row.item)).length}｜C 今日有效成交 ${quoteMap.size}/${liveBasePicks.length} 檔｜最後成交 ${latestQuote}｜${payload.cached_last_trade||0} 檔沿用今日前次有效成交${missing.length?'｜尚未取得 '+missing.join('、'):''}｜約3分鐘取樣｜日K不盤中重算。`;
         } catch (error) {
           if (navigationSeq !== renderNavToken || stage !== renderStage) return;
-          stableListRender(liveBasePicks.filter(item=>launchQualityState(item).keep).map(item => intradayCard(item,null)).join(''));
+          stableListRender(launchListHtml(liveBasePicks.filter(item=>launchQualityState(item).keep)));
           $('#note').textContent = `🌱 發動前｜盤中報價暫時無法讀取，先依最新日K分類；不顯示明顯過熱、轉弱或過期候選。`;
         }
       }
@@ -5586,7 +5639,15 @@ h1 {
       // updates and tab re-entry. Never persist private portfolio HTML on disk.
       $('#list').addEventListener('toggle', event => {
         const node=event.target;
-        if(stage!=='HOLDING'||!node?.matches?.('details.holding-mini[data-stock-key]')||!node.isConnected)return;
+        if(!node?.isConnected)return;
+        if(stage==='LAUNCH' && node.matches?.('.launch-mini-wrap > details.entry-mini[data-stock-key]')){
+          const id=String(node.dataset.stockKey||'');
+          if(!id)return;
+          if(node.open)launchExpandedIds.add(id);
+          else launchExpandedIds.delete(id);
+          return;
+        }
+        if(stage!=='HOLDING'||!node.matches?.('details.holding-mini[data-stock-key]'))return;
         const id=String(node.dataset.stockKey||'');
         if(!id||!holdings.has(id))return;
         if(node.open)holdingExpandedIds.add(id);
