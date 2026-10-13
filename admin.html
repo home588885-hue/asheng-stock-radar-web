@@ -5284,6 +5284,8 @@ h1 {
             // Only an authoritative active holding may appear as a currently owned stock.
             holdings = new Map(data.holdings.filter(item => item?.active === true)
               .map(item => [String(item.stock_id), item]));
+            // A sold position must not retain an old expanded disclosure state.
+            for(const id of holdingExpandedIds)if(!holdings.has(id))holdingExpandedIds.delete(id);
             holdingsLastReadSucceeded = true;
             holdingsLastVerifiedAt = Date.now();
             cacheHoldings();
@@ -5501,6 +5503,7 @@ h1 {
         const data = await response.json();
         if (!response.ok || !data.ok) { alert('持股資料暫時無法更新，請稍後再試。'); return; }
         holdings.delete(String(stockId));
+        holdingExpandedIds.delete(String(stockId));
         stageViewCache.delete('HOLDING');
         cacheHoldings();
         await loadHoldings({force:true});
