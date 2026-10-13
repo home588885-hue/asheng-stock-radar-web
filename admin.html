@@ -4899,7 +4899,7 @@ h1 {
         const modelVolume = Number(metrics.current_volume_lots);
         // On weekends, holidays and premarket, compare against the latest COMPLETE trading-day
         // model instead of today's calendar date. Never present EOD prices as today's live trade.
-        const modelUsable = modelFresh && Number.isFinite(modelClose) && modelClose > 0;
+        const modelUsable = Number.isFinite(modelClose) && modelClose > 0;
         const price = safeQuote ? Number(safeQuote.price) : (modelUsable ? modelClose : null);
         const ma20 = Number(metrics.ma20);
         const held = Number.isFinite(price) && Number.isFinite(ma20) && ma20 > 0
@@ -4960,49 +4960,14 @@ h1 {
       const holdingExpandedIds = new Set();
       // Summary is deliberately UI-only: S provides confirmed MA20 days,
       // C provides today's trades; no new rule, quote request or signal is created.
+      // Restore the original full-size holding card seen by the owner.
+      // card() already renders action, today's/model price, day change, volume,
+      // saved holding cost/P&L, trade buttons, expandable rules, and 12-minute
+      // survival (inside holdingActionHtml). Do not duplicate those panels.
       const holdingMiniHtml = (item, quote = null) => {
-        const id=String(item.stock_id||''),saved=holdings.get(id)||{};
-        const cost=Number(saved.avg_cost);
+        const id=String(item.stock_id||'');
         const safeQuote=bestTodayQuote(validTodayQuote(quote)?quote:null,id);
-        const m=item.metrics||{},modelDate=String(item.as_of||'').slice(0,10);
-        // UI price priority: valid C trade today, otherwise the last verified S
-        // daily close. A model close is NEVER labelled as today's trade.
-        const modelClose=Number(m.close);
-        const hasModelClose=Number.isFinite(modelClose)&&modelClose>0;
-        const price=safeQuote?Number(safeQuote.price):(hasModelClose?modelClose:null);
-        const priceOkay=Number.isFinite(price)&&price>0;
-        const priceLabel=safeQuote?'今日成交價':hasModelClose?'模型收盤 '+(modelDate||'日期待更新'):'價格待更新';
-        const costOkay=Number.isFinite(cost)&&cost>0;
-        const pnl=priceOkay&&costOkay?(price/cost-1)*100:null;
-        const {main}=holdingDisplay(item,safeQuote);
-        const displayMain=priceOkay?main:'待更新';
-        const simplifiedAction=displayMain==='減碼'?'警戒':displayMain;
-        const cls=simplifiedAction==='出清'?'exit':simplifiedAction==='警戒'||simplifiedAction==='待更新'?'warn':'';
-        const signal=({出清:'🔴 出清',警戒:'🟡 警戒',可加碼:'🟢 可加碼',續抱:'🟢 續抱',待更新:'⚪ 待更新'})[simplifiedAction]||'⚪ 待更新';
-        const ma20=Number(m.ma20);
-        const maState=holdingMa20DayState(item,safeQuote);
-        const eodStatus=maState.confirmedDays==null?'連續跌破天數待核對'
-          :maState.confirmedDays>0?'收盤跌破 MA20 '+maState.confirmedDays+'/3 天'
-          :modelClose>0&&ma20>0&&modelClose>=ma20?'收盤守住 MA20｜0/3 天':'MA20 計數待核對';
-        const liveMa=safeQuote&&ma20>0?'｜C 今日成交暫'+(price>=ma20?'守住':'跌破')+'（尚未計入收盤）':'';
-        const maLine='S 盤後模型 '+(modelDate||'待更新')+'：'+eodStatus+liveMa;
-        const gainText=pnl==null?'-':(pnl>=0?'+':'')+num(pnl,2)+'%';
-        const gainClass=pnl==null?'':pnl>0?'pnl-up':pnl<0?'pnl-down':'';
-        const expanded=holdingExpandedIds.has(id)?' open':'';
-        const body=card(item,{hideSignal:true,quote:safeQuote,compactHolding:true});
-        return `<section class="holding-mini-wrap" data-stock-id="${esc(id)}">
-          <details class="holding-mini" data-stock-key="${esc(id)}"${expanded}>
-            <summary class="holding-mini-summary" aria-label="${esc(id+' '+String(item.stock_name||'')+' 今日動作 '+simplifiedAction)}">
-              <span class="holding-mini-name"><strong>${esc(id)} ${esc(item.stock_name||'')}</strong></span>
-              <span class="holding-mini-action ${cls}">今日動作：${signal}</span>
-              <span class="holding-mini-expand">詳情</span>
-              <span class="holding-mini-stats"><span>成本 <b>${costOkay?esc(num(cost,2)):'-'}</b></span><span>${esc(priceLabel)} <b>${priceOkay?esc(num(price,2)):'-'}</b></span><span>損益 <b class="${gainClass}">${esc(gainText)}</b></span></span>
-              <span class="holding-ma20-days ${esc(maState.tone)}"><strong>${esc(maLine)}</strong></span>
-              ${holdingCloseWatchHtml(item,safeQuote)}
-            </summary>
-            <div class="holding-mini-body">${body}</div>
-          </details>
-        </section>`;
+        return `<section class="holding-full-wrap" data-stock-id="${esc(id)}">${card(item,{quote:safeQuote})}</section>`;
       };
       const holdingPlaceholderHtml = (symbol, note = '完整模型載入中…', isError = false) => {
         const id=String(symbol||''),h=holdings.get(id)||{},cost=Number(h.avg_cost),qty=Number(h.quantity);
