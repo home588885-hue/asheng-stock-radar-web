@@ -2413,6 +2413,33 @@ h1 {
           && g.macd_weak!==true && g.kd_high_weak!==true && g.weak_after_breakout!==true
           && m.holding_management?.strong_breakdown!==true && m.v5?.entry_confirmed!==true;
       };
+      // Passive low-base observation: no trial/order/entry permission.
+      // Mirrors spring-swallow-picks lowBaseWatch; all numbers are completed EOD.
+      const lowBaseWatchState = item => {
+        const m=item?.metrics||{},b=m.bottom_start||{},mc=m.ma_cluster||{},g=m.entry_candle_guard||{};
+        const price=Number(m.close),ma20=Number(m.ma20),vol=Number(m.current_volume_lots);
+        const avg=Number(m.avg_volume_20_lots),pos=Number(m.position_1y_pct);
+        const k=Number(m.daily_k),d=Number(m.daily_d),score=Number(item?.score);
+        const gap=Number(mc.distance_to_breakout_pct),hist=Number(g.macd_hist),prev=Number(g.macd_prev_hist);
+        const state=String(m?.trade_lifecycle?.entry?.state||'');
+        const seq=m.launch_sequence||mc.launch_sequence||{};
+        const days=seq.days_since_first==null?null:Number(seq.days_since_first);
+        return b.current_base===true && b.confirmed!==true
+          && (state==='observe'||state==='near')
+          && mc.all_rising!==true
+          && m.first_breakout20!==true && mc.breakout_first_bar!==true
+          && m.v5?.entry_confirmed!==true
+          && (days===null||!Number.isFinite(days)||days<0)
+          && score>=75 && pos>=0 && pos<=35
+          && price>0 && ma20>0 && price>=ma20 && (price/ma20-1)*100<=5
+          && vol>=1000 && avg>=500 && vol/avg>=0.6 && vol/avg<=2.2
+          && k>=35 && k<=75 && k>=d
+          && Number.isFinite(hist)&&Number.isFinite(prev)&&hist>prev
+          && Number.isFinite(gap)&&gap>=-5&&gap<=0
+          && g.weak_after_breakout!==true && g.macd_weak!==true && g.kd_high_weak!==true
+          && m.holding_management?.strong_breakdown!==true
+          && !holdings.has(String(item?.stock_id||''));
+      };
       // Late-chase veto v1 (new positions ONLY). Protect against two repeatable
       // traps: a hot first breakout with no confirmed second entry, or a
       // high-position, high-volume continuation several sessions after launch.
@@ -3580,6 +3607,7 @@ h1 {
         if (isActiveLaunchItem(item)) return {keep:true,rank:110,className:'active-launch',
           label:'🔥 發動中｜S模型已發動，尚待正式進場確認'};
         if (isEntryRadarItem(item)) return { keep:false, rank:0, className:'promoted', label:'🎯 已進進場雷達' };
+        if (lowBaseWatchState(item)) return {keep:true,rank:35,className:'low-base-watch',label:'🌱 底部蓄勢｜提前觀察，尚無買點'};
 
         const price=Number(m.close);
         const ma20=Number(m.ma20);
@@ -4599,6 +4627,7 @@ h1 {
           detail:'底部確認、低位階、量價與KD／MACD改善，但MA10／20／60尚未全部上揚',
           extra:'只提高觀察順序，不是可以小量試單；等待三線及即時量價完成確認'
         };
+        if(lowBaseWatchState(item)) return {className:'live-wait',title:'🌱 底部蓄勢｜提前觀察',detail:'低位階接近突破位置，KD／MACD改善，但MA10／20／60尚未完整轉強',extra:'僅列入發動前觀察；不可試單，待正式轉強及風控確認'};
         if (bottomState) return bottomState;
         const simple = simpleActionState(item, quote);
         if (simple?.candle_guard) return {className:'live-warm',title:simple.text,detail:simple.detail,extra:'只限制新進場；原選股條件與持股規則保留'};
@@ -4970,10 +4999,12 @@ h1 {
         const risk=newEntryRiskGate(item,q);
         // Do not turn a watch candidate into a buy signal merely by opening a card.
         const early=earlyTurnWatchState(item);
+        const lowBase=lowBaseWatchState(item);
         const status=risk?.kind==='hard'?String(risk.text||'🔴 盤中風險｜暫不新買')
           :risk?.kind==='momentum'?String(risk.text||'🟡 短線轉弱｜等重新轉強')
           :risk?.kind==='position'?String(risk.text||'🔵 位置偏高｜等回踩')
           :early?'🌱 早期轉強｜優先追蹤，不可直接試單'
+          :lowBase?'🌱 底部蓄勢｜提前觀察，尚無買點'
           :risk?.kind==='incomplete'?'🟡 均線結構未齊'
           :String(launchState?.label||'🟠 發動前｜等確認');
         const source=q?'今日有效成交':'盤後模型收盤';
