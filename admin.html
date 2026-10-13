@@ -4271,6 +4271,79 @@ h1 {
         return { eligible:true, live, kind:strong?'突破續強':'回踩守住', pnl:plan.pnl, price, priceGap,
           ratio, referenceDate:plan.observationDate, suggestedQty:Math.max(1,Math.floor(Number(rec.baseQty || qty) / 3)) };
       };
+      // 已買進：跌後回踩／成本下方加碼研究 v1。
+      // Uses ONLY verified own holdings, existing S complete daily-K + existing C
+      // quote (if any). Never creates a trade order or requests additional data.
+      // "candidate" is a conservative RESEARCH review, not a guaranteed buy.
+      const holdingDipAddReview = (item, quote = null) => {
+        const id=String(item?.stock_id||''),h=holdings.get(id);
+        const cost=Number(h?.avg_cost),qty=Number(h?.quantity);
+        if(!h||!(cost>0)||!(qty>0))return null;
+        const m=item?.metrics||{},hm=m.holding_management||{},g=m.entry_candle_guard||{};
+        const live=validTodayQuote(quote);
+        const modelDay=String(item?.as_of||'').slice(0,10);
+        const modelFresh=modelDay===expectedSignalDataDate();
+        const price=live?Number(quote.price):modelFresh?Number(m.close):null;
+        // Don't derive averaging opportunities from stale EOD values.
+        if(!(price>0))return {state:'data',label:'⚪ 模型／價格待確認',reason:'最新完整日K與有效成交價不足，暫不提供攤平加碼判斷',live};
+        const pnl=(price/cost-1)*100;
+        if(pnl>=0)return null; // Profitable add-ons keep original holdingAddPlan.
+        const blocked=(label,reason)=>({state:'avoid',label,reason,price,cost,pnl,live});
+        const watch=(label,reason,extra={})=>({state:'watch',label,reason,price,cost,pnl,live,...extra});
+        if(!modelFresh)return blocked('⛔ 先不攤平｜模型過期','盤中報價即使有效，也不能替代最新完整日K的技術與風控結構');
+        const bought=String(h.bought_at||'').slice(0,10);
+        if(!bought||bought>=modelDay)return watch('🟡 新買持股｜先觀察','需要至少下一個完整交易日的模型確認，不能剛買進遇跌就攤平');
+        const ma10=Number(m.ma10),ma20=Number(m.ma20),ma60=Number(m.ma60);
+        const prevLow=Number(hm.prev_low),prevClose=Number(m.prev_close),open=Number(m.open);
+        const vol=live?Number(quote.volume_lots):Number(m.current_volume_lots);
+        const avg=Number(m.avg_volume_20_lots);
+        const ratio=avg>0&&Number.isFinite(vol)&&vol>0 ? vol/Math.max(1,avg*(live?marketFraction(quote.quote_time):1)):null;
+        const gap=ma20>0?(price/ma20-1)*100:null;
+        if(hm.strong_breakdown===true||hm.exit_ready===true||Number(hm.below_ma20_days||0)>0
+          ||hm.effective_prev_low_break===true||ma20>0&&price<ma20
+          ||prevLow>0&&price<prevLow*.996)
+          return blocked('🔴 支撐／風控受損｜不可攤平','MA20或昨日低點已失守，或原持股模型出現結構／出場風險；優先處理原部位');
+        if(pnl<=-4)return blocked('🟠 虧損擴大｜先控風險','成本虧損達4%或更多，原-4%／-6%／-8%停損風控優先，不藉加碼降低帳面成本');
+        if(!(ma10>0&&ma20>0&&ma60>0&&ma20>=ma60&&ma10>=ma20*.995))
+          return blocked('🟠 均線尚未修復｜不攤平','MA10／MA20／MA60結構尚未達到安全的回踩觀察條件');
+        if(!(price>=ma10*.995&&gap>=0&&gap<=2.5))
+          return watch('🟡 等站穩短均線｜暫不加碼','要先站穩MA10並貼近MA20，距MA20不可過遠');
+        if(g.two_black===true||g.kd_high_weak===true||g.macd_weak===true
+          ||g.weak_after_breakout===true||g.long_upper_shadow===true)
+          return blocked('🟠 K棒／動能轉弱｜不攤平','連黑、KD／MACD或突破後K棒顯示賣壓，不能只因靠近均線就加碼');
+        const k=Number(m.daily_k),d=Number(m.daily_d);
+        if(!(k>=25&&k<=80&&d>=0&&k>=d))
+          return watch('🟡 動能尚未轉強｜等待確認','KD尚未確認改善，避免接下跌中的股票');
+        if(!(avg>=500&&vol>=1000&&ratio!=null&&ratio>=.8&&ratio<=1.8))
+          return watch('🟡 量能尚未確認｜暫不加碼','成交量至少1000張、20日均量至少500張，量比須介於0.8～1.8x，避免無量與爆量下殺');
+        if(!(prevLow>0&&price>=prevLow&&prevClose>0&&open>0))
+          return watch('🟡 昨低／K棒證據不足','需要確認昨日低點、前收與開盤價，不能靠未知資料判定止跌');
+        if(live)return watch('🟡 盤中似乎止穩｜等收盤','即使盤中站回支撐，仍需完整日K收盤及量價確認，暫不提供加碼建議',{ratio,gap});
+        if(!(price>=prevClose&&price>open&&hm.price_turn!==false))
+          return watch('🟡 尚未確認反轉紅K','收盤需站回前收並收在開盤之上，才能確認反轉而非弱勢整理',{ratio,gap});
+        let rec=null;
+        try{rec=JSON.parse(localStorage.getItem(HOLDING_ADD_ONCE_PREFIX+String(portfolioId||'')+'-'+id)||'null');}catch(error){}
+        if(rec?.boughtDate===bought&&(rec.added===true||Number(rec.baseQty)>0&&qty>Number(rec.baseQty)))
+          return blocked('🔵 近期已加過碼｜不重複攤平','本裝置已觀察到同一筆持股增加，先管理原部位，避免連續攤平');
+        const cap=Math.floor((Number(rec?.baseQty)>0?Number(rec.baseQty):qty)/4);
+        if(cap<1)return watch('🟡 部位不足｜不建議追加','參考單次上限不足1股，無法提出小量加碼觀察');
+        return {state:'candidate',label:'🟡 回踩止穩｜可評估極小量加碼',
+          reason:'成本下方但MA20守住、MA10附近止穩、收復前收與開盤、KD與量能符合；僅為收盤研究候選，不保證反彈',
+          live:false,pnl,price,cost,ratio,gap,suggestedQty:cap,modelDay};
+      };
+      const holdingDipReviewHtml=(item,quote=null)=>{
+        const result=holdingDipAddReview(item,quote);
+        if(!result)return '';
+        const cls=result.state==='avoid'?'avoid':result.state==='candidate'?'candidate':'observe';
+        const pnl=result.pnl==null?'':'｜成本損益 '+(result.pnl>=0?'+':'')+num(result.pnl,2)+'%';
+        const quantity=result.state==='candidate'?'｜研究參考單次不超過 '+Number(result.suggestedQty).toLocaleString('zh-TW')+' 股（原觀察持股約1/4）':'';
+        return '<section class="holding-dip-review '+cls+'" aria-label="下跌後加碼評估">'
+          +'<strong>🔎 跌後攤平／加碼評估｜'+esc(result.label)+'</strong>'
+          +'<span>'+esc(result.reason)+'</span>'
+          +'<small>MA20 '+(Number(item?.metrics?.ma20)>0?esc(num(item.metrics.ma20,2)):'待更新')
+          +esc(pnl+quantity)+'｜'+(result.live?'今日盤中成交價，仍需收盤確認':'最新完整日K')
+          +'｜不自動買進、不保證止跌，既有持股出場風控優先</small></section>';
+      };
       const actionDecision = (item, quote = null) => {
         const metrics = item.metrics || {};
         const holding = holdings.get(String(item.stock_id));
