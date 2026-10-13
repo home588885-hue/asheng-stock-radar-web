@@ -3225,9 +3225,41 @@ h1 {
       };
 
       // Compact entry display only; this does not alter MA10/20/60 signals or eligibility.
+      // Historical cross-year study labels, using only existing full-day snapshot fields.
+      // Informational only: never changes entry eligibility, trade action, score or learning weights.
+      const historicalFactorState = item => {
+        if (holdings.has(String(item?.stock_id||''))) return null;
+        const m=item?.metrics||{},mc=m.ma_cluster||{};
+        const av=Number(m.avg_volume_20_lots),volume=Number(m.current_volume_lots);
+        const ratioRaw=mc.day_volume_ratio;
+        const ratio=ratioRaw!=null&&Number.isFinite(Number(ratioRaw))
+          ?Number(ratioRaw):(av>0&&Number.isFinite(volume)?volume/av:NaN);
+        const ma60Up=mc?.rising?.ma60===true;
+        const ma60Known=typeof mc?.rising?.ma60==='boolean';
+        const chipRaw=m.chip?.score,chip=chipRaw!=null?Number(chipRaw):NaN;
+        const chipLabel=Number.isFinite(chip)?'｜籌碼 '+chip.toFixed(0)+' 分僅供輔助':'';
+        if (!Number.isFinite(ratio)||!ma60Known) return {
+          label:'📊 回測因子資料待補齊｜不影響原買點',
+          detail:'缺少可比較的日量比或 MA60 方向；不採推測資料補分'
+        };
+        const ratioLabel=ratio.toFixed(2)+' 倍';
+        if (ratio>=2.5) return {
+          label:'⚠️ 量比 '+ratioLabel+'｜歷史過熱風險觀察'+chipLabel,
+          detail:'過量放大在部分年度與較差20日報酬相關；僅供提醒，不能當成賣出或硬性否決'
+        };
+        if (ratio>=0.6&&ma60Up) return {
+          label:'🔎 量能不過熱＋MA60向上｜研究觀察'+chipLabel,
+          detail:'跨年度回測有相對改善，但尚未通過完整 MA20 停損／分批停利實盤規則回測，並非新買點'
+        };
+        return {
+          label:'🌱 MA60／量能條件待轉強｜研究觀察'+chipLabel,
+          detail:'低位階或 V5 前兆仍須原本量價、均線與風控確認；單一籌碼高分不構成買進'
+        };
+      };
       const entryCompactStock = (row, bucketLabel) => {
         const item=row.item||{}, m=item.metrics||{}, id=String(item.stock_id||'');
         const score=Number(item.score), q=marketBridgeReady()&&validTodayQuote(row.quote)?row.quote:null;
+        const study=historicalFactorState(item);
         const close=Number(q?.price ?? m.close), ma20=Number(m.ma20);
         const dist=close>0&&ma20>0?(close/ma20-1)*100:null;
         const vol=Number(q?.volume_lots ?? m.current_volume_lots);
@@ -3248,7 +3280,8 @@ h1 {
             <span class="entry-mini-score">模型 ${Number.isFinite(score)?esc(num(score,0)):'-'} 分</span>
             <span class="entry-mini-expand">詳情 ▾</span>
             <span class="entry-mini-metrics">${q?'今日成交':'模型收盤'} <b>${close>0?esc(num(close,2)):'-'}</b>｜距MA20 ${dist==null?'-':(dist>=0?'+':'')+esc(num(dist,1))+'%'}｜成交量 ${Number.isFinite(vol)?esc(num(vol,0))+'張':'-'}</span>
-            <span class="entry-mini-date">模型基準 ${esc(item.as_of||'待更新')}｜${tradeContext}｜</span>
+            <span class="entry-mini-date">模型基準 ${esc(item.as_of||'待更新')}｜${tradeContext}</span>
+            ${study?'<span class="entry-mini-date">'+esc(study.label)+'</span>':''}
           </summary>
           <div class="entry-mini-full">${expanded}</div>
         </details>`;
@@ -3464,8 +3497,17 @@ h1 {
         // Below only changes visual grouping and sorting. No candidate is silently discarded.
         const rowScore = row => {
           const feedback=row?.item?.metrics?.learning_feedback||{};
-          const bias=String(feedback.status||'').startsWith('validated_') && Number(feedback.validation_count)>=20
-            ?Math.max(-4,Math.min(4,Number(feedback.rank_bias)||0)):0;
+          // Match S v44 fail-closed learning gate: ranking only, at most +/-3.
+          const train=Number(feedback.sample_count),holdout=Number(feedback.validation_count);
+          const win=Number(feedback.validation_win_rate_pct),baseWin=Number(feedback.baseline_win_rate_pct);
+          const ret=Number(feedback.validation_avg_net_return_pct),baseRet=Number(feedback.baseline_avg_net_return_pct);
+          const valid=feedback.status==='validated_positive' && feedback.out_of_sample===true
+            &&train>=100&&holdout>=50
+            &&[win,baseWin,ret,baseRet].every(Number.isFinite)
+            &&win>=baseWin&&ret>0&&ret>=baseRet
+            &&feedback.degraded!==true&&feedback.rollback!==true;
+          const proposed=Number(feedback.rank_bias);
+          const bias=valid&&Number.isFinite(proposed)?Math.max(-3,Math.min(3,proposed)):0;
           return Number(row?.item?.score||0)+bias;
         };
         const rowVolume = row => Number(row?.item?.metrics?.current_volume_lots||0);
@@ -3876,7 +3918,9 @@ h1 {
         const priceLabel = displayQuote ? quoteUi.label : todayOnly ? quoteUi.label : '模型收盤';
         const priceValue = Number.isFinite(quoteUi.value) ? num(quoteUi.value, 2) : (todayOnly ? quoteUi.text : (Number.isFinite(displayClose) ? num(displayClose,2) : '-'));
         const quickHtml = `<div class="quick-grid"><div><span>${priceLabel}</span><b>${priceValue}</b></div><div><span>技術＋籌碼</span><b>${combinedScore}</b></div><div><span>1年位階</span><b>${num(metrics.position_1y_pct)}%</b></div><div><span>5日/20日均量</span><b>${num(metrics.volume_5_20_ratio, 2)}x</b></div></div>`;
-        const hiddenModelHtml = `${launchQualityHtml}${precisionHtml}${warrant ? `<div class="signal-note">${warrant}</div>` : ''}${bottomHtml}${launchHtml}${launchSequenceHtml}${holding ? '' : guideHtml}`;
+        const study=historicalFactorState(item);
+        const studyHtml=study?'<div class="signal-note">'+esc(study.label)+'｜'+esc(study.detail)+'</div>':'';
+        const hiddenModelHtml = `${studyHtml}${launchQualityHtml}${precisionHtml}${warrant ? `<div class="signal-note">${warrant}</div>` : ''}${bottomHtml}${launchHtml}${launchSequenceHtml}${holding ? '' : guideHtml}`;
         const detailHtml = `<details class="card-details"><summary>完整判斷與數據</summary><div class="detail-body">${hiddenModelHtml}${v5Html}${chipHtml}${holding ? '' : liquidityHtml}${playbookHtml}<div class="metrics"><span class="pill">3年位階 ${num(metrics.position_3y_pct)}%</span><span class="pill">週K ${num(metrics.weekly_k)}｜${gradeText(weeklyKGrade(metrics.weekly_k))}</span><span class="pill">月K ${num(metrics.monthly_k)}｜${gradeText(monthlyKGrade(metrics.monthly_k))}</span><span class="pill">${backtestSignal(item)}</span>${metrics.backtest ? `<span class="pill">5日 ${num(metrics.backtest.win_rate_5d_pct)}%</span><span class="pill">20日 ${num(metrics.backtest.win_rate_20d_pct)}%</span>` : ''}</div><div class="why">${reasons}</div>${cautions ? `<div class="warn">${cautions}</div>` : ''}</div></details>`;
         const actionHtml = options.hideSignal ? '' : `<div class="trade-signal ${signal.className}">${esc(memberFacingText(signal.text))}<small style="display:block;margin-top:4px;font-weight:500">${esc(memberFacingText(signal.detail || ''))}</small></div>`;
         return `<article class="card" data-stock-id="${esc(item.stock_id)}"><div class="top"><div><div class="name">${esc(item.stock_id)} ${esc(item.stock_name)}</div><div class="meta">${esc(item.market)}${item.industry ? '・' + esc(item.industry) : ''}${timeInfoStages() ? '' : '｜資料日 ' + esc(item.as_of || '-')}</div></div><div class="badge ${esc(item.stage)}">模型 ${Number(item.score || 0)}分</div></div>${companyProfileHtml(item)}${activeLaunchVisibleHtml}${volumePriceHtml(item, displayQuote)}${pullbackWatchHtml(item, displayQuote)}${holding ? holdingTodayHtml + holdingDipHtml : actionHtml + quickHtml + deviationWarningHtml + riskSummary}${holdingHtml}${holdingStatusHtml}${detailHtml}${timeInfoStages() ? timeInfoHtml(item, displayQuote) : '<div class="time">背景模型掃描：' + updated + '</div>'}</article>`;
@@ -5014,6 +5058,7 @@ h1 {
         const vol=q?Number(q.volume_lots):Number(m.current_volume_lots);
         const score=Number(item?.score);
         const launchState=launchQualityState(item);
+        const study=historicalFactorState(item);
         const risk=newEntryRiskGate(item,q);
         // Do not turn a watch candidate into a buy signal merely by opening a card.
         const early=earlyTurnWatchState(item);
@@ -5037,6 +5082,7 @@ h1 {
               <span class="entry-mini-expand">詳情</span>
               <span class="entry-mini-metrics">${source} <b>${price!=null&&price>0?esc(num(price,2)):'-'}</b>｜距MA20 ${gap==null?'-':(gap>=0?'+':'')+esc(num(gap,1))+'%'}｜量 ${Number.isFinite(vol)&&vol>=0?esc(num(vol,0))+'張':'-'}</span>
               <span class="entry-mini-date">模型基準 ${esc(item?.as_of||'待更新')}${esc(quoteTime)}｜點擊展開完整風控</span>
+              ${study?'<span class="entry-mini-date">'+esc(study.label)+'</span>':''}
             </summary>
             <div class="entry-mini-full">${detailed}</div>
           </details>
