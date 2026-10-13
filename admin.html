@@ -4970,8 +4970,13 @@ h1 {
         const cost=Number(saved.avg_cost);
         const safeQuote=bestTodayQuote(validTodayQuote(quote)?quote:null,id);
         const m=item.metrics||{},modelDate=String(item.as_of||'').slice(0,10);
-        const price=safeQuote?Number(safeQuote.price):null;
+        // UI price priority: valid C trade today, otherwise the last verified S
+        // daily close. A model close is NEVER labelled as today's trade.
+        const modelClose=Number(m.close);
+        const hasModelClose=Number.isFinite(modelClose)&&modelClose>0;
+        const price=safeQuote?Number(safeQuote.price):(hasModelClose?modelClose:null);
         const priceOkay=Number.isFinite(price)&&price>0;
+        const priceLabel=safeQuote?'今日成交價':hasModelClose?'模型收盤 '+(modelDate||'日期待更新'):'價格待更新';
         const costOkay=Number.isFinite(cost)&&cost>0;
         const pnl=priceOkay&&costOkay?(price/cost-1)*100:null;
         const {main}=holdingDisplay(item,safeQuote);
@@ -4981,7 +4986,6 @@ h1 {
         const signal=({出清:'🔴 出清',警戒:'🟡 警戒',可加碼:'🟢 可加碼',續抱:'🟢 續抱',待更新:'⚪ 待更新'})[simplifiedAction]||'⚪ 待更新';
         const ma20=Number(m.ma20);
         const maState=holdingMa20DayState(item,safeQuote);
-        const modelClose=Number(m.close);
         const eodStatus=maState.confirmedDays==null?'連續跌破天數待核對'
           :maState.confirmedDays>0?'收盤跌破 MA20 '+maState.confirmedDays+'/3 天'
           :modelClose>0&&ma20>0&&modelClose>=ma20?'收盤守住 MA20｜0/3 天':'MA20 計數待核對';
@@ -4997,7 +5001,7 @@ h1 {
               <span class="holding-mini-name"><strong>${esc(id)} ${esc(item.stock_name||'')}</strong></span>
               <span class="holding-mini-action ${cls}">今日動作：${signal}</span>
               <span class="holding-mini-expand">詳情</span>
-              <span class="holding-mini-stats"><span>成本 <b>${costOkay?esc(num(cost,2)):'-'}</b></span><span>今日成交價 <b>${priceOkay?esc(num(price,2)):'-'}</b></span><span>損益 <b class="${gainClass}">${esc(gainText)}</b></span></span>
+              <span class="holding-mini-stats"><span>成本 <b>${costOkay?esc(num(cost,2)):'-'}</b></span><span>${esc(priceLabel)} <b>${priceOkay?esc(num(price,2)):'-'}</b></span><span>損益 <b class="${gainClass}">${esc(gainText)}</b></span></span>
               <span class="holding-ma20-days ${esc(maState.tone)}"><strong>${esc(maLine)}</strong></span>
             </summary>
             <div class="holding-mini-body">${holdingCloseWatchHtml(item,safeQuote)}${body}</div>
@@ -5022,7 +5026,7 @@ h1 {
       const holdingOverviewHtml = (total,modelCount = 0) =>
         `<div class="holding-list-overview" data-stable-key="holding-overview">
           <strong>📌 已買進｜${Number(total)||0} 檔</strong>
-          <span>模型已載入 ${Number(modelCount)||0}/${Number(total)||0} 檔｜今日成交價未取得時顯示「-」，點卡片展開技術數據與持股操作。</span>
+          <span>模型已載入 ${Number(modelCount)||0}/${Number(total)||0} 檔｜沒有今日有效報價時改用附日期的最近模型收盤價估算損益，點卡片展開技術數據與持股操作。</span>
         </div>`;
 
       // UI-only launch folding. Keep ALL server model selection, ordering,
