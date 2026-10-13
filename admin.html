@@ -1100,7 +1100,7 @@ h1 {
               <div class="risk-note"><b>2｜S 算模型，C 提供盤中報價</b><br><b>S（Supabase）</b>保留完整 A／B／C、V5、MA10／MA20／MA60、KD、MACD、量價、籌碼及持股風控模型，不搬到 C。<br><b>C（Cloudflare）</b>只為 S 完整模型已選出的「發動前（含原發動中）、進場雷達」候選，以及管理員「已買進」股票取得盤中價；不掃全市場、不自行增刪候選，也不修改 A／B／C、V5 或籌碼結果。只有報價 Worker 健康檢查及登入驗證通過才啟用；失敗不冒充已有即時價。</div>
               <div class="risk-note"><b>3｜每天什麼時候更新？</b><br><b>交易日 09:00～13:30</b>：C 報價橋接成功後，🟠發動前、🎯進場雷達、📌已買進在網頁前景時約每 <b>3 分鐘</b>低頻更新今日有效成交價。沒有今日有效價時不顯示 0.00，也不以昨收冒充。<br><b>交易日 13:00～13:29</b>：📌已買進 12 分鐘存活觀察只在 <b>12:50～13:20</b> 累計有效成交；C 無有效報價時不會假裝通過。<br><b>交易日 21:00～21:55</b>：S 依原排程分批更新完整日 K 選股，並非每檔在 21:00 就全部更新完成。</div>
               <div class="risk-note"><b>4｜簡單看三區</b><br>🟠 <b>發動前</b>：底部整理、均線轉強及接近發動，也收錄原發動中 S 候選；🌱早期轉強代表低位階與量價改善、但三線未全轉強，只能優先追蹤，尚不可試單。<br>🎯 <b>進場雷達</b>：已起漲、突破或適合回踩觀察的候選，仍須判斷風險和位置，不代表每檔都能立刻買。<br>📌 <b>已買進</b>：只顯示自己已記錄的持股、成本與風控，沒有盤中報價時也不會刪除持股。每檔收合列都固定顯示「收盤跌破 MA20 連續天數（0/3、1/3、2/3、達3天）」；今天盤中首次跌破只顯示暫列，待盤後完整日K才正式累加。</div>
-              <div class="risk-note"><b>5｜四種買點顏色與防追高</b><br>🔴 <b>暫不新買</b>：突破失敗、均線結構破壞，或今日有效成交價出現放量下跌且跌破短均線；今日紅燈優先於昨日橘色卡位／突破訊號。<br>🟡 <b>近買點／等確認</b>：條件缺量或位置，先觀察。<br>🟠 <b>可小量試單</b>：風險過濾通過，部位保守。<br>🟢 <b>正式買點</b>：完整條件成立，再評估分批進場。<br>還要核對 MA10／20／60、K 棒、KD／MACD、成交量至少 1,000 張與距 MA20 的乖離。距 MA20 超過 5% 不作為適合追價的買點；盤後訊號不是即時成交保證。</div>
+              <div class="risk-note"><b>5｜四種買點顏色與防追高</b><br>🔴 <b>暫不新買</b>：突破失敗、均線結構破壞，或今日有效成交價出現放量下跌且跌破短均線；今日紅燈優先於昨日橘色卡位／突破訊號。<br>🔵 <b>不追爆量續漲</b>：第一根漲幅至少5.5%又有2.4倍量，或發動兩日後已放量且距MA20超過5%、位階偏高，先列「等回踩」，不是新買點；突破後連黑且動能轉弱也先觀察。<br>🟡 <b>近買點／等確認</b>：條件缺量或位置，先觀察。<br>🟠 <b>可小量試單</b>：風險過濾通過，部位保守。<br>🟢 <b>正式買點</b>：完整條件成立，再評估分批進場。<br>還要核對 MA10／20／60、K 棒、KD／MACD、成交量至少 1,000 張與距 MA20 的乖離。距 MA20 超過 5% 不作為適合追價的買點；盤後訊號不是即時成交保證。</div>
               <div class="risk-note"><b>6｜已買進怎麼管理？</b><br>先看「今日動作」：<b>續抱、可加碼、警戒或出清</b>，再看 MA20 是否守住及下方「續抱理由與持股規則」。買進後不因跌破成本就直接攤平；展開持股可見「🔎 跌後攤平／加碼評估」，要等完整日K止穩、仍守MA20才可能列為小量研究候選；盤中跌破短線突破支撐先警戒，放量有效跌破昨日低點則評估減碼風險，不必等 MA20 才開始留意。主要出場仍沿用 MA20 原規則，獲利約 20% 可評估分批停利。盤中提示不是收盤確認，系統不會自動下單。買進、減碼或全部賣出後，在持股卡更新成本與數量。</div>
               <div class="risk-note"><b>7｜看清三種時間</b><br><b>技術模型基準</b>：最新完整日 K 日期；盤中顯示上一有效交易日是正常的。<br><b>系統最新掃描</b>：S 最近一次模型快照掃描時間；排程執行成功不代表全市場更新完。<br><b>今日報價時間</b>：僅代表有效成交價取得時間，不等於 KD、MACD 等完整選股模型盤中重算。休市日不會有新的當日成交價。</div>
               <div class="risk-note"><b>8｜掃描資料完整率</b><br>以<b>最新完整交易日的模型筆數與最後完整掃描循環時間</b>判斷資料是否齊全；尚未掃齊時，顯示的候選檔數不能視為全市場結果。個股仍依 MA10／MA20／MA60、KD、MACD、量價、籌碼及持股風控判斷；不額外抓大盤指數。</div>
@@ -2413,6 +2413,52 @@ h1 {
           && g.macd_weak!==true && g.kd_high_weak!==true && g.weak_after_breakout!==true
           && m.holding_management?.strong_breakdown!==true && m.v5?.entry_confirmed!==true;
       };
+      // Late-chase veto v1 (new positions ONLY). Protect against two repeatable
+      // traps: a hot first breakout with no confirmed second entry, or a
+      // high-position, high-volume continuation several sessions after launch.
+      // Existing S A/B/C + MA10/20/60 are unchanged; no fetches or auto orders.
+      const lateChaseReview = (item, quote = null) => {
+        if(holdings.has(String(item?.stock_id||'')))return null;
+        const m=item?.metrics||{},ls=m.launch_sequence||m.ma_cluster?.launch_sequence||{};
+        const g=m.entry_candle_guard||{},mc=m.ma_cluster||{};
+        const live=validTodayQuote(quote);
+        const price=live?Number(quote.price):Number(m.close),ma20=Number(m.ma20);
+        const gap=price>0&&ma20>0?(price/ma20-1)*100:null;
+        const avg=Number(m.avg_volume_20_lots),volume=Number(m.current_volume_lots);
+        // Use only completed EOD volume for this classification; C's partial
+        // cumulative volume must not be treated as an all-day volume ratio.
+        const volumeRatio=avg>0&&volume>=0?volume/avg:null;
+        const pos=Number(m.position_1y_pct),days=ls.days_since_first==null?null:Number(ls.days_since_first);
+        const noSecond=ls.second_buy_candidate!==true;
+        const hotFirst=noSecond&&ls.first_overheated===true
+          &&Number(ls.first_return_pct)>=5.5&&Number(ls.first_volume_ratio)>=2.4;
+        if(hotFirst)return {
+          kind:'position',key:'wait',phase:'observe',rank:10,className:'wait',
+          text:'🔵 第一根爆量過熱｜不追高，等第二買點',
+          detail:'原第一根漲幅 '+num(Number(ls.first_return_pct),1)+'%｜量比 '+num(Number(ls.first_volume_ratio),2)
+            +'x｜尚未確認回踩守住後的第二買點；保留追蹤，不直接小量試單',
+          keep_candidate:true,buyable:false,trialable:false,late_chase:true
+        };
+        const tired=ls.continuation===true&&days!=null&&days>=2&&noSecond
+          &&gap!=null&&gap>5&&volumeRatio!=null&&volumeRatio>=1.6&&pos>=65;
+        if(tired)return {
+          kind:'position',key:'wait',phase:'observe',rank:10,className:'wait',
+          text:'🔵 已續漲數日＋放量偏離月線｜等回踩',
+          detail:'發動後 '+days+' 個交易日｜距MA20 +'+num(gap,1)+'%｜完整日K量比 '+num(volumeRatio,2)
+            +'x｜年內位階 '+num(pos,1)+'%｜不能當新第一根；等量縮守住MA10／MA20再轉強',
+          keep_candidate:true,buyable:false,trialable:false,late_chase:true
+        };
+        if(g.recent_breakout===true&&g.two_black===true
+          &&(g.macd_weak===true||g.kd_high_weak===true||g.below_ma5===true)){
+          return {
+            kind:'momentum',key:'wait',phase:'observe',rank:8,className:'wait',
+            text:'🟡 突破後連黑＋動能轉弱｜先不新買',
+            detail:'突破後連續黑K，MA5／KD／MACD至少一項轉弱；等回踩止跌與量價重新確認',
+            keep_candidate:true,buyable:false,trialable:false,late_chase:true
+          };
+        }
+        return null;
+      };
       const newEntryRiskGate = (item, quote = null) => {
         const m=item?.metrics||{}, g=m.entry_candle_guard||{}, hm=m.holding_management||{};
         const intraday=liveSelloffRisk(item,quote);
@@ -2435,6 +2481,8 @@ h1 {
           detail:'MA10／20／60主要多頭條件尚未成立，暫不新買；不等於趨勢已破壞',
           keep_candidate:true,buyable:false,trialable:false
         };
+        const chase=lateChaseReview(item,quote);
+        if(chase)return chase;
         if(gap!=null&&gap>5 || Number.isFinite(pos)&&pos>=85) return {
           kind:'position',key:'wait',rank:10,className:'wait',
           text:'🔵 趨勢仍在｜位置偏高等回踩',
@@ -3518,7 +3566,10 @@ h1 {
         }
         // Original active-launch S predicate, now in prelaunch. Only presentation
         // order changes; stock model, holdings and trading rules are untouched.
-        if (newEntryRiskGate(item)?.kind==='hard') return {keep:false,rank:0,className:'blocked',label:'🔴 結構風險｜暫不新買'};
+        const preRisk=newEntryRiskGate(item);
+        if(preRisk?.kind==='hard') return {keep:false,rank:0,className:'blocked',label:'🔴 結構風險｜暫不新買'};
+        if(preRisk?.late_chase===true)return {keep:true,rank:20,className:'late-chase-watch',
+          label:preRisk.text};
         if (earlyTurnWatchState(item)) return {keep:true,rank:125,className:'early-turn-watch',
           label:'🌱 早期轉強｜優先追蹤，尚不可試單'};
         if (isActiveLaunchItem(item)) return {keep:true,rank:110,className:'active-launch',
@@ -4060,7 +4111,11 @@ h1 {
       };
 
       const liveCard = (item, quote) => {
-        const live = liveState(item, quote);
+        const raw=liveState(item, quote);
+        const risk=newEntryRiskGate(item,quote);
+        const live=risk&&!holdings.has(String(item?.stock_id||''))
+          ? {...raw,rank:0,className:risk.kind==='hard'?'live-late':'live-wait',text:risk.text}
+          : raw;
         const pctText = live.pct == null ? '-' : `${live.pct >= 0 ? '+' : ''}${num(live.pct, 2)}%`;
         const paceText = live.pace == null ? '-' : `${num(live.pace, 2)}x`;
         const extText = live.ext20 == null ? '-' : `${live.ext20 >= 0 ? '+' : ''}${num(live.ext20, 1)}%`;
@@ -4527,7 +4582,12 @@ h1 {
         if(nowRisk?.kind==='momentum') return {
           className:'live-warm',title:nowRisk.text,
           detail:nowRisk.detail||'短線動能轉弱，先看支撐',
-          extra:'此為觀察警戒，不因改變大盤模式直接升級成可買進'
+          extra:'此為觀察警戒，不是新買點；須再確認量價、支撐和短均線'
+        };
+        if(nowRisk?.kind==='position') return {
+          className:'live-wait',title:nowRisk.text,
+          detail:nowRisk.detail||'位置偏高，等回踩重新確認',
+          extra:'候選股仍保留追蹤；現在不宜追價試單'
         };
         if(earlyTurnWatchState(item)) return {
           className:'live-wait',title:'🌱 早期轉強｜優先追蹤',
@@ -5148,6 +5208,15 @@ h1 {
       }
 
       const v5MonitorState = (item, quote = null) => {
+        // Auxiliary V5 labels must respect the same no-chase veto.
+        if(!holdings.has(String(item?.stock_id||''))){
+          const risk=newEntryRiskGate(item,quote);
+          if(risk?.late_chase===true)return {
+            rank:0,className:'live-wait',text:risk.text,
+            price:validTodayQuote(quote)?Number(quote.price):Number(item?.metrics?.close),
+            proximity:0,missing:[risk.detail],late_chase:true
+          };
+        }
         const metrics = item.metrics || {};
         const v5 = metrics.v5 || {};
         const fresh = String(metrics.model?.version || '').startsWith('2026-09-21-v5') && String(item.as_of || '') === expectedSignalDataDate();
