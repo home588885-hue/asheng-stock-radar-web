@@ -562,6 +562,16 @@ h1 {
 .holding-mini-stats { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:5px 9px; font-variant-numeric:tabular-nums; }
 .holding-mini-stats > span { min-width:0; overflow-wrap:anywhere; }
 .holding-mini > summary .holding-ma20-days { min-height:51px; }
+.holding-mini > summary .holding-survival-summary {
+  display:grid; grid-column:1 / -1; gap:3px; min-height:56px;
+  border:1px solid #50627c; border-radius:9px; padding:7px 10px;
+  background:#17253c; color:#d8e7f9; line-height:1.35;
+}
+.holding-survival-summary strong { font-size:14px; font-weight:800; }
+.holding-survival-summary small { font-size:12px; color:#b9cee4; }
+.holding-survival-summary.passed { border-color:#3c7660; background:#132c29; color:#bbf7d0; }
+.holding-survival-summary.failed { border-color:#a74e57; background:#382028; color:#fecdd3; }
+.holding-survival-summary.pending { border-color:#50627c; }
 .holding-mini-summary { overflow-anchor:none; }
 .holding-mini-body .card > .top { display:none; }
 .holding-mini-body .holding-row > span { display:none; }
@@ -4776,37 +4786,22 @@ h1 {
         }
       };
 
+      // Compact display only. Preserve existing observation and valid sample gates.
       const holdingCloseWatchHtml = (item, quote = null) => {
-        const watch = closeWatchState();
-        const row = holdingCloseWatchMap().get(String(item?.stock_id || '')) || null;
-        if (!row) {
-          const text = watch.phase === 'before'
-            ? '🕐 12:50 開始12分鐘確認｜13:20截止'
-            : watch.active
-              ? '⏱ 收盤前12分鐘確認中｜等待12:50後第一筆有效成交'
-              : '🌙 今日未留下收盤前確認紀錄｜晚上9點看完整模型';
-          return `<div class="signal-note">${text}</div>`;
+        const watch=closeWatchState();
+        const id=String(item?.stock_id||'');
+        const row=holdingCloseWatchMap().get(id)||null;
+        if(!row){
+          const note=watch.phase==='before'?'12:50 開始取樣，13:20 截止'
+            :watch.active?'等待第一筆有效成交取樣'
+            :watch.phase==='after'?'今日未取得有效樣本，無法判定通過'
+            :'今日無收盤前有效取樣紀錄';
+          return `<span class="holding-survival-summary pending"><strong>⏱ 12分鐘存活｜${esc(note)}</strong><small>只依既有 C 有效成交取樣，不以時間或模型價格冒充通過</small></span>`;
         }
-        const survivalState=holdingSurvivalState(row,watch);
-        const price = Number(row.price);
-        const ma20 = Number(row.ma20);
-        const ratio = row.projectedRatio == null ? null : Number(row.projectedRatio);
-        const dayPct = row.dayPct == null ? null : Number(row.dayPct);
-        let cls = 'green', action = '🟢 續抱｜結構仍守住', volumeTip = '量能中性';
-        if (Number.isFinite(price) && Number.isFinite(ma20) && ma20 > 0 && price < ma20 && ratio != null && ratio >= 1.2) {
-          cls = 'red'; action = '🔴 出清警戒｜跌破 MA20＋放量'; volumeTip = '放量轉弱';
-        } else if (Number.isFinite(price) && Number.isFinite(ma20) && ma20 > 0 && price < ma20) {
-          cls = 'orange'; action = '🟠 警戒／減碼｜MA20 未守'; volumeTip = ratio != null && ratio < .8 ? '量縮跌破，仍需收盤確認' : '跌破月線';
-        } else if (dayPct != null && dayPct < 0 && ratio != null && ratio >= 1.5) {
-          cls = 'orange'; action = '🟠 減碼觀察｜放量轉弱'; volumeTip = '量放大但價格偏弱';
-        } else if (ratio != null && ratio < .7) {
-          cls = 'yellow'; action = '🟡 續抱觀察｜量縮守線'; volumeTip = '量縮，先看 MA20';
-        } else if (dayPct != null && dayPct >= 0 && ratio != null && ratio >= 1) {
-          cls = 'green'; action = '🟢 續抱｜量價正常'; volumeTip = '量價配合';
-        }
-        const survival=survivalState.label;
-        const ratioText = ratio == null ? '量能待資料' : `推估日量約 ${num(ratio,2)}x 20日均量`;
-        return `<div class="holding-status ${cls}" data-holding-watch-id="${esc(String(item?.stock_id||''))}"><span data-watch-survival-label>${survival}｜${ratioText}</span><small>${volumeTip}｜有效成交樣本 ${Number(row.samples || 0)} 次｜最後 ${esc(row.quoteTime || '-')}｜13:20 截止</small></div>`;
+        const state=holdingSurvivalState(row,watch);
+        const ratio=row.projectedRatio==null?'量能待資料':'推估日量約 '+num(Number(row.projectedRatio),2)+'x 20日均量';
+        const tone=state.passed?'passed':row.failed===true?'failed':'pending';
+        return `<span class="holding-survival-summary ${tone}" data-holding-watch-id="${esc(id)}"><strong>⏱ 12分鐘存活｜<span data-watch-survival-label>${esc(state.label)}｜${esc(ratio)}</span></strong><small>有效成交樣本 ${Number(row.samples||0)} 次｜最後 ${esc(row.quoteTime||'-')}｜13:20 截止</small></span>`;
       };
 
       // Always show the MA20 consecutive CLOSE-BELOW counter independently of
@@ -5003,8 +4998,9 @@ h1 {
               <span class="holding-mini-expand">詳情</span>
               <span class="holding-mini-stats"><span>成本 <b>${costOkay?esc(num(cost,2)):'-'}</b></span><span>${esc(priceLabel)} <b>${priceOkay?esc(num(price,2)):'-'}</b></span><span>損益 <b class="${gainClass}">${esc(gainText)}</b></span></span>
               <span class="holding-ma20-days ${esc(maState.tone)}"><strong>${esc(maLine)}</strong></span>
+              ${holdingCloseWatchHtml(item,safeQuote)}
             </summary>
-            <div class="holding-mini-body">${holdingCloseWatchHtml(item,safeQuote)}${body}</div>
+            <div class="holding-mini-body">${body}</div>
           </details>
         </section>`;
       };
