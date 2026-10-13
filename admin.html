@@ -1035,6 +1035,18 @@ h1 {
 .shortcut-guide-figure{margin:10px 0 12px;padding:8px;border:1px solid var(--line);border-radius:12px;background:#10192a}
 .shortcut-guide-figure img{display:block;width:100%;height:auto;border-radius:10px}
 .shortcut-guide-figure figcaption{margin-top:7px;color:#aebbd0;font-size:13px;line-height:1.5}
+.market-risk-panel {border:1px solid #526988;display:grid;gap:10px;padding:14px 16px;}
+.market-risk-panel[data-mode="defense"] {border-color:#b45353;background:#291c29;}
+.market-risk-panel[data-mode="unverified"] {border-color:#b79242;background:#282318;}
+.market-risk-panel[data-mode="normal"] {border-color:#47856d;background:#152b28;}
+.market-risk-title {display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;}
+.market-risk-title strong {font-size:18px;}
+.market-risk-title span,.market-risk-panel small {font-size:12px;color:#c7d2e1;line-height:1.6;}
+.market-risk-panel #marketRiskDetail {line-height:1.6;font-size:14px;}
+.market-risk-actions {display:flex;gap:9px;flex-wrap:wrap;}
+.market-risk-actions button {border:1px solid #778aa3;border-radius:9px;background:#17253c;color:#eff5ff;font-size:14px;font-weight:700;padding:10px 12px;cursor:pointer;min-height:40px;}
+.market-risk-actions button[aria-pressed="true"] {border-color:#fbbf24;box-shadow:0 0 0 1px #fbbf24 inset;}
+@media(max-width:640px){.market-risk-actions button{flex:1 1 100%;}.market-risk-panel{padding:12px}}
 </style>
   
     <link rel="manifest" href="./admin.webmanifest">
@@ -1062,6 +1074,16 @@ h1 {
         <h1>📈 阿勝底部起漲雷達｜管理員</h1>
         <p class="lead">先看顏色，再看 MA20：🔴不能買｜🟡等確認｜🟠小量試單｜🟢正式買點。已買進依 S 模型判斷續抱、加碼、警戒與出場。</p>
 
+        <section class="box market-risk-panel" id="marketRiskPanel">
+          <div class="market-risk-title"><strong id="marketRiskStatus">🛡️ 今日市場風險｜確認中</strong><span id="marketRiskDate"></span></div>
+          <div id="marketRiskDetail">尚未取得經驗證的加權／櫃買即時指數。新買訊號先當追蹤，不代表可直接試單。</div>
+          <div class="market-risk-actions">
+            <button type="button" id="marketDefenseBtn">🔴 啟用今日防守</button>
+            <button type="button" id="marketNormalBtn">✅ 我已核對今日大盤，解除防守</button>
+          </div>
+          <small id="marketRiskProvenance">人工防護開關，只保留當日選擇；不使用未授權即時指數、不額外抓行情。已買進依原 MA20 與停損規則。</small>
+          <small id="marketBreadthStatus">市場廣度：尚無全市場驗證資料，不以雷達候選比例冒充。</small>
+        </section>
         <section class="box">
           <div class="stats">
             <div class="stat"><small>已取得模型資料</small><b id="done">-</b><span class="stat-explain">近期可用的股票快照</span></div>
