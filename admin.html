@@ -3568,8 +3568,13 @@ h1 {
         // order changes; stock model, holdings and trading rules are untouched.
         const preRisk=newEntryRiskGate(item);
         if(preRisk?.kind==='hard') return {keep:false,rank:0,className:'blocked',label:'🔴 結構風險｜暫不新買'};
-        if(preRisk?.late_chase===true)return {keep:true,rank:20,className:'late-chase-watch',
-          label:preRisk.text};
+        if(preRisk?.late_chase===true){
+          // Do not duplicate an ENTRY candidate back into the prelaunch tab.
+          // Its ENTRY card already carries this same no-buy risk gate.
+          if(isEntryRadarItem(item))return {keep:false,rank:0,className:'promoted',
+            label:'🎯 進場雷達觀察｜'+preRisk.text};
+          return {keep:true,rank:20,className:'late-chase-watch',label:preRisk.text};
+        }
         if (earlyTurnWatchState(item)) return {keep:true,rank:125,className:'early-turn-watch',
           label:'🌱 早期轉強｜優先追蹤，尚不可試單'};
         if (isActiveLaunchItem(item)) return {keep:true,rank:110,className:'active-launch',
