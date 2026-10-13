@@ -4718,9 +4718,10 @@ h1 {
         const closeDate='模型日 '+modelDate;
         if(hitExit)return {
           tone:'exit',
-          label:'🔴 '+countText+'｜已達3日門檻',
+          label:days>=3?'🔴 '+countText+'｜已達3日門檻'
+            :'🔴 原模型已標示出場｜連續計數 '+days+'/3 天待核對',
           detail:closeDate+'｜'+(live&&price>=ma20?'今天有效成交價暫站回MA20，仍須等盤後模型核對；':'依既有完整日K計數；')
-            +'出場及其他強風控規則不變',
+            +(days<3?'模型出場標記與連續天數不一致，請核對後台；':'出場及其他強風控規則不變'),
           confirmedDays:days,provisional:false
         };
         if(live&&isBelow)return {
@@ -4754,8 +4755,9 @@ h1 {
       };
       const holdingMa20DaysHtml = (item,quote=null) => {
         const d=holdingMa20DayState(item,quote);
-        return '<div class="holding-ma20-days '+d.tone+'">'
-          +'<strong>'+esc(d.label)+'</strong><small>'+esc(d.detail)+'</small></div>';
+        // Valid as a direct child of either the holding card or <summary>.
+        return '<span class="holding-ma20-days '+d.tone+'">'
+          +'<strong>'+esc(d.label)+'</strong><small>'+esc(d.detail)+'</small></span>';
       };
       const holdingActionHtml = (item, quote = null) => {
         const safeQuote = validTodayQuote(quote) ? quote : null;
