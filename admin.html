@@ -1779,7 +1779,9 @@ h1 {
       // No authorized index feed is installed. Daily account-local acknowledgement
       // is a protective presentation gate, never an index price or model rewrite.
       const MARKET_GUARD_KEY='asheng-market-defense-v1-'+portfolioId;
+      let marketGuardInMemory=null;
       const readMarketGuard=()=>{
+        if(marketGuardInMemory?.date===todayQuoteDate())return marketGuardInMemory.mode;
         try{
           const saved=JSON.parse(localStorage.getItem(MARKET_GUARD_KEY)||'null');
           if(saved?.date===todayQuoteDate()&&['defense','normal'].includes(saved.mode))return saved.mode;
@@ -5846,6 +5848,45 @@ h1 {
         else if (edit) openHoldingDialog(edit.dataset.holdingEdit);
         else if (sell) sellHolding(sell.dataset.holdingSell);
       });
+      // One tap changes only the user's daily market policy. Re-render from the
+      // already loaded S models / existing valid C quotes without new API calls.
+      const redrawMarketGuardCards=()=>{
+        renderMarketProtection();
+        const current=Array.isArray(liveBasePicks)?liveBasePicks:[];
+        if(stage==='LAUNCH'&&current.length){
+          const candidates=current.filter(item=>launchQualityState(item).keep);
+          stableListRender(candidates.length?launchListHtml(candidates):'<div class="box empty">今日沒有符合原模型的發動前候選。</div>',{force:true});
+        }else if(stage==='ENTRY'&&current.length){
+          const rows=current.map(item=>{
+            const quote=bestTodayQuote(null,item.stock_id);
+            const base=simpleActionState(item,quote);
+            return {item,quote,action:entrySnapshotState(item,base,quote)};
+          }).filter(row=>row.action);
+          renderEntrySections(rows,{quoteUpdate:true});
+        }else if(stage==='HOLDING'&&holdingsLastReadSucceeded){
+          const lookup=new Map(current.map(item=>[String(item.stock_id),item]));
+          const symbols=[...holdings.keys()];
+          stableListRender(holdingOverviewHtml(symbols.length,lookup.size)+symbols.map(id=>{
+            const item=lookup.get(id);
+            return item?holdingMiniHtml(item,bestTodayQuote(null,id)):holdingPlaceholderHtml(id,'模型快照仍待更新');
+          }).join(''),{force:true});
+        }
+      };
+      const setMarketDefense=mode=>{
+        if(!['defense','normal'].includes(mode))return;
+        marketGuardInMemory={date:todayQuoteDate(),mode};
+        try{localStorage.setItem(MARKET_GUARD_KEY,JSON.stringify(marketGuardInMemory));}catch(error){}
+        redrawMarketGuardCards();
+      };
+      document.getElementById('marketDefenseBtn')?.addEventListener('click',()=>setMarketDefense('defense'));
+      document.getElementById('marketNormalBtn')?.addEventListener('click',()=>setMarketDefense('normal'));
+      window.addEventListener('storage',event=>{
+        if(event.key===MARKET_GUARD_KEY){
+          marketGuardInMemory=null;
+          redrawMarketGuardCards();
+        }
+      });
+      renderMarketProtection();
       $('#refresh').addEventListener('click',()=>{
         invalidateSharedModelSnapshots();
         holdingsLastVerifiedAt=0;
@@ -5853,7 +5894,7 @@ h1 {
       });
       updateEntryPhase();
       // Reuse the existing UI-only timer; no extra S/C fetches or schedules.
-      setInterval(() => {updateEntryPhase(); refreshHoldingSurvivalDisplay();}, 30000);
+      setInterval(() => {updateEntryPhase(); refreshHoldingSurvivalDisplay(); renderMarketProtection();}, 30000);
       let lastSeenExternalCommitAt = '';
       const pageOpenedAt = Date.now();
       let lastCommitProbeAt = 0;
