@@ -1776,6 +1776,45 @@ h1 {
       let lastEntryPoolRefreshAt = 0;
       let lastEntryResumeAt = 0;
       let latestScanProgress = {};
+      // No authorized index feed is installed. Daily account-local acknowledgement
+      // is a protective presentation gate, never an index price or model rewrite.
+      const MARKET_GUARD_KEY='asheng-market-defense-v1-'+portfolioId;
+      const readMarketGuard=()=>{
+        try{
+          const saved=JSON.parse(localStorage.getItem(MARKET_GUARD_KEY)||'null');
+          if(saved?.date===todayQuoteDate()&&['defense','normal'].includes(saved.mode))return saved.mode;
+        }catch(error){}
+        return 'unverified';
+      };
+      const marketProtectionBlocked=()=>readMarketGuard()!=='normal';
+      const marketProtectionNote=()=>readMarketGuard()==='defense'?'🔴 今日防守｜暫停新買及加碼':'🟡 大盤未經核對｜新買及加碼先觀察';
+      const renderMarketProtection=()=>{
+        const root=document.getElementById('marketRiskPanel');
+        if(!root)return;
+        const mode=readMarketGuard(),progress=latestScanProgress||{};
+        root.dataset.mode=mode;
+        const status=document.getElementById('marketRiskStatus');
+        const description=document.getElementById('marketRiskDetail');
+        const date=document.getElementById('marketRiskDate');
+        if(status)status.textContent=mode==='defense'?'🔴 市場防守｜暫停新倉與加碼':mode==='normal'?'🟢 今日已人工核對｜恢復個股條件檢查':'🟡 大盤風險未驗證｜先防守';
+        if(description)description.textContent=mode==='defense'
+          ? '逆勢轉強股照常追蹤，所有新買試單及持股加碼訊號暫緩。原持股的MA20出場、短線風控和停利不變。'
+          :mode==='normal'
+            ? '此狀態僅代表你已自行核對今日大盤，不代表即時指數已串接。個股仍須遵守量價、MA20乖離及風險過濾。'
+            : '目前沒有經驗證的加權／櫃買即時指數。為防昨天的橘燈／綠燈在今日急跌時誤導下單，新買及加碼先列觀察；可啟用防守或核對行情後解除。';
+        if(date)date.textContent='台灣日期 '+todayQuoteDate()+'｜選擇於次日自動失效';
+        const on=document.getElementById('marketDefenseBtn'),off=document.getElementById('marketNormalBtn');
+        if(on)on.setAttribute('aria-pressed',String(mode==='defense'));
+        if(off)off.setAttribute('aria-pressed',String(mode==='normal'));
+        const breadth=document.getElementById('marketBreadthStatus');
+        if(breadth){
+          const n=Number(progress.latest_count??0),total=Number(progress.total_stocks??0);
+          const pct=total>0?(n/total*100).toFixed(1):'-';
+          breadth.textContent='完整日K覆蓋：'+(total?n+'/'+total+' 檔（'+pct+'%）':'尚未取得')
+            +'｜資料日 '+String(progress.latest_as_of||'未知')
+            +'｜加權／櫃買即時跌幅及全市場漲跌家數未取得，不拿候選股當市場廣度。';
+        }
+      };
       // 進場雷達僅保留最近完整日K快照，不建立盤中存活計時器。
       const scanProgressSuffix = () => latestScanProgress?.latest_complete === false ? `｜🔄 最新資料 ${Number(latestScanProgress.latest_count || 0)}/${Number(latestScanProgress.total_stocks || 0)}，訊號數尚未代表全市場` : '';
       const $ = selector => document.querySelector(selector);
@@ -2225,12 +2264,14 @@ h1 {
         const expected = expectedSignalDataDate();
         const completed = Number(progress?.latest_count ?? progress?.scanned_fresh ?? 0);
         const incomplete = progress?.latest_complete !== true || latest !== expected;
+        renderMarketProtection();
         warning.hidden = !incomplete;
         if (incomplete) {
           const pct = Number.isFinite(Number(progress?.latest_percent)) ? Number(progress.latest_percent).toFixed(1) : '-';
           warning.textContent = '⚠️ 最新完整日K覆蓋不足｜應有資料日 ' + expected
             + '｜目前最新 ' + (latest || '未知') + '：' + completed + '/' + total + ' 檔（' + pct + '%）'
-            + '｜未完成的模型只供觀察，不得當成新買點；持股獨立按持股風控及個別資料日判斷。';
+            + '｜最後完整掃描循環 '+(progress?.last_cycle_at?new Date(progress.last_cycle_at).toLocaleString('zh-TW',{timeZone:'Asia/Taipei'}):'未知')
+            + '｜未掃齊不代表全市場沒有候選；新買須核對當下大盤。持股依個別風控判斷。';
         }
       };
       const signalDataFresh = item => {
