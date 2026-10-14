@@ -4736,14 +4736,12 @@ h1 {
         const projectedRatio = avg20 > 0 && Number.isFinite(projectedLots) ? projectedLots / avg20 : null;
         const hardRisk = (Number.isFinite(ma20) && ma20 > 0 && Number.isFinite(price) && price < ma20 && projectedRatio != null && projectedRatio >= 1.1)
           || (dayPct != null && dayPct <= -2.5 && projectedRatio != null && projectedRatio >= 1.4);
-        const now = Date.now();
         const row = {
-          startedAt: Number(existing?.startedAt || now),
-          // Limit even a local clock display to 13:20, before the trial-matching period.
-          windowEndAt: Number(existing?.windowEndAt || now + (800 - watch.totalMinutes) * 60000),
+          // Store only actual, distinct 12:50～13:19 C trade times. A page-open
+          // clock is NOT evidence of price survival and must not run after 13:20.
           firstQuoteMinute: existing?.firstQuoteMinute ?? quoteMinute,
           lastQuoteMinute: quoteMinute,
-          updatedAt: now,
+          updatedAt: Date.now(),
           samples: Math.min(20, Number(existing?.samples || 0) + 1),
           failed: existing?.failed === true || hardRisk,
           price: Number.isFinite(price) ? price : null,
@@ -4759,23 +4757,33 @@ h1 {
         return row;
       };
       const holdingSurvivalState = (row,watch=closeWatchState()) => {
-        const started=Number(row?.startedAt||0);
-        const endAt=Number(row?.windowEndAt||0);
-        // Locally animate observed time. Elapsed time alone NEVER proves survival.
-        const until=started ? Math.min(Date.now(),endAt>started?endAt:Date.now()) : 0;
-        const elapsed=started ? Math.max(0,Math.min(12,Math.floor((until-started)/60000))) : 0;
-        const quoteSpan=Number(row?.lastQuoteMinute)-Number(row?.firstQuoteMinute);
-        const validSpan=Number.isFinite(quoteSpan)&&quoteSpan>=12;
-        const passed=elapsed>=12&&validSpan&&Number(row?.samples||0)>=3&&row?.failed!==true;
+        // Sample-to-sample TIME SPAN is authoritative, not Date.now()-page-start.
+        // At 13:20 all results freeze: never advance a timer on client wall time.
+        const first=Number(row?.firstQuoteMinute),last=Number(row?.lastQuoteMinute);
+        const validTimes=!!row && Number.isFinite(first) && Number.isFinite(last)
+          && first>=770 && last>=first && last<800;
+        const span=validTimes?last-first:0;
+        const observedMinutes=Math.max(0,Math.min(12,Math.floor(span)));
+        const samples=Number(row?.samples||0);
         const failed=row?.failed===true;
-        const ended=watch.phase==='after';
-        const label=failed?'⚠️ 12分鐘確認未通過'
-          :passed?'✅ 12分鐘存活通過'
-          :ended?'⚠️ 13:20已截止｜有效樣本不足，不能判定通過'
-          :elapsed>=12?'⏱ 計時12分｜等待有效成交樣本確認'
-          :`⏱ 12分鐘確認 ${elapsed}/12 分`;
-        return {elapsed,progress:Math.round(elapsed/12*100),passed,label};
+        const passed=observedMinutes>=12 && samples>=3 && !failed;
+        const settled=watch.phase==='after';
+        const label=settled
+          ? (failed?'⚠️ 13:20 已結算｜風控未通過'
+            :passed?'✅ 13:20 已結算｜12分鐘存活通過'
+            :'⚪ 13:20 已截止｜有效成交取樣不足，無法確認存活')
+          : failed?'⚠️ 取樣期間風控未通過'
+          : passed?'✅ 有效成交已跨12分鐘｜持續監看到13:20'
+          : watch.phase==='before'?'⏱ 12:50 才開始有效成交取樣'
+          : `⏱ 有效成交取樣 ${observedMinutes}/12 分（${samples}筆）`;
+        return {
+          elapsed:observedMinutes,
+          progress:Math.round(observedMinutes/12*100),
+          passed,failed,settled,label
+        };
       };
+      // Pure DOM updates every 30 seconds; no new S/C requests or timers.
+      // Also called immediately on app foreground to repair iOS-paused displays.
       const refreshHoldingSurvivalDisplay = () => {
         if(stage!=='HOLDING'||document.hidden)return;
         const watch=closeWatchState();
@@ -4785,48 +4793,54 @@ h1 {
           const mins=el.querySelector('[data-watch-survival-minutes]');
           const fill=el.querySelector('[data-watch-survival-fill]');
           const wrapper=el.querySelector('.survival-progress');
-          if(!row){
-            // A missing C trade is NOT a 0/12 pass or an active timer.
-            const reason=watch.phase==='before'?'12:50 開始取樣'
-              :watch.phase==='after'?'13:20 已截止｜有效成交樣本不足'
-              :watch.active&&!marketBridgeReady()?'C 即時報價未連線｜無法啟動'
-              :watch.active?'等待 C 第一筆有效成交樣本'
-              :'非交易時段｜無有效存活樣本';
-            if(label)label.textContent='⏱ '+reason;
-            if(mins)mins.textContent='0/12 分';
-            if(fill)fill.style.width='0%';
-            if(wrapper)wrapper.classList.remove('done');
-            continue;
-          }
-          const state=holdingSurvivalState(row,watch);
-          if(label)label.textContent=state.label+'｜'+(row.projectedRatio==null?'量能待資料':'推估日量約 '+num(Number(row.projectedRatio),2)+'x 20日均量');
-          if(mins)mins.textContent=state.elapsed+'/12 分';
-          if(fill)fill.style.width=state.progress+'%';
-          if(wrapper)wrapper.classList.toggle('done',state.passed);
+          const head=el.querySelector('[data-watch-survival-head]');
+          const track=el.querySelector('.survival-progress-track');
+          const detail=el.querySelector('[data-watch-survival-detail]');
+          const settled=watch.phase==='after';
+          const state=row?holdingSurvivalState(row,watch):null;
+          const reason=!row
+            ?watch.phase==='before'?'12:50 開始取樣'
+              :settled?'13:20 已截止｜沒有有效成交樣本，無法確認'
+              :watch.active&&!marketBridgeReady()?'C 即時成交資料未連線｜無法啟動'
+              :watch.active?'等待 C 第一筆有效成交'
+              :'非交易時段｜無有效成交樣本'
+            :state.label+(settled?'':'｜'+(row.projectedRatio==null?'量能待資料':'推估日量 '+num(Number(row.projectedRatio),2)+'x'));
+          el.classList.toggle('passed',!!state?.passed);
+          el.classList.toggle('failed',!!state?.failed);
+          el.classList.toggle('pending',!state?.passed&&!state?.failed);
+          if(label)label.textContent=reason;
+          if(detail)detail.textContent=row
+            ? '有效成交樣本 '+Number(row.samples||0)+' 次｜最後 '+String(row.quoteTime||'-')+'｜13:20 截止'
+            :'有效成交樣本 0 次｜沒有有效成交不能推算存活';
+          if(head)head.textContent=settled?'13:20 已固定結算':'有效成交取樣時間';
+          if(mins)mins.textContent=settled?'已截止':(state?.elapsed||0)+'/12 分';
+          if(fill)fill.style.width=(state?.progress||0)+'%';
+          if(track)track.style.display=settled?'none':'block';
+          if(wrapper)wrapper.classList.toggle('done',!!state?.passed);
         }
       };
 
-      // Compact display only. Preserve existing observation and valid sample gates.
       const holdingCloseWatchHtml = (item, quote = null) => {
         const watch=closeWatchState();
         const id=String(item?.stock_id||'');
         const row=holdingCloseWatchMap().get(id)||null;
         const state=row?holdingSurvivalState(row,watch):null;
-        const ratio=row?.projectedRatio==null?'量能待資料':'推估日量約 '+num(Number(row.projectedRatio),2)+'x 20日均量';
-        const tone=!row?'pending':state.passed?'passed':row.failed===true?'failed':'pending';
+        const settled=watch.phase==='after';
+        const ratio=row?.projectedRatio==null?'量能待資料':'推估日量 '+num(Number(row.projectedRatio),2)+'x';
+        const tone=!row?'pending':state.passed?'passed':state.failed?'failed':'pending';
         const note=!row
           ?watch.phase==='before'?'12:50 開始取樣'
-            :watch.phase==='after'?'13:20 已截止｜有效成交樣本不足'
-            :watch.active&&!marketBridgeReady()?'C 即時報價未連線｜無法啟動'
-            :watch.active?'等待 C 第一筆有效成交樣本':'非交易時段｜無有效存活樣本'
-          :state.label+'｜'+ratio;
+            :settled?'13:20 已截止｜沒有有效成交樣本，無法確認'
+            :watch.active&&!marketBridgeReady()?'C 即時成交資料未連線｜無法啟動'
+            :watch.active?'等待 C 第一筆有效成交'
+            :'非交易時段｜無有效成交樣本'
+          :state.label+(settled?'':'｜'+ratio);
         const details=row
           ?'有效成交樣本 '+Number(row.samples||0)+' 次｜最後 '+esc(row.quoteTime||'-')+'｜13:20 截止'
-          :'有效成交樣本 0 次｜未取得新成交不計時，也不判定通過';
+          :'有效成交樣本 0 次｜沒有有效成交不能推算存活';
         const elapsed=state?.elapsed||0;
-        // One visible inline progress bar; the existing UI-only timer updates it
-        // every 30 seconds without requesting extra market/model data.
-        return `<span class="holding-survival-summary ${tone}" data-holding-watch-id="${esc(id)}"><strong>⏱ 12分鐘存活｜<span data-watch-survival-label>${esc(note)}</span></strong><small>${details}</small><span class="survival-progress"><span class="survival-progress-head"><span>有效成交觀察時間</span><span data-watch-survival-minutes>${elapsed}/12 分</span></span><span class="survival-progress-track" style="display:block"><span class="survival-progress-fill" data-watch-survival-fill style="display:block;width:${state?.progress||0}%"></span></span></span></span>`;
+        const fill=state?.progress||0;
+        return `<span class="holding-survival-summary ${tone}" data-holding-watch-id="${esc(id)}"><strong>⏱ 12分鐘存活｜<span data-watch-survival-label>${esc(note)}</span></strong><small data-watch-survival-detail>${details}</small><span class="survival-progress"><span class="survival-progress-head"><span data-watch-survival-head>${settled?'13:20 已固定結算':'有效成交取樣時間'}</span><span data-watch-survival-minutes>${settled?'已截止':elapsed+'/12 分'}</span></span><span class="survival-progress-track" style="display:${settled?'none':'block'}"><span class="survival-progress-fill" data-watch-survival-fill style="display:block;width:${fill}%"></span></span></span></span>`;
       };
 
       // Always show the MA20 consecutive CLOSE-BELOW counter independently of
@@ -6108,7 +6122,7 @@ h1 {
         refreshCurrent();
       });
       updateEntryPhase();
-      // Reuse the existing UI-only timer; no extra S/C fetches or schedules.
+      // One existing DOM-only timer: no additional quote, S or C usage.
       setInterval(() => {updateEntryPhase(); refreshHoldingSurvivalDisplay();}, 30000);
       let lastSeenExternalCommitAt = '';
       const pageOpenedAt = Date.now();
@@ -6167,6 +6181,11 @@ h1 {
           clearInterval(liveTimer); liveTimer = null;
         }
       });
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) refreshHoldingSurvivalDisplay();
+      });
+      window.addEventListener('focus', refreshHoldingSurvivalDisplay);
+      window.addEventListener('pageshow', refreshHoldingSurvivalDisplay);
       document.addEventListener('visibilitychange', refreshEntryOnResume);
       window.addEventListener('focus', refreshEntryOnResume);
       // No forced reload on pageshow (including iOS bfcache) or when a new
