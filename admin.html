@@ -3641,6 +3641,14 @@ h1 {
         if (Number.isFinite(expectedMs) && (!Number.isFinite(asOfMs) || asOfMs < expectedMs - 5*86400000)) {
           return { keep:false, rank:0, className:'stale', label:'⚪ 模型資料過期' };
         }
+        // Previous trading-day snapshot is a waiting-room item, NEVER a buy signal.
+        // The S API includes at most one previous model date and safety-screens it.
+        // Keep its stock visible during a partial nightly scan, without promoting
+        // historic ACTIVE/formal metadata to a fresh entry state.
+        if (expected && asOf && asOf !== expected) {
+          return {keep:true,rank:5,className:'prior-day-model-observe',
+            label:'⚪ '+asOf+' 舊模型｜等待今日更新，僅供觀察（不可當新買點）'};
+        }
         // Original active-launch S predicate, now in prelaunch. Only presentation
         // order changes; stock model, holdings and trading rules are untouched.
         const preRisk=newEntryRiskGate(item);
@@ -3943,7 +3951,7 @@ h1 {
             for (let attempt = 0; attempt < 2; attempt++) {
               try {
                 const limit = attempt === 0 ? '250' : '100';
-                const result = await fetchSharedModelSnapshot(API + '&' + new URLSearchParams({ limit, fresh_hours:'144', mode: 'launch' }).toString(), attempt === 0 ? 15000 : 12000);
+                const result = await fetchSharedModelSnapshot(API + '&' + new URLSearchParams({ limit, fresh_hours:'144', mode: 'launch', view_policy:'prior_day_observation_20261014' }).toString(), attempt === 0 ? 15000 : 12000);
                 response = result.response;
                 launchData = result.data;
                 if (response.ok && launchData.ok) break;
@@ -5615,7 +5623,7 @@ h1 {
       const entrySourceUrl = (base, params) => base + (String(base).includes('?') ? '&' : '?') + params.toString();
       const loadEntrySourcePair = async () => {
         const paramsV5 = new URLSearchParams({ limit:'100', fresh_hours:'144', mode:'monitor' });
-        const paramsLaunch = new URLSearchParams({ limit:'250', fresh_hours:'144', mode:'launch' });
+        const paramsLaunch = new URLSearchParams({ limit:'250', fresh_hours:'144', mode:'launch', view_policy:'prior_day_observation_20261014' });
         const settled = await Promise.allSettled([
           fetchSharedModelSnapshot(entrySourceUrl(V5_API, paramsV5), 15000),
           fetchSharedModelSnapshot(entrySourceUrl(API, paramsLaunch), 15000),
