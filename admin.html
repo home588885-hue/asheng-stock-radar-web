@@ -4501,6 +4501,27 @@ h1 {
           +esc(pnl+quantity)+'｜'+(result.live?'今日盤中成交價，仍需收盤確認':'最新完整日K')
           +'｜不自動買進、不保證止跌，既有持股出場風控優先</small></section>';
       };
+      // Clear yesterday's short-term warning only with a verified next-day C trade.
+      // Pure UI decision, never touches MA20 exits, holdings, or S/C quotas.
+      const holdingPriorLowRecoveryState = (item, quote = null) => {
+        const m=item?.metrics||{},hm=m.holding_management||{};
+        if(hm.effective_prev_low_break!==true||!validTodayQuote(quote))return false;
+        const modelDate=String(item?.as_of||'').replace(/[^0-9]/g,'');
+        const quoteDate=String(quote?.quote_date||'').replace(/[^0-9]/g,'');
+        const modelMs=Date.parse(modelDate.slice(0,4)+'-'+modelDate.slice(4,6)+'-'+modelDate.slice(6,8)+'T00:00:00Z');
+        const quoteMs=Date.parse(quoteDate.slice(0,4)+'-'+quoteDate.slice(4,6)+'-'+quoteDate.slice(6,8)+'T00:00:00Z');
+        if(modelDate.length!==8||quoteDate.length!==8||!Number.isFinite(modelMs)||!Number.isFinite(quoteMs)
+          ||quoteMs<=modelMs||quoteMs-modelMs>5*86400000)return false;
+        const price=Number(quote.price),prevClose=Number(quote.prev_close);
+        const prevLow=Number(hm.prev_low),ma10=Number(m.ma10),ma20=Number(m.ma20);
+        const breakoutSupport=Number(m.entry_candle_guard?.breakout_support);
+        if(![price,prevClose,prevLow,ma10,ma20].every(Number.isFinite)
+          ||Math.min(price,prevClose,prevLow,ma10,ma20)<=0)return false;
+        return price>prevClose && price>prevLow && price>=ma10 && price>=ma20
+          && (!(breakoutSupport>0)||price>=breakoutSupport)
+          && hm.strong_breakdown!==true && hm.exit_ready!==true
+          && Number(hm.below_ma20_days||0)<3;
+      };
       const actionDecision = (item, quote = null) => {
         const metrics = item.metrics || {};
         const holding = holdings.get(String(item.stock_id));
@@ -4631,6 +4652,15 @@ h1 {
             detail:profitGuard.reason+'｜已觀察高點回落 '+num(profitGuard.retreat,1)+'%',
             extra:(profitGuard.live?'盤中只提醒，等待完整日K確認；':'依 '+profitGuard.observedDate+' 完整模型提醒；')
               +'最高紀錄包含現有盤後共用資料與本機有效價；並非保證買入以來的歷史最高價。保留20%分批停利與MA20主要出場；不自動下單'
+          };
+          // Hard stops, MA20 breaches, active intraday weakness and profit guards
+          // above take priority: this only clears the old EOD shortBreak banner.
+          if (shortBreak && holdingPriorLowRecoveryState(item, quote)) return {
+            className:'live-launch',
+            title:'🟢 前日跌破已盤中收復｜續抱觀察',
+            detail:'今日有效成交 '+num(price,2)+' 已站回前低 '+num(prevLow,2)
+              +'、MA10 '+num(ma10,2)+'、MA20 '+num(ma20,2),
+            extra:'昨日放量收破前低的舊警戒暫時解除；收盤仍待完整日K確認，並非加碼訊號；原MA20出場與新風險規則不變'
           };
           if (shortBreak) return { className:heavyBreak?'live-warm':'live-wait', title:heavyBreak?'🟠 短線轉弱｜放量收破昨日低點':'🟡 短線轉弱｜收破昨日低點', detail:'仍在MA20上方，先停止加碼，不直接出清', extra:heavyBreak?'量能放大，優先觀察MA20是否守住':'若隔日收復昨日低點，警示解除' };
           if (recovered) return { className:'live-launch', title:'🟢 警示解除', detail:'前一日短線跌破已收復', extra:'重新回到MA20趨勢管理；要加碼仍需回踩守住＋量價轉強' };
@@ -4979,7 +5009,12 @@ h1 {
         const distance = hm.distance_to_ma20_pct == null ? (Number.isFinite(close) && ma20 > 0 ? (close / ma20 - 1) * 100 : null) : Number(hm.distance_to_ma20_pct);
         const ratio = hm.day_volume_ratio == null ? null : Number(hm.day_volume_ratio);
         const trend = action.title.replace(/^[^\u4e00-\u9fff]+/, '');
-        const short = hm.effective_prev_low_break === true ? (hm.break_volume_heavy === true ? '放量收破昨日低點，短線轉弱' : '收破昨日低點，短線轉弱') : hm.recovered_prev_low === true ? '昨日低點已收復，警示解除' : action.title.includes('盤中跌破') ? '盤中跌破昨日低點，尚待收盤確認' : '未觸發昨日低點有效跌破';
+        const short = holdingPriorLowRecoveryState(item, quote)
+          ? '前日放量收破前低，但今日有效成交已重新站回前低、MA10及MA20；短線警戒暫解除，等待盤後完整日K'
+          : hm.effective_prev_low_break === true ? (hm.break_volume_heavy === true ? '放量收破昨日低點，短線轉弱' : '收破昨日低點，短線轉弱')
+          : hm.recovered_prev_low === true ? '昨日低點已收復，警示解除'
+          : action.title.includes('盤中跌破') ? '盤中跌破昨日低點，尚待收盤確認'
+          : '未觸發昨日低點有效跌破';
         const fields = [['趨勢狀態',trend], ['昨日低點',hm.prev_low == null ? '-' : num(hm.prev_low,2)], ['MA20',Number.isFinite(ma20) && ma20 > 0 ? num(ma20,2) : '-'], ['距 MA20 %（模型日）',distance == null || !Number.isFinite(distance) ? '-' : (distance >= 0 ? '+' : '') + num(distance,1) + '%'], ['量比（模型日）',ratio == null || !Number.isFinite(ratio) ? '-' : num(ratio,2) + 'x']];
         const strongNote = action.title.includes('強警示') ? '<div class="holding-rule-line"><b>強警示：</b>長黑、爆量、MA20 下方且籌碼偏弱，優先檢查是否提早處理。</div>' : '';
         const risk = holdingRiskPlan(item, quote);
