@@ -1579,19 +1579,10 @@ h1 {
           // Fail closed: only call the optional prefilter when the live Worker explicitly advertises it.
           // Older deployed Workers omit this capability; avoid repeated 404 requests without changing S-model picks.
           EOD_PREFILTER_BRIDGE_URL = status?.eod_prefilter_route === 'read_only_available' ? url : '';
-          // Only activate after this logged-in administrator can access /quotes.
-          // This prevents a working /health with a broken auth route from hiding quotes.
-          const { data: authData } = await authClient.auth.getSession();
-          const jwt = authData?.session?.access_token;
-          if (!jwt) return;
-          // Authenticate with C without depending on MIS upstream availability.
-          // The Worker checks admin BEFORE it checks the invalid-market argument.
-          const probe = await fetch(url + '/eod-prefilter?market=invalid', {
-            headers:{Authorization:'Bearer '+jwt,Accept:'application/json'},
-            cache:'no-store',signal:AbortSignal.timeout(8500)
-          });
-          const result = await probe.json();
-          if (probe.status !== 400 || result?.error !== 'market_must_be_tse_or_otc') return;
+          // Health and expected deployment marker establish the trusted endpoint.
+          // Do not veto REAL /quotes solely because the optional eod-prefilter probe
+          // failed or an S admin lookup was temporarily slow. The C /quotes endpoint
+          // still REQUIRES the administrator's JWT and verifies it server-side.
           MARKET_BRIDGE_URL = url;
         } catch (error) {
           // Real failures remain disconnected; do not invent a live quote.
@@ -2061,24 +2052,46 @@ h1 {
         if (ANALYZER_FALLBACK_API === ANALYZER_API) throw new Error('analyzer_response_unavailable');
         return fetchJsonWithTimeout(ANALYZER_FALLBACK_API + '?' + suffix, options, timeoutMs);
       };
+      let cQuoteLastCheck={status:'尚未請求',at:'',returned:0,valid:0};
       const fetchLiveQuoteChunk = async symbols => {
         if (document.hidden || !taipeiMarketState().open) return [];
         const suffix = '?' + new URLSearchParams({ symbols }).toString();
-        if (marketBridgeReady()) {
-          try {
-            const { data: session } = await authClient.auth.getSession();
-            const token = session?.session?.access_token;
-            if (!token) return [];
-            const response = await fetch(MARKET_BRIDGE_URL + '/quotes' + suffix, {
-              headers: { Authorization: 'Bearer ' + token, Accept:'application/json' },
-              cache:'no-store', signal:AbortSignal.timeout(10000)
-            });
-            const data = await response.json();
-            if (response.ok && data?.ok && Array.isArray(data.quotes)) return data.quotes;
-          } catch (error) {}
-          return []; // C unavailable: never invent a trade or consume S quote budget.
+        if (!marketBridgeReady()) {
+          cQuoteLastCheck={status:'C Worker 健康檢查未通過',at:new Date().toISOString(),returned:0,valid:0};
+          return [];
         }
-        return []; // C not authorized yet; keep displaying the S EOD model.
+        try {
+          let { data: session } = await authClient.auth.getSession();
+          let token = session?.session?.access_token;
+          if (!token) {
+            cQuoteLastCheck={status:'登入工作階段無效',at:new Date().toISOString(),returned:0,valid:0};
+            return [];
+          }
+          const requestQuotes = jwt => fetch(MARKET_BRIDGE_URL + '/quotes' + suffix, {
+            headers:{ Authorization:'Bearer '+jwt, Accept:'application/json' },
+            cache:'no-store',signal:AbortSignal.timeout(10000)
+          });
+          let response=await requestQuotes(token);
+          if(response.status===401){
+            // Retry expired admin JWT only on actual 401; never bypass C authentication.
+            const refreshed=await authClient.auth.refreshSession();
+            token=refreshed?.data?.session?.access_token;
+            if(token)response=await requestQuotes(token);
+          }
+          const data=await response.json().catch(()=>null);
+          const arr=Array.isArray(data?.quotes)?data.quotes:[];
+          cQuoteLastCheck={
+            status:response.ok&&data?.ok?'C 已回應':response.status===401?'C 拒絕管理員驗證':
+              response.status===502?'C 無法取得交易所報價':
+              'C 請求失敗 HTTP '+response.status,
+            at:new Date().toISOString(),returned:arr.length,
+            valid:arr.filter(validTodayQuote).length
+          };
+          return response.ok&&data?.ok?arr:[];
+        } catch(error) {
+          cQuoteLastCheck={status:'C 連線／逾時／CORS 異常',at:new Date().toISOString(),returned:0,valid:0};
+          return [];
+        }
       };
       const fetchScanStatusShared = async () => {
         const stamp = '&_=' + Date.now();
@@ -5803,9 +5816,16 @@ h1 {
             }).join('') + fallbackHtml,{quoteUpdate:true});
             const freshCount = items.filter(item => String(item.as_of || '') === expectedSignalDataDate()).length;
             const absent=items.filter(item=>!quoteMap.has(String(item.stock_id))).map(item=>String(item.stock_id)).slice(0,9);
-            $('#note').textContent = marketBridgeReady()
-              ? `📌 已買進 ${symbols.length} 檔｜C 今日有效成交報價 ${quoteMap.size}/${items.length} 檔${payload.cached_last_trade?'｜'+payload.cached_last_trade+' 檔沿用今日前次成交':''}${absent.length?'｜未取得 '+absent.join('、'):''}｜約3分鐘取樣｜日K模型 ${freshCount}/${items.length} 檔｜盤後完整更新。`
-              : `⚠️ 已買進 ${symbols.length} 檔｜C 目前未通過登入／資料來源驗證，盤中報價未啟用（不代表股票沒有成交）｜只顯示 ${freshCount}/${items.length} 檔既有日K模型｜不冒用舊價。`;
+            const feedState=marketBridgeReady()
+              ? (quoteMap.size>0
+                  ? 'C 今日有效成交 '+quoteMap.size+'/'+items.length+' 檔'
+                  : '⚠️ 未取得今日有效成交｜'+cQuoteLastCheck.status+
+                    '｜原始回傳 '+cQuoteLastCheck.returned+' 檔，有效 '+cQuoteLastCheck.valid+' 檔')
+              : '⚠️ C Worker 尚未連線｜可能為健康檢查或網路異常';
+            $('#note').textContent = '📌 已買進 '+symbols.length+' 檔｜'+feedState
+              +(payload.cached_last_trade?'｜沿用今日前次成交 '+payload.cached_last_trade+' 檔':'')
+              +(absent.length?'｜未取得 '+absent.join('、'):'')
+              +'｜約3分鐘取樣｜日K模型 '+freshCount+'/'+items.length+' 檔｜存活只算有效成交樣本';
           } catch (error) {
             stableListRender(holdingOverviewHtml(symbols.length,items.length)
               + items.map(item => holdingMiniHtml(item)).join('') + fallbackHtml);
