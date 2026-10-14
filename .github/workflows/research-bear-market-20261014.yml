@@ -1,0 +1,35 @@
+name: Bear-market historical backtest (one-time research)
+on:
+  push:
+    branches:
+      - research-bear-market-backtest-20261014
+    paths:
+      - research/bear_backtest.py
+permissions:
+  contents: write
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run historical price-based research
+        run: python3 research/bear_backtest.py
+      - name: Save read-only research output to research branch
+        if: always()
+        run: |
+          if [ -f research/bear_backtest_results.json ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add research/bear_backtest_results.json research/bear_backtest_trades.csv
+            git diff --cached --quiet || (git commit -m "Research: save bear market stress comparison" && git push)
+          fi
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bear-market-research
+          path: |
+            research/bear_backtest_results.json
+            research/bear_backtest_trades.csv
+          if-no-files-found: warn
