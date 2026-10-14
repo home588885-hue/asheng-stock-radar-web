@@ -1555,7 +1555,16 @@ h1 {
       let MARKET_BRIDGE_URL = '';
       let EOD_PREFILTER_BRIDGE_URL = '';
       const marketBridgeReady = () => !!MARKET_BRIDGE_URL;
+      let marketBridgeProbeAt = 0;
+      let marketBridgeProbeRunning = false;
       const configureCloudflareMarketBridge = async () => {
+        // A transient startup failure must not disable C quotes for the whole session.
+        // Reuse the existing three-minute foreground ticker; cap health/auth rechecks
+        // to once per five minutes, with no extra S quote/model calls.
+        if (marketBridgeReady() || marketBridgeProbeRunning) return;
+        if (Date.now() - marketBridgeProbeAt < 300000) return;
+        marketBridgeProbeRunning = true;
+        marketBridgeProbeAt = Date.now();
         try {
           const response = await fetch('./market-bridge.json', {cache:'no-store',signal:AbortSignal.timeout(4000)});
           if (!response.ok) return;
@@ -1584,7 +1593,11 @@ h1 {
           const result = await probe.json();
           if (probe.status !== 400 || result?.error !== 'market_must_be_tse_or_otc') return;
           MARKET_BRIDGE_URL = url;
-        } catch (error) {}
+        } catch (error) {
+          // Real failures remain disconnected; do not invent a live quote.
+        } finally {
+          marketBridgeProbeRunning = false;
+        }
       };
       const LIVE_API = SHARED_DATA_HUB + '/asheng-live-quotes';
       const LIVE_FALLBACK_API =
@@ -4699,17 +4712,30 @@ h1 {
       };
       const refreshHoldingSurvivalDisplay = () => {
         if(stage!=='HOLDING'||document.hidden)return;
+        const watch=closeWatchState();
         for(const el of document.querySelectorAll('[data-holding-watch-id]')){
           const row=holdingCloseWatchMap().get(String(el.getAttribute('data-holding-watch-id')||''));
-          if(!row)continue;
-          const state=holdingSurvivalState(row);
           const label=el.querySelector('[data-watch-survival-label]');
-          if(label)label.textContent=state.label+'｜'+(row.projectedRatio==null?'量能待資料':'推估日量約 '+num(Number(row.projectedRatio),2)+'x 20日均量');
           const mins=el.querySelector('[data-watch-survival-minutes]');
-          if(mins)mins.textContent=state.elapsed+'/12 分';
           const fill=el.querySelector('[data-watch-survival-fill]');
-          if(fill)fill.style.width=state.progress+'%';
           const wrapper=el.querySelector('.survival-progress');
+          if(!row){
+            // A missing C trade is NOT a 0/12 pass or an active timer.
+            const reason=watch.phase==='before'?'12:50 開始取樣'
+              :watch.phase==='after'?'13:20 已截止｜有效成交樣本不足'
+              :watch.active&&!marketBridgeReady()?'C 即時報價未連線｜無法啟動'
+              :watch.active?'等待 C 第一筆有效成交樣本'
+              :'非交易時段｜無有效存活樣本';
+            if(label)label.textContent='⏱ '+reason;
+            if(mins)mins.textContent='0/12 分';
+            if(fill)fill.style.width='0%';
+            if(wrapper)wrapper.classList.remove('done');
+            continue;
+          }
+          const state=holdingSurvivalState(row,watch);
+          if(label)label.textContent=state.label+'｜'+(row.projectedRatio==null?'量能待資料':'推估日量約 '+num(Number(row.projectedRatio),2)+'x 20日均量');
+          if(mins)mins.textContent=state.elapsed+'/12 分';
+          if(fill)fill.style.width=state.progress+'%';
           if(wrapper)wrapper.classList.toggle('done',state.passed);
         }
       };
@@ -4719,17 +4745,22 @@ h1 {
         const watch=closeWatchState();
         const id=String(item?.stock_id||'');
         const row=holdingCloseWatchMap().get(id)||null;
-        if(!row){
-          const note=watch.phase==='before'?'12:50 開始取樣，13:20 截止'
-            :watch.active?'等待第一筆有效成交取樣'
-            :watch.phase==='after'?'今日未取得有效樣本，無法判定通過'
-            :'今日無收盤前有效取樣紀錄';
-          return `<span class="holding-survival-summary pending"><strong>⏱ 12分鐘存活｜${esc(note)}</strong><small>只依既有 C 有效成交取樣，不以時間或模型價格冒充通過</small></span>`;
-        }
-        const state=holdingSurvivalState(row,watch);
-        const ratio=row.projectedRatio==null?'量能待資料':'推估日量約 '+num(Number(row.projectedRatio),2)+'x 20日均量';
-        const tone=state.passed?'passed':row.failed===true?'failed':'pending';
-        return `<span class="holding-survival-summary ${tone}" data-holding-watch-id="${esc(id)}"><strong>⏱ 12分鐘存活｜<span data-watch-survival-label>${esc(state.label)}｜${esc(ratio)}</span></strong><small>有效成交樣本 ${Number(row.samples||0)} 次｜最後 ${esc(row.quoteTime||'-')}｜13:20 截止</small></span>`;
+        const state=row?holdingSurvivalState(row,watch):null;
+        const ratio=row?.projectedRatio==null?'量能待資料':'推估日量約 '+num(Number(row.projectedRatio),2)+'x 20日均量';
+        const tone=!row?'pending':state.passed?'passed':row.failed===true?'failed':'pending';
+        const note=!row
+          ?watch.phase==='before'?'12:50 開始取樣'
+            :watch.phase==='after'?'13:20 已截止｜有效成交樣本不足'
+            :watch.active&&!marketBridgeReady()?'C 即時報價未連線｜無法啟動'
+            :watch.active?'等待 C 第一筆有效成交樣本':'非交易時段｜無有效存活樣本'
+          :state.label+'｜'+ratio;
+        const details=row
+          ?'有效成交樣本 '+Number(row.samples||0)+' 次｜最後 '+esc(row.quoteTime||'-')+'｜13:20 截止'
+          :'有效成交樣本 0 次｜未取得新成交不計時，也不判定通過';
+        const elapsed=state?.elapsed||0;
+        // One visible inline progress bar; the existing UI-only timer updates it
+        // every 30 seconds without requesting extra market/model data.
+        return `<span class="holding-survival-summary ${tone}" data-holding-watch-id="${esc(id)}"><strong>⏱ 12分鐘存活｜<span data-watch-survival-label>${esc(note)}</span></strong><small>${details}</small><span class="survival-progress"><span class="survival-progress-head"><span>有效成交觀察時間</span><span data-watch-survival-minutes>${elapsed}/12 分</span></span><span class="survival-progress-track" style="display:block"><span class="survival-progress-fill" data-watch-survival-fill style="display:block;width:${state?.progress||0}%"></span></span></span></span>`;
       };
 
       // Always show the MA20 consecutive CLOSE-BELOW counter independently of
@@ -5817,6 +5848,11 @@ h1 {
         await render();
         if (!holdingStillCurrent()) return;
         // 已買進只保留原有約三分鐘報價取樣，存活統計於13:20停止。
+        const refreshHoldingSessionQuotes = async () => {
+          if(!holdingStillCurrent()||document.hidden||!taipeiMarketState().open)return;
+          if(!marketBridgeReady())await configureCloudflareMarketBridge();
+          if(holdingStillCurrent()&&!document.hidden)await render();
+        };
         const manageHoldingQuoteTimer = () => {
           const active = holdingStillCurrent() && !document.hidden; // 前景保留輕量排程，隔日開盤能自動恢復
           if (!active) {
@@ -5828,14 +5864,14 @@ h1 {
               if (liveTimer) { clearInterval(liveTimer); liveTimer = null; }
               return;
             }
-            if (marketBridgeReady() ? taipeiMarketState().open : closeWatchState().active) render(); // Cloudflare open session, legacy final 30 minutes
+            if (taipeiMarketState().open) refreshHoldingSessionQuotes(); // Reconnect C if needed, no S quote fallback
           }, LOCKED_SETTINGS.holdingQuoteRefreshMs);
         };
         holdingVisibilityControl = () => {
           manageHoldingQuoteTimer();
-          if (holdingStillCurrent() && !document.hidden && (marketBridgeReady() ? taipeiMarketState().open : closeWatchState().active)
+          if (holdingStillCurrent() && !document.hidden && taipeiMarketState().open
               && !holdingQuoteRefreshing && Date.now() - lastHoldingQuoteRequestAt >= 150000) {
-            render(); // 回到前景時先檢查冷卻時間，避免重複請求
+            refreshHoldingSessionQuotes(); // 回到前景先重連 C（低頻防重）
           }
         };
         manageHoldingQuoteTimer();
