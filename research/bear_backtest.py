@@ -64,7 +64,18 @@ def fetch(sym):
                         result.append(row)
                 except (ValueError, TypeError, KeyError):
                     continue
-            return sorted({x["d"]: x for x in result}.values(), key=lambda x: x["d"])
+            out = sorted({x["d"]: x for x in result}.values(), key=lambda x: x["d"])
+            # Price-only normalization for verified 4-for-1 events:
+            # 0050 effective 2025-06-18, 2327 effective 2025-08-25.
+            # Pre-split OHLC divided by 4; share turnover stays historically raw.
+            split = {"0050": ("2025-06-18", 4), "2327": ("2025-08-25", 4)}
+            if sym in split:
+                effective, ratio = split[sym]
+                for row in out:
+                    if row["d"] < effective:
+                        for k in ("o", "h", "l", "c"):
+                            row[k] /= ratio
+            return out
         except Exception as e:
             if attempt:
                 ERRORS.append({"symbol": sym, "error": str(e)[:220]})
@@ -82,6 +93,7 @@ def decorate(rows):
         r["m10"] = sma(c, 10, i)
         r["m20"] = sma(c, 20, i)
         r["m60"] = sma(c, 60, i)
+        r["m10p"] = sma(c, 10, i-5)
         r["m20p"] = sma(c, 20, i-5)
         r["m60p"] = sma(c, 60, i-5)
         r["c10p"] = c[i-10] if i >= 10 else None
@@ -95,7 +107,7 @@ def candidate(rows, i):
         return False
     # Price/MA/volume proxy derived from production's core technical constraints,
     # NOT a reproduction of A/B/C/V5 or chip/financial eligibility.
-    ma10p = sma([v["c"] for v in rows], 10, i-5)
+    ma10p = x["m10p"]
     if ma10p is None: return False
     if not (x["m10"]>ma10p and x["m20"]>x["m20p"] and x["m60"]>x["m60p"]):
         return False
@@ -228,7 +240,8 @@ def main():
                    "bear_market":bear,"bear_exception":soft,**sim})
         print("Finished",n+1,"/",len(SYMBOLS),sym,"rows",len(rows),flush=True)
         time.sleep(.5)
-    report={"source":SOURCE,"benchmark":"0050 ETF (TAIEX proxy, not entire TAIEX)",
+    report={"source":SOURCE,"benchmark":"0050 ETF (TAIEX proxy, not entire TAIEX); known 2025 split price normalized",
+            "split_adjustment":{"0050":{"date":"2025-06-18","ratio":4},"2327":{"date":"2025-08-25","ratio":4}},
             "sample_size_requested":len(SYMBOLS),"sample_size_available":n_data,
             "requested_from":"2007-01-01","requested_through":"2026-10-10",
             "sample_ranges":ranges,"errors":ERRORS,
