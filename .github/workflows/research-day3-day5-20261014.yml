@@ -1,0 +1,33 @@
+name: D3-D5 entry follow-through audit (one-time research)
+on:
+  push:
+    branches:
+      - research-bear-market-backtest-20261014
+    paths:
+      - research/day3_day5_risk_backtest.py
+permissions:
+  contents: write
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Re-test identical entry signals with day 3 and day 5 actions
+        run: python3 research/day3_day5_risk_backtest.py
+      - name: Save generated evidence on isolated research branch
+        if: success()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git pull --rebase origin research-bear-market-backtest-20261014
+          git add research/day3_day5_risk_results.json research/day3_day5_risk_trades.csv
+          git diff --cached --quiet || (git commit -m "Research: D3-D5 risk and add replays" && git push)
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: d3-d5-risk-evidence
+          path: |
+            research/day3_day5_risk_results.json
+            research/day3_day5_risk_trades.csv
+          if-no-files-found: warn
