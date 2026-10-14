@@ -3053,7 +3053,16 @@ h1 {
         if(guard)return guard;
         const bottomConfirmed=item?.metrics?.bottom_start?.confirmed===true;
         if(bottomConfirmed&&base?.key==='wait')return {...base,keep_candidate:true};
-        if(bottomConfirmed)return {key:'bottom',rank:35,className:'scout',text:'🌱 底部型態已確認｜等盤中起漲',detail:'型態已成立；尚未出現盤中發動前只列等待起漲，不當成已起漲',keep_candidate:true};
+        // A confirmed base and an ACTIVE/starter lifecycle are different phases.
+        // Respect the LIVE MODEL phase before the generic "waiting to launch" text.
+        // This is observation only: never infer a fresh buy or trial signal.
+        if(bottomConfirmed&&isActiveLaunchItem(item))return {
+          key:'active_watch',rank:36,className:'scout',
+          text:'🔥 已起漲｜等待進場確認',
+          detail:'模型已進入ACTIVE／starter發動追蹤；這是盤後訊號，須於交易時段另核對量價、風控及原本買點條件，不代表可以立即試單',
+          keep_candidate:true,active_launch_fallback:true
+        };
+        if(bottomConfirmed)return {key:'bottom',rank:35,className:'scout',text:'🌱 底部型態已確認｜等盤中起漲',detail:'型態已成立，尚未進入ACTIVE／starter發動階段；先觀察量價，不當成已起漲',keep_candidate:true};
         if(base&&base.key!=='wait'&&item.metrics?.entry_candle_guard?.version!=='2026-10-06-kbar-ma10-20-60-v3')return {key:'wait',rank:10,className:'wait',text:'🟡 等確認／不追價',detail:'K棒最後過濾資料待確認｜保留候選，暫不試單',candle_guard:true,keep_candidate:true};
         const isNearModel=(item?.stage==='B'||item?.stage==='C') && String(item?.metrics?.trade_lifecycle?.entry?.state||'')==='near';
         if(base) return base.key==='wait' && isNearModel ? {...base,keep_candidate:true} : base;
@@ -3494,7 +3503,12 @@ h1 {
         recalcRows.forEach(row=>usedIds.add(rowId(row)));
 
         // 底部型態成立只是「等發動」，不是已起漲。MA10/20/60尚未全轉強時尤其不可誤標。
-        const queuedRows = rows.filter(row => !usedIds.has(rowId(row)) && row.item?.metrics?.bottom_start?.confirmed === true).map(row => {
+        const queuedRows = rows.filter(row =>
+          !usedIds.has(rowId(row)) &&
+          row.item?.metrics?.bottom_start?.confirmed === true &&
+          !isActiveLaunchItem(row.item) &&
+          row.item?.metrics?.scan_intelligence?.effective_lifecycle !== 'ENTRY'
+        ).map(row => {
           const mc=row.item?.metrics?.ma_cluster||{};
           const maReady=mc.all_rising===true && mc.above_all_mas===true;
           return {
