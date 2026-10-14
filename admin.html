@@ -2486,6 +2486,23 @@ h1 {
           && m.holding_management?.strong_breakdown!==true
           && !holdings.has(String(item?.stock_id||''));
       };
+      // EOD-only early watch: a controlled, lower-volume pullback that remains
+      // above MA10 and MA20. Observation priority ONLY; not a new buy signal.
+      // Uses existing locked S daily snapshot, never future-day quotes.
+      const ma10PullbackWatchState = item => {
+        if(!lowBaseWatchState(item))return false;
+        const m=item?.metrics||{},mc=m.ma_cluster||{};
+        const close=Number(m.close),prev=Number(m.prev_close),ma10=Number(m.ma10);
+        const vol=Number(m.current_volume_lots),avg=Number(m.avg_volume_20_lots);
+        const chip=Number(m.chip?.score),guard=m.entry_candle_guard||{};
+        return close>0&&prev>close&&ma10>0
+          && close>=ma10&&close<=ma10*1.015
+          && avg>0&&vol/avg<=1
+          && Number.isFinite(chip)&&chip>=60
+          && mc.above_all_mas===true
+          && guard.weak_after_breakout!==true
+          && m.holding_management?.strong_breakdown!==true;
+      };
       const newEntryRiskGate = (item, quote = null) => {
         const m=item?.metrics||{}, g=m.entry_candle_guard||{}, hm=m.holding_management||{};
         const intraday=liveSelloffRisk(item,quote);
@@ -3603,6 +3620,8 @@ h1 {
         if (isActiveLaunchItem(item)) return {keep:true,rank:110,className:'active-launch',
           label:'🔥 發動中｜S模型已發動，尚待正式進場確認'};
         if (isEntryRadarItem(item)) return { keep:false, rank:0, className:'promoted', label:'🎯 已進進場雷達' };
+        if (ma10PullbackWatchState(item)) return {keep:true,rank:95,className:'ma10-pullback-watch',
+          label:'🟡 縮量回踩 MA10 守住｜優先觀察，尚非買點'};
         if (lowBaseWatchState(item)) return {keep:true,rank:35,className:'low-base-watch',label:'🌱 底部蓄勢｜提前觀察，尚無買點'};
 
         const price=Number(m.close);
@@ -4979,10 +4998,12 @@ h1 {
         // Do not turn a watch candidate into a buy signal merely by opening a card.
         const early=earlyTurnWatchState(item);
         const lowBase=lowBaseWatchState(item);
+        const pullback=ma10PullbackWatchState(item);
         const status=risk?.kind==='hard'?String(risk.text||'🔴 盤中風險｜暫不新買')
           :risk?.kind==='momentum'?String(risk.text||'🟡 短線轉弱｜等重新轉強')
           :risk?.kind==='position'?String(risk.text||'🔵 位置偏高｜等回踩')
           :early?'🌱 早期轉強｜優先追蹤，不可直接試單'
+          :pullback?'🟡 縮量回踩 MA10 守住｜優先觀察，尚非買點'
           :lowBase?'🌱 底部蓄勢｜提前觀察，尚無買點'
           :risk?.kind==='incomplete'?'🟡 均線結構未齊'
           :String(launchState?.label||'🟠 發動前｜等確認');
