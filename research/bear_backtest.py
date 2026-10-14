@@ -20,6 +20,18 @@ SYMBOLS = ("1101 1102 1216 1301 1303 1402 2002 2105 2207 2301 2303 2308 "
            "2317 2327 2330 2345 2357 2379 2382 2395 2408 2454 2474 2603 "
            "2609 2615 2801 2881 2882 2883 2884 2885 2886 2891 2892 2912 "
            "3008 3034 3045 3231 3481 4904 4938 5871 5880 6505 9904").split()
+# Extra balanced sample from existing stock master; chosen by industry and code,
+# not by observed return. Historical delisted issuers remain under-represented.
+EXTRA_SYMBOLS = ("2349 2384 1416 2390 2411 1721 1701 1704 2351 2369 "
+ "2062 3557 1316 1436 3130 6165 2101 2102 1319 1338 2616 1802 "
+ "1806 1707 1716 1409 2072 3708 2208 2601 2701 2702 2901 2903 "
+ "2447 4994 2391 2494 1902 1903 1432 1598 2807 2006 1601 1603 "
+ "2302 2347 2414 1471 1582 1503 1504 2305 1201 1203 3066 1584 "
+ "1785 1742 1595 4303 2230 2596 2640 2926 5102 1565 4401 3073 "
+ "2641 1259 3147 1240 3081 1593 5820 2035 2061 3224 1336 1570 "
+ "1569 1264").split()
+SYMBOLS = list(dict.fromkeys(SYMBOLS + EXTRA_SYMBOLS))
+STRATEGIES = ("baseline","bear_confirm","bear_skip","severe_guard","reversal_entry")
 PERIODS = {
     "2008_crisis": ("2008-01-01", "2008-12-31"),
     "2009_recovery": ("2009-01-01", "2009-12-31"),
@@ -139,7 +151,19 @@ def market_state(index, stock, i):
         rs10=(stock[i]["c"]/stock[i-10]["c"]-1)-(b["c"]/b["c10p"]-1)
         soft_pass=(b["c"]>b["m20"] and prev["c"]>prev["m20"]
                    and rs10>=.03 and stock[i]["m20"]>stock[i]["m20p"])
-    return bool(bear), bool(soft_pass)
+    # A "severe" regime requires sustained downside or a >9% 20-session decline.
+    recent5=idxrows[max(0,j-4):j+1]
+    below_ma20=sum(z["m20"] is not None and z["c"]<z["m20"] for z in recent5)
+    severe=bool(bear and j>=20 and (
+        (below_ma20>=3 and b["c"]<b["m20"] and b["m60"]<b["m60p"])
+        or b["c"] < idxrows[j-20]["c"]*.91))
+    # Alternative (investigative, not a production entry): early relative-strength recovery.
+    reversal=bool(bear and j>=10 and b["m10"] and b["m10p"] and
+        b["c"]>=b["m10"] and b["m10"]>=b["m10p"] and
+        stock[i]["m20"]>stock[i]["m20p"] and
+        stock[i]["c"]>max(z["h"] for z in stock[i-5:i]) and
+        (stock[i]["c"]/stock[i-10]["c"]-1)-(b["c"]/b["c10p"]-1)>=.04)
+    return bool(bear), bool(soft_pass),severe,reversal
 
 def simulate(rows, i):
     entry = rows[i+1]["o"]
@@ -197,7 +221,9 @@ def summarize(trades):
             "med_net_pct":round(statistics.median(a),2),
             "avg_adverse_pct":round(statistics.mean(x["adverse"] for x in trades),2),
             "worst_net_pct":round(min(a),2),
-            "sum_unweighted_net_pct":round(sum(a),2)}
+            "sum_unweighted_net_pct":round(sum(a),2),
+            "avg_winner_pct":round(statistics.mean([v for v in a if v>0]),2) if any(v>0 for v in a) else None,
+            "avg_loser_pct":round(statistics.mean([v for v in a if v<=0]),2) if any(v<=0 for v in a) else None}
 
 def main():
     bench = decorate(fetch("0050"))
@@ -219,17 +245,19 @@ def main():
             continue
         n_data+=1
         ranges[sym]=[rows[0]["d"],rows[-1]["d"]]
-        states={"baseline":-1,"bear_confirm":-1,"bear_skip":-1}
+        states={st:-1 for st in STRATEGIES}
         for i in range(260,len(rows)-31):
             if not candidate(rows,i):continue
             state=market_state(index,rows,i)
             if state is None:continue
-            bear,soft=state
+            bear,soft,severe,reversal=state
             candidates+=1
             if bear:eligible_bear+=1
             for strategy in states:
                 allow=(strategy=="baseline" or (not bear) or
-                       (strategy=="bear_confirm" and soft))
+                       (strategy=="bear_confirm" and soft) or
+                       (strategy=="severe_guard" and (not severe or soft)) or
+                       (strategy=="reversal_entry" and (soft or reversal)))
                 if not allow:continue
                 if i<=states[strategy]+5:continue
                 sim=simulate(rows,i)
@@ -237,7 +265,8 @@ def main():
                 states[strategy]=sim["exit_i"]
                 all_trades.append({"symbol":sym,"signal_date":rows[i]["d"],
                    "entry_date":rows[i+1]["d"],"strategy":strategy,
-                   "bear_market":bear,"bear_exception":soft,**sim})
+                   "bear_market":bear,"bear_exception":soft,
+                   "severe_market":severe,"reversal_exception":reversal,**sim})
         print("Finished",n+1,"/",len(SYMBOLS),sym,"rows",len(rows),flush=True)
         time.sleep(.5)
     report={"source":SOURCE,"benchmark":"0050 ETF (TAIEX proxy, not entire TAIEX); known 2025 split price normalized",
@@ -249,23 +278,30 @@ def main():
             "rules":"Price/volume proxy only. MA10/20/60 rising over 5d; close above MAs and <=5% over MA20; volume>=1000 lots; avg20>=500; breakout or rebound. Includes next-open buys, next-open exits for 3 consecutive sub-MA20 closes, +20% trim one third, 30d max, 0.1425% buy and 0.4425% sell costs, no slippage. No chip/revenue/full V5. Stock sample uses surviving symbols; not all historical listings.",
             "filter_variants":{"baseline":"unmodified price-only proxy",
               "bear_confirm":"During 0050 bear regime, require 0050 above MA20 for 2 sessions, stock 10d relative strength > benchmark by 3 percentage points and stock MA20 rising; otherwise skip.",
-              "bear_skip":"During 0050 bear regime, skip all entries."},
-            "periods":{},"regimes":{}}
+              "bear_skip":"During 0050 bear regime, skip all entries.",
+              "severe_guard":"Only add veto when sustained 0050 below MA20 plus falling MA60, or 20-session -9%; can retain original strong exception.",
+              "reversal_entry":"During bear regime, allow verified relative-strength recovery above 0050 MA10, own rising MA20, 5-session high break, 10-session outperformance >4 percentage points."},
+            "method_caveat":"Surviving and current-active code sample with listing-date bias; known splits adjusted only for 0050/2327, other corporate actions unverified. Trade-level weighted by opportunity, not portfolio-level annualized return. Split and slippage concerns remain.",
+            "periods":{},"regimes":{},"cohorts":{}}
     for label,(start,end) in PERIODS.items():
         report["periods"][label]={}
-        for st in ("baseline","bear_confirm","bear_skip"):
+        for st in STRATEGIES:
             sub=[t for t in all_trades if t["strategy"]==st and start<=t["signal_date"]<=end]
             report["periods"][label][st]=summarize(sub)
     for label,cond in (("bear",True),("other",False)):
         report["regimes"][label]={}
-        for st in ("baseline","bear_confirm","bear_skip"):
+        for st in STRATEGIES:
             report["regimes"][label][st]=summarize(
                 [t for t in all_trades if t["strategy"]==st and t["bear_market"]==cond])
+    for label,start,end in (("development_2007_2022","2007-01-01","2022-12-31"),
+                            ("retrospective_2023_2026","2023-01-01","2026-10-10")):
+        report["cohorts"][label]={st:summarize([t for t in all_trades if t["strategy"]==st and start<=t["signal_date"]<=end]) for st in STRATEGIES}
     with open(OUT+"/bear_backtest_results.json","w") as f:
         json.dump(report,f,ensure_ascii=False,indent=2)
     with open(OUT+"/bear_backtest_trades.csv","w",newline="") as f:
         fields=("symbol","signal_date","entry_date","strategy","bear_market",
-                "bear_exception","net","adverse","exit_date","partial","exit_reason")
+                "bear_exception","severe_market","reversal_exception",
+                "net","adverse","exit_date","partial","exit_reason")
         w=csv.DictWriter(f,fieldnames=fields,extrasaction="ignore")
         w.writeheader(); w.writerows(all_trades)
     print("RESULTS",json.dumps({"availability":n_data,"bear_candidates":eligible_bear,
