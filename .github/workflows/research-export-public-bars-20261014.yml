@@ -1,0 +1,26 @@
+name: Public historical bars for private V5 replay (one-time research)
+on:
+  push:
+    branches:
+      - research-bear-market-backtest-20261014
+    paths:
+      - research/export_public_ohlcv_131.py
+permissions:
+  contents: read
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download public OHLCV for fixed balanced generic study universe
+        run: python3 research/export_public_ohlcv_131.py
+      - name: Publish market OHLCV artifact, no private signals, no Supabase access
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: public-market-bars-131-v5-audit
+          path: |
+            research/public_ohlcv_131/*.csv
+            research/public_ohlcv_131_meta.json
+          if-no-files-found: warn
