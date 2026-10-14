@@ -2679,7 +2679,7 @@ h1 {
         if (highWinLate) return { className: 'wait', text: '⭐ 高勝率條件成立｜位置已高・等回踩，不追' };
         if (highWinSweet) return { className: 'highwin', text: '🟢 正式買點｜高勝率確認・可分批進場' };
         const launchSeq = metrics.launch_sequence || maCluster.launch_sequence || {};
-        const launchDays = Number(launchSeq.days_since_first);
+        const launchDays = launchSeq.days_since_first==null||launchSeq.days_since_first===''?NaN:Number(launchSeq.days_since_first);
         if (maCluster.breakout_detected_raw === true) {
           const launchBar = launchBarDisplayState(item);
           if (maCluster.breakout_first_bar === true) {
@@ -2928,7 +2928,7 @@ h1 {
         const bottomConfirmedForEntry = bottom.confirmed === true;
         const rawFirst = maCluster.breakout_detected_raw === true;
         const firstOkay = maCluster.breakout_first_bar === true;
-        const launchDays = Number(launchSeq.days_since_first);
+        const launchDays = launchSeq.days_since_first==null||launchSeq.days_since_first===''?NaN:Number(launchSeq.days_since_first);
         const breakoutPrice = Number(maCluster.breakout_price);
         const distance = Number.isFinite(breakoutPrice) && breakoutPrice > 0 && Number.isFinite(price) ? (price / breakoutPrice - 1) * 100 : Number(maCluster.distance_to_breakout_pct);
         const fraction = quote ? marketFraction(quote?.quote_time) : 1;
@@ -3052,17 +3052,23 @@ h1 {
         const guard=entryCandleGuard(item,quote);
         if(guard)return guard;
         const bottomConfirmed=item?.metrics?.bottom_start?.confirmed===true;
+        const modelPhase=modelLaunchPhase(item);
+        // Keep locked risk/guard warnings above any lifecycle display label.
         if(bottomConfirmed&&base?.key==='wait')return {...base,keep_candidate:true};
-        // A confirmed base and an ACTIVE/starter lifecycle are different phases.
-        // Respect the LIVE MODEL phase before the generic "waiting to launch" text.
-        // This is observation only: never infer a fresh buy or trial signal.
-        if(bottomConfirmed&&isActiveLaunchItem(item))return {
+        // An ACTIVE/starter model has already started, regardless of base flag.
+        if(modelPhase==='ACTIVE' && (!base || ['pre','bottom'].includes(base.key)))return {
           key:'active_watch',rank:36,className:'scout',
           text:'🔥 已起漲｜等待進場確認',
-          detail:'模型已進入ACTIVE／starter發動追蹤；這是盤後訊號，須於交易時段另核對量價、風控及原本買點條件，不代表可以立即試單',
+          detail:'完整日K模型已進入ACTIVE／starter追蹤；仍須核對盤中量價與風控，不代表🟠可小量試單或🟢正式買點',
           keep_candidate:true,active_launch_fallback:true
         };
-        if(bottomConfirmed)return {key:'bottom',rank:35,className:'scout',text:'🌱 底部型態已確認｜等盤中起漲',detail:'型態已成立，尚未進入ACTIVE／starter發動階段；先觀察量價，不當成已起漲',keep_candidate:true};
+        if(modelPhase==='ENTRY' && bottomConfirmed && (!base || ['pre','bottom'].includes(base.key)))return {
+          key:'entry_watch',rank:37,className:'scout',
+          text:'🎯 進場候選｜等待完整確認',
+          detail:'模型屬進場候選，但仍須原本V5及風控確認，不因生命週期標籤直接買入',
+          keep_candidate:true,active_launch_fallback:true
+        };
+        if(bottomConfirmed)return {key:'bottom',rank:35,className:'scout',text:'🌱 底部型態已確認｜等盤中起漲',detail:'型態已成立且模型尚未進入ACTIVE／ENTRY；先觀察量價，不當成已起漲',keep_candidate:true};
         if(base&&base.key!=='wait'&&item.metrics?.entry_candle_guard?.version!=='2026-10-06-kbar-ma10-20-60-v3')return {key:'wait',rank:10,className:'wait',text:'🟡 等確認／不追價',detail:'K棒最後過濾資料待確認｜保留候選，暫不試單',candle_guard:true,keep_candidate:true};
         const isNearModel=(item?.stage==='B'||item?.stage==='C') && String(item?.metrics?.trade_lifecycle?.entry?.state||'')==='near';
         if(base) return base.key==='wait' && isNearModel ? {...base,keep_candidate:true} : base;
@@ -3506,8 +3512,7 @@ h1 {
         const queuedRows = rows.filter(row =>
           !usedIds.has(rowId(row)) &&
           row.item?.metrics?.bottom_start?.confirmed === true &&
-          !isActiveLaunchItem(row.item) &&
-          row.item?.metrics?.scan_intelligence?.effective_lifecycle !== 'ENTRY'
+          !['ACTIVE','ENTRY'].includes(modelLaunchPhase(row.item))
         ).map(row => {
           const mc=row.item?.metrics?.ma_cluster||{};
           const maReady=mc.all_rising===true && mc.above_all_mas===true;
@@ -3582,8 +3587,7 @@ h1 {
           if(focusIds.has(rowId(row))||signalIds.has(rowId(row)))return false;
           if(String(row.item?.as_of||'')!==expectedSignalDataDate()||row.action?.stale_model===true)return false;
           const m=row.item?.metrics||{},ent=String(m.trade_lifecycle?.entry?.state||'');
-          const lifecycle=String(m.scan_intelligence?.effective_lifecycle||'');
-          return ['starter','formal_candidate'].includes(ent)||lifecycle==='ACTIVE'||lifecycle==='ENTRY'||m.ma_cluster?.breakout_first_bar===true;
+          return ['ACTIVE','ENTRY'].includes(modelLaunchPhase(row.item));
         })):[];
         const eodTrackIds=new Set(eodTrackRows.map(rowId));
         const separateRows=list=>sortEntryVisual(list.filter(row=>
@@ -3642,26 +3646,23 @@ h1 {
           watch?.active===true ||
           item?.__pullback_watch===true;
       };
-      const isActiveLaunchItem = item => {
-        const m=item?.metrics||{};
-        const mc=m.ma_cluster||{};
-        const seq=m.launch_sequence||mc.launch_sequence||{};
-        const entryState=String(m?.trade_lifecycle?.entry?.state||'');
-        const learned=String(m?.scan_intelligence?.effective_lifecycle||'');
-        const days=Number(seq.days_since_first);
-        const started =
-          learned==='ACTIVE' ||
-          m.first_breakout20===true ||
-          mc.breakout_detected_raw===true ||
-          mc.breakout_first_bar===true ||
-          entryState==='starter' ||
-          (Number.isFinite(days)&&days>=0&&days<=3);
-        const formal =
-          learned==='ENTRY' ||
-          entryState==='formal_candidate' ||
-          m?.v5?.entry_confirmed===true;
-        return started && !formal && !holdings.has(String(item?.stock_id||''));
+      // Shared visual lifecycle across launch, entry, and stock cards.
+      // No days_since_first means UNKNOWN, not day zero (Number(null) == 0).
+      const modelLaunchPhase = item => {
+        const m=item?.metrics||{},mc=m.ma_cluster||{},seq=m.launch_sequence||mc.launch_sequence||{};
+        const entry=String(m?.trade_lifecycle?.entry?.state||'');
+        const effective=String(m?.scan_intelligence?.effective_lifecycle||'');
+        const rawDays=seq.days_since_first;
+        const days=rawDays==null||rawDays===''?NaN:Number(rawDays);
+        if(m?.v5?.entry_confirmed===true||effective==='ENTRY'||entry==='formal_candidate')return 'ENTRY';
+        if(effective==='ACTIVE'||entry==='starter'||m.first_breakout20===true||
+          mc.breakout_detected_raw===true||mc.breakout_first_bar===true||
+          (Number.isFinite(days)&&days>=0&&days<=3))return 'ACTIVE';
+        if(effective==='PRELAUNCH'||entry==='near'||m.bottom_start?.current_base===true)return 'PRELAUNCH';
+        return 'NONE';
       };
+      const isActiveLaunchItem = item =>
+        modelLaunchPhase(item)==='ACTIVE' && !holdings.has(String(item?.stock_id||''));
       const launchQualityState = item => {
         // Personal holdings are managed exclusively in 已買進.
         if (holdings.has(String(item?.stock_id||''))) return {keep:false,rank:0,className:'held',label:'📌 已買進'};
@@ -3694,10 +3695,10 @@ h1 {
         if (['highwin','v5buy'].includes(tradeSignal(item).className))
           return {keep:false,rank:0,className:'promoted',label:'🎯 進場雷達'};
         if(preRisk?.kind==='hard') return {keep:false,rank:0,className:'blocked',label:'🔴 結構風險｜暫不新買'};
+        if (isActiveLaunchItem(item)) return {keep:true,rank:110,className:'active-launch',
+          label:'🔥 已起漲｜等待進場確認，尚非買點'};
         if (earlyTurnWatchState(item)) return {keep:true,rank:125,className:'early-turn-watch',
           label:'🌱 早期轉強｜優先追蹤，尚不可試單'};
-        if (isActiveLaunchItem(item)) return {keep:true,rank:110,className:'active-launch',
-          label:'🔥 發動中｜S模型已發動，尚待正式進場確認'};
         if (isEntryRadarItem(item)) return { keep:false, rank:0, className:'promoted', label:'🎯 已進進場雷達' };
         if (ma10PullbackWatchState(item)) return {keep:true,rank:95,className:'ma10-pullback-watch',
           label:'🟡 縮量回踩 MA10 守住｜優先觀察，尚非買點'};
@@ -3915,13 +3916,13 @@ h1 {
         const launch = metrics.launch_candidate || {};
         const launchQuality = launchQualityState(item);
         const launchQualityHtml = stage === 'LAUNCH' && launchQuality.keep ? '<div class="signal-note">' + esc(memberFacingText(launchQuality.label)) + '</div>' : '';
-        const activeLaunchVisibleHtml = stage === 'LAUNCH' && isActiveLaunchItem(item)
+        const activeLaunchVisibleHtml = stage === 'LAUNCH' && String(item?.as_of||'')===expectedSignalDataDate() && isActiveLaunchItem(item)
           ? '<div class="signal-note">🔥 發動中｜S 模型已發動，但不代表可直接買入；請核對風險與位置</div>' : '';
         const launchOverhead = Array.isArray(launch.overhead) ? launch.overhead : [];
         const launchStructureText = launch.structure === 'all_above' ? '✅ 全部均線站上' : launch.structure === 'one_overhead' ? `🟡 剩 ${launchOverhead[0]?.label || '1條均線'} 反壓` : '⚠️ 上方仍有多條均線';
         const launchHtml = launch.eligible === true ? `<div class="signal-note">🌱 蓄勢候選｜底部結構 ${Number(launch.a_score || scores.A || 0)}｜1年位階 ${num(launch.position_1y_pct ?? metrics.position_1y_pct, 1)}%｜${launchStructureText}${launch.recent_bc_date ? `｜最近轉強紀錄 ${esc(launch.recent_bc_date)}` : ''}｜負責提早發現，不等於可買</div>` : '';
         const launchSeq = metrics.launch_sequence || metrics.ma_cluster?.launch_sequence || {};
-        const launchDays = Number(launchSeq.days_since_first);
+        const launchDays = launchSeq.days_since_first==null||launchSeq.days_since_first===''?NaN:Number(launchSeq.days_since_first);
         const launchBarState = launchBarDisplayState(item);
         const launchSequenceHtml = launchSeq.first_signal_date
           ? (launchBarState.modelFirst && launchBarState.hasEarlierBreakout
