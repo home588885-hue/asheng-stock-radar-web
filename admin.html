@@ -2503,6 +2503,40 @@ h1 {
           && guard.weak_after_breakout!==true
           && m.holding_management?.strong_breakdown!==true;
       };
+      // Provisional first-tranche setup: an EOD MA10 pullback needs the NEXT
+      // session's actual trade reclaiming yesterday's open. Display only,
+      // not a new S signal, an automatic order or a green formal buy.
+      const ma10PullbackTrialState = (item, quote = null) => {
+        if(!ma10PullbackWatchState(item)||!marketBridgeReady()||!validTodayQuote(quote))return null;
+        const market=taipeiMarketState(),m=item?.metrics||{};
+        // Do not recommend on a stale print, after 13:20, or off session.
+        if(!market.open||market.totalMinutes>=800)return null;
+        const match=String(quote.quote_time||'').match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+        if(!match)return null;
+        const quoteMinute=Number(match[1])*60+Number(match[2]);
+        if(quoteMinute<540||quoteMinute>market.totalMinutes||market.totalMinutes-quoteMinute>5)return null;
+        const price=Number(quote.price),openToday=Number(quote.open);
+        const prevOpen=Number(m.open),prevClose=Number(m.close);
+        const ma10=Number(m.ma10),ma20=Number(m.ma20),ma60=Number(m.ma60);
+        const vol=Number(quote.volume_lots),avg=Number(m.avg_volume_20_lots);
+        const high=Number(quote.high),fraction=marketFraction(quote.quote_time);
+        const pace=avg>0&&fraction>0?vol/(avg*fraction):null;
+        const risk=newEntryRiskGate(item,quote);
+        if(![price,openToday,prevOpen,prevClose,ma10,ma20,ma60,vol,avg].every(Number.isFinite)
+          || Math.min(price,openToday,prevOpen,prevClose,ma10,ma20,ma60,avg)<=0)return null;
+        if(risk&&risk.kind!=='incomplete')return null;
+        if(price<=prevOpen||price<=prevClose||price<=openToday
+          || price<Math.max(ma10,ma20,ma60)
+          || (price/ma20-1)*100>5
+          || (Number.isFinite(high)&&high>0&&price<high*.985)
+          || vol<1000||pace===null||pace<.9)return null;
+        return {
+          text:'🟠 回踩後收復昨開｜小量試單評估',
+          detail:'今日有效成交 '+num(price,2)+'｜站回昨開 '+num(prevOpen,2)
+            +'｜推估量速 '+num(pace,2)+'x｜MA20 '+num(ma20,2)
+            +'｜僅供小部位評估；跌破支撐停試，非正式買進訊號'
+        };
+      };
       const newEntryRiskGate = (item, quote = null) => {
         const m=item?.metrics||{}, g=m.entry_candle_guard||{}, hm=m.holding_management||{};
         const intraday=liveSelloffRisk(item,quote);
@@ -4999,10 +5033,12 @@ h1 {
         const early=earlyTurnWatchState(item);
         const lowBase=lowBaseWatchState(item);
         const pullback=ma10PullbackWatchState(item);
+        const trial=ma10PullbackTrialState(item,q);
         const status=risk?.kind==='hard'?String(risk.text||'🔴 盤中風險｜暫不新買')
           :risk?.kind==='momentum'?String(risk.text||'🟡 短線轉弱｜等重新轉強')
           :risk?.kind==='position'?String(risk.text||'🔵 位置偏高｜等回踩')
           :early?'🌱 早期轉強｜優先追蹤，不可直接試單'
+          :trial?trial.text
           :pullback?'🟡 縮量回踩 MA10 守住｜優先觀察，尚非買點'
           :lowBase?'🌱 底部蓄勢｜提前觀察，尚無買點'
           :risk?.kind==='incomplete'?'🟡 均線結構未齊'
@@ -5018,6 +5054,7 @@ h1 {
               <span class="entry-mini-score">模型 ${Number.isFinite(score)?esc(num(score,0)):'-'} 分</span>
               <span class="entry-mini-expand">詳情</span>
               <span class="entry-mini-metrics">${source} <b>${price!=null&&price>0?esc(num(price,2)):'-'}</b>｜距MA20 ${gap==null?'-':(gap>=0?'+':'')+esc(num(gap,1))+'%'}｜量 ${Number.isFinite(vol)&&vol>=0?esc(num(vol,0))+'張':'-'}</span>
+              ${trial?'<span class="entry-mini-metrics" style="color:#fdba74">'+esc(trial.detail)+'</span>':''}
               <span class="entry-mini-date">S 模型 ${esc(item?.as_of||'待更新')}${esc(quoteTime)}</span>
             </summary>
             <div class="entry-mini-full">${detailed}</div>
