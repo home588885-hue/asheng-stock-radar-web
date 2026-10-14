@@ -32,7 +32,8 @@ EXTRA_SYMBOLS = ("2349 2384 1416 2390 2411 1721 1701 1704 2351 2369 "
  "1569 1264").split()
 SYMBOLS = list(dict.fromkeys(SYMBOLS + EXTRA_SYMBOLS))
 STRATEGIES = ("baseline","bear_confirm","bear_skip","severe_guard","reversal_entry",
-              "confirm_hold_1d","confirm_break_1d","bear_confirm_hold_1d","fast_failure_exit")
+              "confirm_hold_1d","confirm_break_1d","bear_confirm_hold_1d","fast_failure_exit",
+              "moderate_volume_all","moderate_volume_bear","moderate_volume_severe")
 PERIODS = {
     "2008_crisis": ("2008-01-01", "2008-12-31"),
     "2009_recovery": ("2009-01-01", "2009-12-31"),
@@ -271,10 +272,16 @@ def main():
             state=market_state(index,rows,i)
             if state is None:continue
             bear,soft,severe,reversal=state
+            avg20=rows[i]["vol20"]
+            vol_ratio=rows[i]["v"]/avg20 if avg20 else None
+            vol_moderate=(vol_ratio is not None and 1<=vol_ratio<=2.3)
             candidates+=1
             if bear:eligible_bear+=1
             for strategy in states:
-                allow=(strategy in ("baseline","confirm_hold_1d","confirm_break_1d","fast_failure_exit") or
+                allow=((strategy in ("moderate_volume_all",) and vol_moderate) or
+                       (strategy=="moderate_volume_bear" and (not bear or vol_moderate)) or
+                       (strategy=="moderate_volume_severe" and (not severe or vol_moderate)) or
+                       strategy in ("baseline","confirm_hold_1d","confirm_break_1d","fast_failure_exit") or
                        (strategy=="bear_confirm" and (not bear or soft)) or
                        (strategy=="severe_guard" and (not severe or soft)) or
                        (strategy=="reversal_entry" and (not bear or soft or reversal)) or
@@ -294,7 +301,8 @@ def main():
                 all_trades.append({"symbol":sym,"signal_date":rows[i]["d"],
                    "entry_date":rows[actual_i+1]["d"],"strategy":strategy,
                    "bear_market":bear,"bear_exception":soft,
-                   "severe_market":severe,"reversal_exception":reversal,**sim})
+                   "severe_market":severe,"reversal_exception":reversal,
+                   "volume_ratio_day":round(vol_ratio,3) if vol_ratio is not None else None,**sim})
         print("Finished",n+1,"/",len(SYMBOLS),sym,"rows",len(rows),flush=True)
         time.sleep(.5)
     report={"source":SOURCE,"benchmark":"0050 ETF (TAIEX proxy, not entire TAIEX); known 2025 split price normalized",
@@ -312,7 +320,10 @@ def main():
               "confirm_hold_1d":"Only enter on second following open if immediate next daily close is higher than signal close, green, holds MA10 and signal low; no >5% MA20.",
               "confirm_break_1d":"Next trading day CLOSE must exceed original signal candle high on minimum 0.8x average volume; then enter following open.",
               "bear_confirm_hold_1d":"Only in bear regime, permit original soft exception, else buy only following session after positive confirmed hold.",
-              "fast_failure_exit":"Original next-open entry; if closes below original signal low by first 3 holding days and under MA10, exit next open rather than awaiting MA20 3 consecutive days."},
+              "fast_failure_exit":"Original next-open entry; if closes below original signal low by first 3 holding days and under MA10, exit next open rather than awaiting MA20 3 consecutive days.",
+              "moderate_volume_all":"Only accept setup-day volume 1.0 to 2.3x prior 20-day average. Historical close-known value; this exact threshold is data-mined and requires fresh out-of-sample test.",
+              "moderate_volume_bear":"Only in 0050 bear regime, accept setup-day volume <=2.3x 20-day average; keep unmodified entries in other regimes.",
+              "moderate_volume_severe":"Only in severe regime, accept setup-day volume <=2.3x 20-day average; keep unmodified entries outside severe regime."},
             "method_caveat":"Surviving and current-active code sample with listing-date bias; known splits adjusted only for 0050/2327, other corporate actions unverified. Trade-level weighted by opportunity, not portfolio-level annualized return. Split and slippage concerns remain.",
             "periods":{},"regimes":{},"cohorts":{}}
     for label,(start,end) in PERIODS.items():
@@ -332,7 +343,7 @@ def main():
         json.dump(report,f,ensure_ascii=False,indent=2)
     with open(OUT+"/bear_backtest_trades.csv","w",newline="") as f:
         fields=("symbol","signal_date","entry_date","strategy","bear_market",
-                "bear_exception","severe_market","reversal_exception",
+                "bear_exception","severe_market","reversal_exception","volume_ratio_day",
                 "net","adverse","exit_date","partial","exit_reason")
         w=csv.DictWriter(f,fieldnames=fields,extrasaction="ignore")
         w.writeheader(); w.writerows(all_trades)
