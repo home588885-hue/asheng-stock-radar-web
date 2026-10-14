@@ -31,7 +31,8 @@ EXTRA_SYMBOLS = ("2349 2384 1416 2390 2411 1721 1701 1704 2351 2369 "
  "2641 1259 3147 1240 3081 1593 5820 2035 2061 3224 1336 1570 "
  "1569 1264").split()
 SYMBOLS = list(dict.fromkeys(SYMBOLS + EXTRA_SYMBOLS))
-STRATEGIES = ("baseline","bear_confirm","bear_skip","severe_guard","reversal_entry")
+STRATEGIES = ("baseline","bear_confirm","bear_skip","severe_guard","reversal_entry",
+              "confirm_hold_1d","confirm_break_1d","bear_confirm_hold_1d","fast_failure_exit")
 PERIODS = {
     "2008_crisis": ("2008-01-01", "2008-12-31"),
     "2009_recovery": ("2009-01-01", "2009-12-31"),
@@ -165,7 +166,22 @@ def market_state(index, stock, i):
         (stock[i]["c"]/stock[i-10]["c"]-1)-(b["c"]/b["c10p"]-1)>=.04)
     return bool(bear), bool(soft_pass),severe,reversal
 
-def simulate(rows, i):
+def confirm_after_one(rows, i, mode):
+    # Wait for the CLOSE of the session after the original setup. Next open is earliest entry.
+    # This is a different trading strategy, not look-ahead at the original signal date.
+    if i + 32 >= len(rows): return False
+    base, follow = rows[i], rows[i+1]
+    if not follow["m20"] or not follow["m10"]: return False
+    if follow["c"] > follow["m20"] * 1.05: return False
+    if follow["c"] < follow["m10"] or follow["l"] < base["l"] * .97: return False
+    if follow["c"] <= base["c"]: return False
+    if follow["c"] < follow["o"]: return False
+    if mode == "break":
+        return (follow["c"] > base["h"]
+                and follow["v"] >= .8 * (follow["vol20"] or 0))
+    return True
+
+def simulate(rows, i, early_failure=False):
     entry = rows[i+1]["o"]
     if entry<=0: return None
     invested = entry*(1+BUY_COST)
@@ -190,12 +206,16 @@ def simulate(rows, i):
         else:
             c_below=0
         act=None
-        if c_below>=3:
+        if early_failure and j <= i+3 and j+1 < len(rows) and (
+            r["c"] < rows[i]["l"] and r["c"] < rows[i]["c"]*.975 and
+            r["m10"] and r["c"] < r["m10"]):
+            act="early_failed_breakout"
+        if act is None and c_below>=3:
             act="exit_3d_below_ma20"
         elif (not partial) and r["c"]>=entry*1.20:
             act="take_20pct_one_third"
         if act and j+1 < len(rows):
-            if act=="exit_3d_below_ma20":
+            if act in ("exit_3d_below_ma20","early_failed_breakout"):
                 realized+=shares*rows[j+1]["o"]*(1-SELL_COST)
                 shares=0
                 exit_i=j+1
@@ -254,17 +274,25 @@ def main():
             candidates+=1
             if bear:eligible_bear+=1
             for strategy in states:
-                allow=(strategy=="baseline" or (not bear) or
-                       (strategy=="bear_confirm" and soft) or
+                allow=(strategy in ("baseline","confirm_hold_1d","confirm_break_1d","fast_failure_exit") or
+                       (strategy=="bear_confirm" and (not bear or soft)) or
                        (strategy=="severe_guard" and (not severe or soft)) or
-                       (strategy=="reversal_entry" and (soft or reversal)))
+                       (strategy=="reversal_entry" and (not bear or soft or reversal)) or
+                       (strategy=="bear_skip" and not bear) or
+                       (strategy=="bear_confirm_hold_1d" and (not bear or soft or confirm_after_one(rows,i,"hold"))))
                 if not allow:continue
-                if i<=states[strategy]+5:continue
-                sim=simulate(rows,i)
+                needs_hold=(strategy in ("confirm_hold_1d","confirm_break_1d") or
+                            (strategy=="bear_confirm_hold_1d" and bear and not soft))
+                if needs_hold:
+                    mode="break" if strategy=="confirm_break_1d" else "hold"
+                    if not confirm_after_one(rows,i,mode):continue
+                actual_i=i+1 if needs_hold else i
+                if actual_i<=states[strategy]+5:continue
+                sim=simulate(rows,actual_i,early_failure=(strategy=="fast_failure_exit"))
                 if not sim:continue
                 states[strategy]=sim["exit_i"]
                 all_trades.append({"symbol":sym,"signal_date":rows[i]["d"],
-                   "entry_date":rows[i+1]["d"],"strategy":strategy,
+                   "entry_date":rows[actual_i+1]["d"],"strategy":strategy,
                    "bear_market":bear,"bear_exception":soft,
                    "severe_market":severe,"reversal_exception":reversal,**sim})
         print("Finished",n+1,"/",len(SYMBOLS),sym,"rows",len(rows),flush=True)
@@ -280,7 +308,11 @@ def main():
               "bear_confirm":"During 0050 bear regime, require 0050 above MA20 for 2 sessions, stock 10d relative strength > benchmark by 3 percentage points and stock MA20 rising; otherwise skip.",
               "bear_skip":"During 0050 bear regime, skip all entries.",
               "severe_guard":"Only add veto when sustained 0050 below MA20 plus falling MA60, or 20-session -9%; can retain original strong exception.",
-              "reversal_entry":"During bear regime, allow verified relative-strength recovery above 0050 MA10, own rising MA20, 5-session high break, 10-session outperformance >4 percentage points."},
+              "reversal_entry":"During bear regime, allow verified relative-strength recovery above 0050 MA10, own rising MA20, 5-session high break, 10-session outperformance >4 percentage points.",
+              "confirm_hold_1d":"Only enter on second following open if immediate next daily close is higher than signal close, green, holds MA10 and signal low; no >5% MA20.",
+              "confirm_break_1d":"Next trading day CLOSE must exceed original signal candle high on minimum 0.8x average volume; then enter following open.",
+              "bear_confirm_hold_1d":"Only in bear regime, permit original soft exception, else buy only following session after positive confirmed hold.",
+              "fast_failure_exit":"Original next-open entry; if closes below original signal low by first 3 holding days and under MA10, exit next open rather than awaiting MA20 3 consecutive days."},
             "method_caveat":"Surviving and current-active code sample with listing-date bias; known splits adjusted only for 0050/2327, other corporate actions unverified. Trade-level weighted by opportunity, not portfolio-level annualized return. Split and slippage concerns remain.",
             "periods":{},"regimes":{},"cohorts":{}}
     for label,(start,end) in PERIODS.items():
