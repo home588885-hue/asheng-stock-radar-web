@@ -1,6 +1,16 @@
 {
   "source": "FinMind TaiwanStockPrice",
-  "benchmark": "0050 ETF (TAIEX proxy, not entire TAIEX)",
+  "benchmark": "0050 ETF (TAIEX proxy, not entire TAIEX); known 2025 split price normalized",
+  "split_adjustment": {
+    "0050": {
+      "date": "2025-06-18",
+      "ratio": 4
+    },
+    "2327": {
+      "date": "2025-08-25",
+      "ratio": 4
+    }
+  },
   "sample_size_requested": 47,
   "sample_size_available": 47,
   "requested_from": "2007-01-01",
@@ -197,7 +207,7 @@
   },
   "errors": [],
   "candidate_occurrences": 2935,
-  "bear_candidate_occurrences": 372,
+  "bear_candidate_occurrences": 339,
   "rules": "Price/volume proxy only. MA10/20/60 rising over 5d; close above MAs and <=5% over MA20; volume>=1000 lots; avg20>=500; breakout or rebound. Includes next-open buys, next-open exits for 3 consecutive sub-MA20 closes, +20% trim one third, 30d max, 0.1425% buy and 0.4425% sell costs, no slippage. No chip/revenue/full V5. Stock sample uses surviving symbols; not all historical listings.",
   "filter_variants": {
     "baseline": "unmodified price-only proxy",
@@ -527,30 +537,30 @@
     "2025_full": {
       "baseline": {
         "n": 70,
-        "win_pct": 28.6,
-        "avg_net_pct": -1.51,
-        "med_net_pct": -1.94,
-        "avg_adverse_pct": -5.08,
-        "worst_net_pct": -72.52,
-        "sum_unweighted_net_pct": -105.46
+        "win_pct": 30.0,
+        "avg_net_pct": -0.36,
+        "med_net_pct": -1.67,
+        "avg_adverse_pct": -4.04,
+        "worst_net_pct": -16.93,
+        "sum_unweighted_net_pct": -25.0
       },
       "bear_confirm": {
-        "n": 40,
-        "win_pct": 32.5,
-        "avg_net_pct": 0.84,
-        "med_net_pct": -1.23,
-        "avg_adverse_pct": -2.58,
-        "worst_net_pct": -7.93,
-        "sum_unweighted_net_pct": 33.63
+        "n": 60,
+        "win_pct": 31.7,
+        "avg_net_pct": 0.57,
+        "med_net_pct": -1.44,
+        "avg_adverse_pct": -3.04,
+        "worst_net_pct": -9.06,
+        "sum_unweighted_net_pct": 34.25
       },
       "bear_skip": {
-        "n": 39,
-        "win_pct": 33.3,
-        "avg_net_pct": 1.02,
-        "med_net_pct": -1.16,
-        "avg_adverse_pct": -2.5,
-        "worst_net_pct": -7.93,
-        "sum_unweighted_net_pct": 39.64
+        "n": 60,
+        "win_pct": 31.7,
+        "avg_net_pct": 0.57,
+        "med_net_pct": -1.44,
+        "avg_adverse_pct": -3.04,
+        "worst_net_pct": -9.06,
+        "sum_unweighted_net_pct": 34.25
       }
     },
     "2026_to_sep": {
@@ -586,22 +596,22 @@
   "regimes": {
     "bear": {
       "baseline": {
-        "n": 210,
-        "win_pct": 36.7,
-        "avg_net_pct": -0.45,
-        "med_net_pct": -2.06,
-        "avg_adverse_pct": -3.71,
-        "worst_net_pct": -72.52,
-        "sum_unweighted_net_pct": -93.79
+        "n": 189,
+        "win_pct": 38.1,
+        "avg_net_pct": -0.04,
+        "med_net_pct": -1.95,
+        "avg_adverse_pct": -3.29,
+        "worst_net_pct": -28.9,
+        "sum_unweighted_net_pct": -8.22
       },
       "bear_confirm": {
-        "n": 14,
-        "win_pct": 35.7,
-        "avg_net_pct": -0.21,
-        "med_net_pct": -3.27,
-        "avg_adverse_pct": -3.37,
+        "n": 13,
+        "win_pct": 38.5,
+        "avg_net_pct": 0.23,
+        "med_net_pct": -3.02,
+        "avg_adverse_pct": -3.19,
         "worst_net_pct": -7.67,
-        "sum_unweighted_net_pct": -2.97
+        "sum_unweighted_net_pct": 3.04
       },
       "bear_skip": {
         "n": 0,
@@ -615,31 +625,31 @@
     },
     "other": {
       "baseline": {
-        "n": 1284,
-        "win_pct": 31.9,
+        "n": 1305,
+        "win_pct": 31.8,
         "avg_net_pct": -0.38,
-        "med_net_pct": -2.03,
-        "avg_adverse_pct": -3.02,
+        "med_net_pct": -2.04,
+        "avg_adverse_pct": -3.04,
         "worst_net_pct": -17.81,
-        "sum_unweighted_net_pct": -487.75
+        "sum_unweighted_net_pct": -492.86
       },
       "bear_confirm": {
-        "n": 1340,
-        "win_pct": 31.9,
+        "n": 1361,
+        "win_pct": 31.8,
         "avg_net_pct": -0.4,
-        "med_net_pct": -2.02,
-        "avg_adverse_pct": -3.03,
+        "med_net_pct": -2.04,
+        "avg_adverse_pct": -3.05,
         "worst_net_pct": -17.81,
-        "sum_unweighted_net_pct": -536.93
+        "sum_unweighted_net_pct": -542.33
       },
       "bear_skip": {
-        "n": 1341,
-        "win_pct": 32.0,
+        "n": 1362,
+        "win_pct": 31.9,
         "avg_net_pct": -0.39,
-        "med_net_pct": -2.01,
-        "avg_adverse_pct": -3.03,
+        "med_net_pct": -2.03,
+        "avg_adverse_pct": -3.05,
         "worst_net_pct": -17.81,
-        "sum_unweighted_net_pct": -526.73
+        "sum_unweighted_net_pct": -532.12
       }
     }
   }
