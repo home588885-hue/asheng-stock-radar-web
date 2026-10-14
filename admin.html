@@ -2125,7 +2125,12 @@ h1 {
         // launch_counts.prelaunch / first_actionable are different statistics.
         const hasQuality = data?.quality_screen && data?.quality_total != null
           && Number.isFinite(Number(data.quality_total));
-        if (hasQuality) setCandidateSummary('cCount', data.quality_total, '盤後高品質候選');
+        if (hasQuality) {
+          const priorCount=Number(data?.prior_observe_count||0);
+          setCandidateSummary('cCount', data.quality_total, priorCount>0
+            ? '含前一模型日 '+priorCount+' 檔｜舊資料僅供觀察'
+            : '盤後高品質候選');
+        }
         else if (!globalHeaderSummary?.qualityKnown) setCandidateSummary('cCount', null);
         globalHeaderSummary = {
           qualityKnown:!!hasQuality || !!globalHeaderSummary?.qualityKnown,
@@ -2135,7 +2140,7 @@ h1 {
       };
       const refreshGlobalHeaderSummary = async () => {
         try {
-          const query = new URLSearchParams({ limit:'1', fresh_hours:'144', mode:'launch' });
+          const query = new URLSearchParams({ limit:'1', fresh_hours:'144', mode:'launch', view_policy:'prior_day_observation_20261014' });
           const joiner = API.includes('?') ? '&' : '?';
           const result = await fetchJsonWithTimeout(API + joiner + query.toString(), { cache:'no-store' }, 10000);
           if (result.response.ok && result.data?.ok && isLockedRulePayload(result.data)) applyGlobalHeaderSummary(result.data);
@@ -2607,6 +2612,12 @@ h1 {
       };
 
       const tradeSignal = item => {
+        // Historical/unreplaced model rows may be shown for continuity, NEVER
+        // interpreted as a same-day trial/formal entry or buyable breakout.
+        if (!holdings.has(String(item?.stock_id||'')) &&
+            String(item?.as_of||'') !== expectedSignalDataDate()) {
+          return {className:'wait',text:'⚪ 舊模型｜等待今日重掃，僅供觀察'};
+        }
         if (!holdings.has(String(item.stock_id))) {
           const risk=newEntryRiskGate(item);
           if(risk)return {className:risk.kind==='hard'?'sell':'wait',text:risk.text};
