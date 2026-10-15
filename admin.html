@@ -4103,9 +4103,9 @@ h1 {
             liveBasePicks = rankedPicks.slice(0,100);
             await refreshSimpleQuotes();
             if (liveTimer) clearInterval(liveTimer);
-            liveTimer = marketBridgeReady() && taipeiMarketState().open
-              ? setInterval(() => { if (stage === 'LAUNCH' && !document.hidden) refreshSimpleQuotes(); },180000)
-              : null;
+            liveTimer = setInterval(() => {
+              if (stage === 'LAUNCH' && !document.hidden && taipeiMarketState().open) refreshSimpleQuotes();
+            }, 180000);
           }
         } catch (error) {
           if (navigationSeq !== navToken || stage !== requestedStage) return;
@@ -5260,6 +5260,7 @@ h1 {
 
       async function refreshSimpleQuotes() {
         if (stage !== 'LAUNCH' || document.hidden || !liveBasePicks.length) return;
+        if (!marketBridgeReady() && taipeiMarketState().open) await configureCloudflareMarketBridge();
         const renderNavToken = navigationSeq;
         const renderStage = stage;
         // 夜間模型快照：發動前不再盤中抓取候選股報價。
@@ -5454,6 +5455,7 @@ h1 {
 
       async function refreshLiveQuotes() {
         if (!['LIVE', 'ENTRY'].includes(stage) || document.hidden) return;
+        if (!marketBridgeReady() && taipeiMarketState().open) await configureCloudflareMarketBridge();
         const renderNavToken = navigationSeq;
         const renderStage = stage;
         if (stage === 'ENTRY' && !liveBasePicks.length) {
@@ -5660,8 +5662,9 @@ h1 {
             if (!v5Data && !launchData) {
               if (liveBasePicks.length) {
                 await refreshLiveQuotes();
-                liveTimer = marketBridgeReady() && taipeiMarketState().open
-                  ? setInterval(() => { if (stage === 'ENTRY' && !document.hidden) refreshLiveQuotes(); }, 180000) : null;
+                liveTimer = setInterval(() => {
+                  if (stage === 'ENTRY' && !document.hidden && taipeiMarketState().open) refreshLiveQuotes();
+                }, 180000);
                 livePoolTimer = null; // 候選快照由夜間掃描更新
                 return;
               }
@@ -5682,8 +5685,9 @@ h1 {
             }
             await refreshLiveQuotes();
             lastEntryPoolRefreshAt = Date.now();
-            liveTimer = marketBridgeReady() && taipeiMarketState().open
-              ? setInterval(() => { if (stage === 'ENTRY' && !document.hidden) refreshLiveQuotes(); }, 180000) : null;
+            liveTimer = setInterval(() => {
+              if (stage === 'ENTRY' && !document.hidden && taipeiMarketState().open) refreshLiveQuotes();
+            }, 180000);
             livePoolTimer = null; // 候選快照由夜間掃描更新
             return;
           }
