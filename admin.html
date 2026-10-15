@@ -3625,7 +3625,10 @@ h1 {
 
       const isEntryRadarItem = item => {
         // A passive early-turn/base stock belongs to 發動前, never both tabs.
-        if (earlyTurnWatchState(item) || lowBaseWatchState(item)) return false;
+        // A model already in ACTIVE/ENTRY must reach the entry radar as a
+        // TRACKING candidate, even if an earlier passive watch flag persists.
+        if (!['ACTIVE','ENTRY'].includes(modelLaunchPhase(item))
+            && (earlyTurnWatchState(item) || lowBaseWatchState(item))) return false;
         const m=item?.metrics||{};
         const mc=m.ma_cluster||{};
         const seq=m.launch_sequence||mc.launch_sequence||{};
@@ -3695,8 +3698,11 @@ h1 {
         if (['highwin','v5buy'].includes(tradeSignal(item).className))
           return {keep:false,rank:0,className:'promoted',label:'🎯 進場雷達'};
         if(preRisk?.kind==='hard') return {keep:false,rank:0,className:'blocked',label:'🔴 結構風險｜暫不新買'};
-        if (isActiveLaunchItem(item)) return {keep:true,rank:110,className:'active-launch',
-          label:'🔥 已起漲｜等待進場確認，尚非買點'};
+        // ACTIVE has already launched. Remove it from the LAUNCH display ONLY
+        // because the same verified S row is eligible for ENTRY tracking.
+        // This must precede passive early-turn flags. Not a new buy signal.
+        if (isActiveLaunchItem(item)) return {keep:false,rank:0,className:'promoted-active',
+          label:'🎯 已轉進場雷達｜發動追蹤，尚非買點'};
         if (earlyTurnWatchState(item)) return {keep:true,rank:125,className:'early-turn-watch',
           label:'🌱 早期轉強｜優先追蹤，尚不可試單'};
         if (isEntryRadarItem(item)) return { keep:false, rank:0, className:'promoted', label:'🎯 已進進場雷達' };
@@ -4256,7 +4262,7 @@ h1 {
         const research = bottom.research || {};
         if (bottom.confirmed === true) {
           const bonuses = [bottom.bonus_k_turn === true ? 'KD轉強加分' : '', bottom.bonus_recover_prev_open === true ? '昨跌今收復加分' : ''].filter(Boolean).join('｜');
-          return { rank: 6, className: 'live-launch', title: '🔥 底部起漲型態確認｜已轉進場雷達', detail: `底部型態後 ${Number(bottom.recent_base_days || 0)} 日｜溫量紅K｜日量/20日均量 ${num(bottom.day_volume_ratio, 2)}x${bonuses ? `｜${bonuses}` : ''}`, extra: research.validated_for_current_rule === false ? '型態確認不等於正式買點｜已轉進場雷達依最新完整日K觀察' : `歷史10日內觸及+3% ${num(research.hit_3pct_10d_pct, 1)}%｜+5% ${num(research.hit_5pct_10d_pct, 1)}%｜n=${Number(research.sample_size || 0)}；這是發動命中率，不是固定持有勝率` };
+          return { rank: 6, className: 'live-launch', title: stage==='ENTRY' ? '🔥 底部起漲型態確認｜進場雷達追蹤' : '🔥 底部起漲型態確認｜進場條件待核對', detail: `底部型態後 ${Number(bottom.recent_base_days || 0)} 日｜溫量紅K｜日量/20日均量 ${num(bottom.day_volume_ratio, 2)}x${bonuses ? `｜${bonuses}` : ''}`, extra: research.validated_for_current_rule === false ? '型態確認不等於正式買點｜僅依最新完整日K追蹤，請至進場雷達核對是否已收錄' : `歷史10日內觸及+3% ${num(research.hit_3pct_10d_pct, 1)}%｜+5% ${num(research.hit_5pct_10d_pct, 1)}%｜n=${Number(research.sample_size || 0)}；這是發動命中率，不是固定持有勝率` };
         }
         if (quote && bottom.live_window_eligible === true) {
           const live = liveState(item, quote);
@@ -5627,7 +5633,8 @@ h1 {
         // UI exclusivity: exclude only stocks actually supplied to the visible LAUNCH
         // list; never hide a candidate absent from that source or change S selection.
         const launchShownIds = new Set(launchPicks
-          .filter(item => launchQualityState(item).keep)
+          .filter(item => launchQualityState(item).keep
+            && !['ACTIVE','ENTRY'].includes(modelLaunchPhase(item)))
           .map(item => String(item.stock_id || '')));
         const merged = new Map();
         [...launchPicks, ...v5Picks].forEach(item => {
