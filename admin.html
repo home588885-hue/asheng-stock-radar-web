@@ -3583,12 +3583,12 @@ h1 {
         // Completed EOD starter/ACTIVE/formal_candidate is a TRACKING state, not
         // a trialable/formal buy. Keep it in a separate visible bucket after close
         // instead of losing it in the generic waiting/recalc section.
-        const eodTrackRows=afterClose?sortEntryVisual(safeWatch.filter(row=>{
+        const eodTrackRows=sortEntryVisual(safeWatch.filter(row=>{
           if(focusIds.has(rowId(row))||signalIds.has(rowId(row)))return false;
           if(String(row.item?.as_of||'')!==expectedSignalDataDate()||row.action?.stale_model===true)return false;
           const m=row.item?.metrics||{},ent=String(m.trade_lifecycle?.entry?.state||'');
           return ['ACTIVE','ENTRY'].includes(modelLaunchPhase(row.item));
-        })):[];
+        }));
         const eodTrackIds=new Set(eodTrackRows.map(rowId));
         const separateRows=list=>sortEntryVisual(list.filter(row=>
           !focusIds.has(rowId(row)) && !signalIds.has(rowId(row)) && !eodTrackIds.has(rowId(row))));
@@ -3603,13 +3603,13 @@ h1 {
           recalcDisplayRows.length+waitRows.length+pullbackRows.length+avoidRows.length;
         const banner=`<div class="entry-list-overview" data-stable-key="entry-overview">
           <strong>🎯 進場雷達｜${displayedTotal} 檔追蹤</strong>
-          <span>🟢 V5正式確認 ${rows.filter(row=>String(row.item?.as_of||'')===expectedSignalDataDate()&&row.item?.metrics?.v5?.entry_confirmed===true).length}　⭐ 優先 ${focusRows.length}　📋 盤後發動追蹤 ${eodTrackRows.length}　🟠 進場待核對 ${signalRows.length}　🌱 等發動 ${queuedDisplayRows.length}　🟡 條件未齊 ${waitRows.length}　⚡ 待補算 ${recalcDisplayRows.length}　🔵 等回踩 ${pullbackRows.length}　🔴 風險避開 ${avoidRows.length}</span>
+          <span>🟢 V5正式確認 ${rows.filter(row=>String(row.item?.as_of||'')===expectedSignalDataDate()&&row.item?.metrics?.v5?.entry_confirmed===true).length}　⭐ 優先 ${focusRows.length}　📋 已起漲追蹤 ${eodTrackRows.length}　🟠 進場待核對 ${signalRows.length}　🌱 等發動 ${queuedDisplayRows.length}　🟡 條件未齊 ${waitRows.length}　⚡ 待補算 ${recalcDisplayRows.length}　🔵 等回踩 ${pullbackRows.length}　🔴 風險避開 ${avoidRows.length}</span>
           <small>基準交易日 ${esc(expectedSignalDataDate())}｜舊模型僅觀察、不列新買點｜非盤中即時買進指令｜點股票名稱展開資料${staleRows.length?'｜另有 '+staleRows.length+' 檔過期快照未列入':''}</small>
         </div>`;
         const outHtml = banner+
           entryBucketHtml('focus','⭐ 優先查看','原模型條件相對成熟，仍須核對當日行情',focusRows,{open:true,tone:'focus',preview:6})+
           entryBucketHtml('signal','🟠 進場訊號｜先核對','已有模型追蹤或突破訊號，仍須確認今日量價與風險，並非直接買進指令',signalRows,{open:!focusRows.length,tone:'focus',preview:5})+
-          entryBucketHtml('eod-tracking','📋 盤後發動追蹤｜不是買點','已有最新完整日K的starter／ACTIVE／formal_candidate訊號，等待交易時段量價及原本風控確認；不可當成🟠可小量試單或🟢正式買點',eodTrackRows,{open:!focusRows.length&&!signalRows.length,tone:'near',preview:6})+
+          entryBucketHtml('eod-tracking','📋 已起漲追蹤｜不是買點','已由最新完整日K標記為ACTIVE／ENTRY的追蹤股票，盤中仍須核對有效成交價與原本風控確認；不可當成🟠可小量試單或🟢正式買點',eodTrackRows,{open:true,tone:'near',preview:6})+
           entryBucketHtml('queued','🌱 底部已成形｜等發動','底部型態已確認，但尚未出現符合條件的起漲訊號，持續觀察量價與均線',queuedDisplayRows,{open:!focusRows.length&&!signalRows.length&&!eodTrackRows.length,tone:'near',preview:5})+
           entryBucketHtml('wait','🟡 條件未齊｜先觀察','量價、位置或其他進場條件尚未到位，等待補齊，不列可買進訊號',waitRows,{open:!focusRows.length&&!signalRows.length&&!queuedDisplayRows.length,tone:'near',preview:5})+
           entryBucketHtml('recalc','⚡ 收盤資料待補算','資料尚未齊全，不列進場候選或一般等確認',recalcDisplayRows,{open:false,tone:'near',preview:5})+
@@ -5539,7 +5539,7 @@ h1 {
               .sort((a,b)=>b.action.rank-a.action.rank);
             const view=renderEntrySections(rows);
             setCandidateSummary('bCount', view.displayedTotal, '最近完整日K追蹤名單');
-            $('#note').textContent = `🎯 進場雷達｜追蹤 ${view.displayedTotal} 檔｜盤後發動追蹤 ${view.eodTrackRows.length} 檔（非買點）｜進場待核對 ${view.signalRows.length}｜待發動 ${view.queuedDisplayRows.length}｜等確認 ${view.waitRows.length}｜待補算 ${view.recalcDisplayRows.length}｜晚上9點起分批更新日K。${scanProgressSuffix()}`;
+            $('#note').textContent = `🎯 進場雷達｜追蹤 ${view.displayedTotal} 檔｜已起漲追蹤 ${view.eodTrackRows.length} 檔（非買點）｜進場待核對 ${view.signalRows.length}｜待發動 ${view.queuedDisplayRows.length}｜等確認 ${view.waitRows.length}｜待補算 ${view.recalcDisplayRows.length}｜晚上9點起分批更新日K。${scanProgressSuffix()}`;
           } else {
             stableListRender(liveBasePicks.map(item => card(item)).join(''));
             $('#note').textContent = '看盤候選｜日 K 模型快照；只有已買進股票更新盤中價格。';
@@ -5574,7 +5574,7 @@ h1 {
               : '｜📋 盤後起漲追蹤暫無已驗證候選';
             $('#note').textContent = `🎯 進場雷達｜🚀盤中起漲：待開盤｜🔵小量試單：待開盤核對`
               +preopenStarterText
-              +`｜📋盤後發動追蹤 ${groups.eodTrackRows.length}｜🟡等確認 ${groups.waitRows.length}｜🔵等回踩 ${groups.pullbackRows.length}｜🟠轉弱 ${groups.avoidRows.length}｜非交易時段不發出試單訊號。${scanProgressSuffix()}`;
+              +`｜📋已起漲追蹤 ${groups.eodTrackRows.length}｜🟡等確認 ${groups.waitRows.length}｜🔵等回踩 ${groups.pullbackRows.length}｜🟠轉弱 ${groups.avoidRows.length}｜非交易時段不發出試單訊號。${scanProgressSuffix()}`;
             return;
           }
           stableListRender(liveBasePicks.map(item => card(item)).join(''));
