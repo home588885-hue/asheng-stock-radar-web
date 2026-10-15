@@ -5268,7 +5268,9 @@ h1 {
           const rows = liveBasePicks.filter(item => launchQualityState(item).keep);
           stableListRender(rows.length ? launchListHtml(rows) : '<div class="box empty">目前沒有符合發動前條件的候選股。</div>');
           setCandidateSummary('cCount', rows.length, '目前畫面符合發動前條件');
-          $('#note').textContent = `🌱 發動前｜${rows.length} 檔｜日 K 模型於交易日晚上 9 點分批更新，盤中不抓價。`;
+          $('#note').textContent = taipeiMarketState().open
+            ? `⚠️ Cloudflare C 尚未通過健康檢查｜${rows.length} 檔僅顯示盤後模型，不能當即時買點；依既有三分鐘節奏重試。`
+            : `🌱 發動前｜${rows.length} 檔｜日 K 模型於交易日晚上 9 點分批更新，盤中不抓價。`;
           return;
         }
         const market = taipeiMarketState();
@@ -5479,7 +5481,9 @@ h1 {
               .sort((a,b)=>b.action.rank-a.action.rank);
             const view=renderEntrySections(rows);
             setCandidateSummary('bCount', view.displayedTotal, '最近完整日K追蹤名單');
-            $('#note').textContent = `🎯 進場雷達｜追蹤 ${view.displayedTotal} 檔｜已起漲追蹤 ${view.eodTrackRows.length} 檔（非買點）｜進場待核對 ${view.signalRows.length}｜待發動 ${view.queuedDisplayRows.length}｜等確認 ${view.waitRows.length}｜待補算 ${view.recalcDisplayRows.length}｜晚上9點起分批更新日K。${scanProgressSuffix()}`;
+            $('#note').textContent = taipeiMarketState().open
+              ? `⚠️ Cloudflare C 尚未通過健康檢查｜進場雷達 ${view.displayedTotal} 檔僅顯示盤後模型，無法確認即時買點；依既有三分鐘節奏重試。${scanProgressSuffix()}`
+              : `🎯 進場雷達｜追蹤 ${view.displayedTotal} 檔｜已起漲追蹤 ${view.eodTrackRows.length} 檔（非買點）｜進場待核對 ${view.signalRows.length}｜待發動 ${view.queuedDisplayRows.length}｜等確認 ${view.waitRows.length}｜待補算 ${view.recalcDisplayRows.length}｜晚上9點起分批更新日K。${scanProgressSuffix()}`;
           } else {
             stableListRender(liveBasePicks.map(item => card(item)).join(''));
             $('#note').textContent = '看盤候選｜日 K 模型快照；只有已買進股票更新盤中價格。';
@@ -5544,6 +5548,7 @@ h1 {
             const groups = renderEntrySections(rows,{quoteUpdate:true});
             const missingQuoteIds=liveBasePicks.filter(item=>!quoteMap.has(String(item.stock_id))).map(item=>String(item.stock_id)).slice(0,9);
             const quoteCoverage='｜C今日成交 '+quoteMap.size+'/'+liveBasePicks.length+' 檔'
+              +(quoteMap.size===0?'｜⚠️ '+cQuoteLastCheck.status:'')
               +(payload.cached_last_trade?'｜'+payload.cached_last_trade+' 檔沿用今日前次成交':'')
               +(missingQuoteIds.length?'｜未回 '+missingQuoteIds.join('、'):'');
             const confirmed = rows.filter(row => row.action.phase === 'confirmed').length;
