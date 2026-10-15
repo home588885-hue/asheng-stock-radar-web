@@ -3426,18 +3426,24 @@ h1 {
           const t=String(row.action?.text||'')+'｜'+String(row.action?.detail||'');
           const bottomConfirmed=m?.bottom_start?.confirmed===true;
           const structureFailed=t.includes('均線／價格結構未通過');
-          return g.weak_after_breakout===true
+          return liveSelloffRisk(row.item,row.quote)?.kind==='momentum'
+            || g.weak_after_breakout===true
             || t.includes('明顯轉弱')
             || t.includes('跌破支撐')
             || (structureFailed && !bottomConfirmed);
-        }).map(row => ({
-          ...row,
-          action:{
-            ...row.action,
-            text:'🟠 轉弱／回踩觀察',
-            detail:'結構已有轉弱訊號｜先不追，等重新站回短均線或重要支撐再評估'
-          }
-        }));
+        }).map(row => {
+          const liveStop=liveSelloffRisk(row.item,row.quote);
+          return {
+            ...row,
+            action:liveStop?.kind==='momentum'
+              ? {...row.action,...liveStop,phase:'observe',buyable:false,trialable:false}
+              : {
+                  ...row.action,
+                  text:'🟠 轉弱／回踩觀察',
+                  detail:'結構已有轉弱訊號｜先不追，等重新站回短均線或重要支撐再評估'
+                }
+          };
+        });
 
         // 1年位階、距MA20、KD過熱任一明顯偏高，就歸等回踩，不留在黃燈。
         const highRows = rows.filter(row => {
@@ -3554,7 +3560,10 @@ h1 {
           ...queuedRows,...trackingRows,...nearRows,...recalcRows
         ];
         const visuallyStrong = row => {
-          if(row.action?.stale_model===true)return false;
+          // Valid intraday risk and existing entry guards outrank yesterday's score.
+          if(row.action?.stale_model===true || row.action?.candle_guard===true
+             || row.action?.live_selloff===true || row.action?.phase==='blocked'
+             || newEntryRiskGate(row.item,row.quote))return false;
           const m=row.item?.metrics||{},mc=m.ma_cluster||{};
           const close=Number(m.close),ma20=Number(m.ma20),pos=Number(m.position_1y_pct);
           const k=Number(m.daily_k),lots=Number(m.current_volume_lots);
@@ -3575,6 +3584,8 @@ h1 {
           && row?.action?.stale_model!==true
           && row?.action?.candle_guard!==true
           && row?.action?.active_launch_fallback!==true
+          && row?.action?.live_selloff!==true
+          && !newEntryRiskGate(row.item,row.quote)
           && (signalSourceIds.has(rowId(row))
             || ['pre','breakout','add'].includes(String(row?.action?.key||'')));
         const signalRows=sortEntryVisual(safeWatch.filter(row=>
@@ -3603,7 +3614,7 @@ h1 {
           recalcDisplayRows.length+waitRows.length+pullbackRows.length+avoidRows.length;
         const banner=`<div class="entry-list-overview" data-stable-key="entry-overview">
           <strong>🎯 進場雷達｜${displayedTotal} 檔追蹤</strong>
-          <span>🟢 V5正式確認 ${rows.filter(row=>String(row.item?.as_of||'')===expectedSignalDataDate()&&row.item?.metrics?.v5?.entry_confirmed===true).length}　⭐ 優先 ${focusRows.length}　📋 已起漲追蹤 ${eodTrackRows.length}　🟠 進場待核對 ${signalRows.length}　🌱 等發動 ${queuedDisplayRows.length}　🟡 條件未齊 ${waitRows.length}　⚡ 待補算 ${recalcDisplayRows.length}　🔵 等回踩 ${pullbackRows.length}　🔴 風險避開 ${avoidRows.length}</span>
+          <span>🟢 V5盤後確認且未觸發風控 ${rows.filter(row=>String(row.item?.as_of||'')===expectedSignalDataDate()&&row.item?.metrics?.v5?.entry_confirmed===true&&!row.action?.candle_guard&&!newEntryRiskGate(row.item,row.quote)).length}　⭐ 優先 ${focusRows.length}　📋 已起漲追蹤 ${eodTrackRows.length}　🟠 進場待核對 ${signalRows.length}　🌱 等發動 ${queuedDisplayRows.length}　🟡 條件未齊 ${waitRows.length}　⚡ 待補算 ${recalcDisplayRows.length}　🔵 等回踩 ${pullbackRows.length}　🔴 風險避開 ${avoidRows.length}</span>
           <small>基準交易日 ${esc(expectedSignalDataDate())}｜舊模型僅觀察、不列新買點｜非盤中即時買進指令｜點股票名稱展開資料${staleRows.length?'｜另有 '+staleRows.length+' 檔過期快照未列入':''}</small>
         </div>`;
         const outHtml = banner+
