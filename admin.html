@@ -1439,28 +1439,52 @@ h1 {
       };
 
       const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+      // A desktop with an expired/invalid saved session must never expose a
+      // permanently frozen stock dashboard. This UI performs no scanner or holdings action.
+      const showAuthRecovery = (message) => {
+        radarApp.style.display = 'none';
+        authBox.style.display = 'block';
+        authBox.innerHTML = '<h2>🔐 阿勝底部起漲雷達｜重新驗證登入</h2>'
+          + '<p class="member-auth-msg" role="alert" id="authRecoveryMessage"></p>'
+          + '<p class="member-auth-msg">持股與選股資料都保留。請先重新驗證；若桌機登入紀錄已失效，再自行選擇重新登入。</p>'
+          + '<div class="member-auth-actions">'
+          + '<button type="button" class="primary" id="authRecoveryRetry">重新驗證</button>'
+          + '<button type="button" id="authRecoveryReset">清除這台電腦的登入並重新登入</button>'
+          + '</div>';
+        const msg = authBox.querySelector('#authRecoveryMessage');
+        if (msg) msg.textContent = String(message || '目前無法完成管理員登入驗證。');
+        authBox.querySelector('#authRecoveryRetry')?.addEventListener('click', () => location.reload());
+        authBox.querySelector('#authRecoveryReset')?.addEventListener('click', async event => {
+          const button = event.currentTarget;
+          button.disabled = true;
+          if (msg) msg.textContent = '正在清除本機登入狀態，不會刪除股票與持股資料…';
+          try {
+            await authClient.auth.signOut({ scope:'local' });
+            location.reload();
+          } catch (error) {
+            button.disabled = false;
+            if (msg) msg.textContent = '本機登入重設失敗，請重新開啟網站再試；持股資料未更動。';
+          }
+        });
+      };
+      const verifyAdminSession = () => memberFetch(MEMBER_API + '?action=me', {
+        cache:'no-store', signal:AbortSignal.timeout(14000)
+      });
       try {
-        let meResponse = await memberFetch(MEMBER_API + '?action=me', { cache:'no-store' });
+        let meResponse = await verifyAdminSession();
         if (meResponse.status === 401) {
           // A short-lived JWT or transient API 401 must not discard a saved login.
           // Refresh the existing Supabase session once, then retry verification.
           const { data: renewed, error: renewError } = await authClient.auth.refreshSession();
           if (!renewError && renewed?.session?.access_token) {
             memberSession = renewed.session;
-            meResponse = await memberFetch(MEMBER_API + '?action=me', { cache:'no-store' });
+            meResponse = await verifyAdminSession();
           }
         }
         if (meResponse.status === 401) {
-          const { data: stored } = await authClient.auth.getSession();
-          if (!stored?.session?.access_token) {
-            showLogin('登入期限已到，請重新登入。');
-          } else {
-            // Keep a still-stored session and avoid showing the password form on API failure.
-            radarApp.style.display = 'block';
-            authBox.style.display = 'none';
-            const identity = document.querySelector('#memberIdentity');
-            if (identity) identity.textContent = '｜登入驗證暫時失敗，請重新整理';
-          }
+          // Repeated 401 means this device cannot verify its saved credential.
+          // Never reveal the uninitialized app or a password form with no handlers.
+          showAuthRecovery('這台電腦的登入驗證未通過（HTTP 401）。請重新驗證，或自行重設本機登入。');
           return;
         }
         const me = await meResponse.json();
@@ -1533,10 +1557,9 @@ h1 {
         installEligible = true;
         setTimeout(showInstallPanel, 700);
       } catch (error) {
-        radarApp.style.display = 'block';
-        authBox.style.display = 'none';
-        const identity = document.querySelector('#memberIdentity');
-        if (identity) identity.textContent = '｜管理員｜連線重試中';
+        // Network/timeout failures must not strand Windows users on loading cards.
+        showAuthRecovery('管理員登入驗證暫時連線失敗。可重新驗證；不會自動登出或刪除持股。');
+        return;
       }
       const API = MEMBER_API + '?action=picks';
       const V5_API = MEMBER_API + '?action=v5';
