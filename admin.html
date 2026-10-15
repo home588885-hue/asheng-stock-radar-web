@@ -3410,211 +3410,135 @@ h1 {
           return !stale;
         });
 
+        // Shared, mutually-exclusive radar display policy. Scan/analyzer/holdings untouched.
+        // Every candidate receives exactly one bucket, with current-day risk before EOD labels.
         const rowId = row => String(row?.item?.stock_id||'');
-        const inRows = (list,row) => list.some(x=>rowId(x)===rowId(row));
-        const market = taipeiMarketState();
-        const afterClose = market.weekday && market.totalMinutes >= 810;
-
-        const blockedRows = rows.filter(row => row.action?.phase === 'blocked'
-          || newEntryRiskGate(row.item,row.quote)?.kind==='hard');
-
-        // 轉弱優先，不可被一般 candidate / observe 黃燈吃掉。
-        const weakeningRows = rows.filter(row => {
-          if (inRows(blockedRows,row)) return false;
-          const m=row.item?.metrics||{};
-          const g=m.entry_candle_guard||{};
-          const t=String(row.action?.text||'')+'｜'+String(row.action?.detail||'');
-          const bottomConfirmed=m?.bottom_start?.confirmed===true;
-          const structureFailed=t.includes('均線／價格結構未通過');
-          return liveSelloffRisk(row.item,row.quote)?.kind==='momentum'
-            || g.weak_after_breakout===true
-            || t.includes('明顯轉弱')
-            || t.includes('跌破支撐')
-            || (structureFailed && !bottomConfirmed);
-        }).map(row => {
-          const liveStop=liveSelloffRisk(row.item,row.quote);
-          return {
-            ...row,
-            action:liveStop?.kind==='momentum'
-              ? {...row.action,...liveStop,phase:'observe',buyable:false,trialable:false}
-              : {
-                  ...row.action,
-                  text:'🟠 轉弱／回踩觀察',
-                  detail:'結構已有轉弱訊號｜先不追，等重新站回短均線或重要支撐再評估'
-                }
-          };
-        });
-
-        // 1年位階、距MA20、KD過熱任一明顯偏高，就歸等回踩，不留在黃燈。
-        const highRows = rows.filter(row => {
-          if (inRows(blockedRows,row) || inRows(weakeningRows,row)) return false;
-          const m=row.item?.metrics||{};
-          const pos=Number(m.position_1y_pct);
-          const k=Number(m.daily_k);
-          const price=Number(row.quote?.price ?? m.close);
-          const ma20=Number(m.ma20);
-          const ext=Number.isFinite(price)&&ma20>0 ? (price/ma20-1)*100 : null;
-          const t=String(row.action?.text||'')+'｜'+String(row.action?.detail||'');
-          const cautions=(row.item?.cautions||[]).map(v=>String(v)).join('｜');
-          return (Number.isFinite(pos)&&pos>=85)
-            || (ext!=null&&ext>5)
-            || (Number.isFinite(k)&&k>80)
-            || cautions.includes('日KD偏高')
-            || t.includes('位置過高');
-        }).map(row => {
-          const m=row.item?.metrics||{};
-          const pos=Number(m.position_1y_pct);
-          const price=Number(row.quote?.price ?? m.close);
-          const ma20=Number(m.ma20);
-          const ext=Number.isFinite(price)&&ma20>0 ? (price/ma20-1)*100 : null;
-          const k=Number(m.daily_k), d=Number(m.daily_d);
-          const reason=[];
-          if(Number.isFinite(pos)&&pos>=85) reason.push('1年位階 '+num(pos,1)+'%');
-          if(ext!=null&&ext>5) reason.push('距MA20 +'+num(ext,1)+'%（新買上限5%）');
-          if(Number.isFinite(k)&&k>80) reason.push('KD過熱 K '+num(k,1)+(Number.isFinite(d)?'／D '+num(d,1):''));
-          return {
-            ...row,
-            action:{
-              ...row.action,
-              text:'🔵 位置偏高｜等回踩',
-              detail:(reason.join('｜')||'短線位置偏高')+'｜不追價，等回踩支撐後再評估'
-            }
-          };
-        });
-
-        // 已有盤中發動訊號，風險過濾通過後優先列最上方，不再壓回一般黃燈。
-        const earlyRows = rows.filter(row => {
-          if (inRows(blockedRows,row) || inRows(weakeningRows,row) || inRows(highRows,row)) return false;
-          const phase=String(row.action?.phase||'');
-          return row.action?.intraday_early_launch === true
-            || row.action?.intraday_early_watch === true
-            || (row.action?.key === 'breakout' && ['candidate','observe'].includes(phase));
-        });
-
-        const usedIds = new Set([
-          ...blockedRows,...weakeningRows,...highRows,...earlyRows
-        ].map(row=>rowId(row)));
-
-        const starterRows = rows.filter(row => !usedIds.has(rowId(row)) && (row.action?.trialable === true || row.action?.phase === 'starter' || row.action?.phase === 'trial' || row.action?.buyable === true));
-        starterRows.forEach(row=>usedIds.add(rowId(row)));
-
-        const completedRows = rows.filter(row => !usedIds.has(rowId(row)) && row.action?.phase === 'confirmed');
-        completedRows.forEach(row=>usedIds.add(rowId(row)));
-
-        // 13:30後仍是 observe，代表今天完整資料／收盤報價尚未補齊，不再混成一般黃燈。
-        const recalcRows = rows.filter(row => !usedIds.has(rowId(row)) && (row.action?.phase === 'final_wait' || (afterClose && row.action?.phase === 'observe' && String(row.item?.as_of||'') !== expectedSignalDataDate()))).map(row => ({
-          ...row,
-          action: row.action?.phase === 'observe'
-            ? {
-                ...row.action,
-                text:'⚡ 收盤資料補算中',
-                detail:'收盤後仍缺完整日K或有效收盤資料｜待資料補齊後重新分類，不列一般等確認'
-              }
-            : row.action
-        }));
-        recalcRows.forEach(row=>usedIds.add(rowId(row)));
-
-        // 底部型態成立只是「等發動」，不是已起漲。MA10/20/60尚未全轉強時尤其不可誤標。
-        const queuedRows = rows.filter(row =>
-          !usedIds.has(rowId(row)) &&
-          row.item?.metrics?.bottom_start?.confirmed === true &&
-          !['ACTIVE','ENTRY'].includes(modelLaunchPhase(row.item))
-        ).map(row => {
-          const mc=row.item?.metrics?.ma_cluster||{};
-          const maReady=mc.all_rising===true && mc.above_all_mas===true;
-          return {
-            ...row,
-            action:{
-              ...row.action,
-              text:'🌱 底部型態已確認｜等盤中起漲',
-              detail:maReady
-                ? '底部型態已確認，MA10／MA20／MA60結構已轉強｜等盤中量價真正發動再升級'
-                : '底部型態已確認，但MA10／MA20／MA60尚未全部轉強｜只列等待發動，不當成已起漲'
-            }
-          };
-        });
-        queuedRows.forEach(row=>usedIds.add(rowId(row)));
-
-        const trackingRows = rows.filter(row => !usedIds.has(rowId(row)) && (row.action?.persistent_watch === true || row.item?.__pullback_watch));
-        trackingRows.forEach(row=>usedIds.add(rowId(row)));
-
-        // 黃燈只留下真的「尚差條件」者。盤中缺即時報價的 observe 可暫留；盤後已改歸補算中。
-        const nearRows = rows.filter(row => {
-          if (usedIds.has(rowId(row)) || !row.action) return false;
-          const phase=String(row.action.phase||'');
-          return phase === 'candidate' || (phase === 'observe' && (!afterClose || String(row.item?.as_of||'') === expectedSignalDataDate()));
-        });
-
-        // Existing mutually exclusive risk classification above is preserved.
-        // Below only changes visual grouping and sorting. No candidate is silently discarded.
-        // Keep original model score for display order; new learning weights paused.
-        const rowScore = row => Number(row?.item?.score||0);
-        const rowVolume = row => Number(row?.item?.metrics?.current_volume_lots||0);
-        const sortEntryVisual = arr => [...arr].sort((a,b)=>
-          rowScore(b)-rowScore(a) ||
-          Number(b?.action?.rank||0)-Number(a?.action?.rank||0) ||
-          rowVolume(b)-rowVolume(a) ||
-          String(b?.item?.scanned_at||'').localeCompare(String(a?.item?.scanned_at||'')));
-        const safeWatch = [
-          ...earlyRows,...starterRows,...completedRows,
-          ...queuedRows,...trackingRows,...nearRows,...recalcRows
-        ];
-        const visuallyStrong = row => {
-          // Valid intraday risk and existing entry guards outrank yesterday's score.
-          if(row.action?.stale_model===true || row.action?.candle_guard===true
-             || row.action?.live_selloff===true || row.action?.phase==='blocked'
-             || newEntryRiskGate(row.item,row.quote))return false;
-          const m=row.item?.metrics||{},mc=m.ma_cluster||{};
-          const close=Number(m.close),ma20=Number(m.ma20),pos=Number(m.position_1y_pct);
-          const k=Number(m.daily_k),lots=Number(m.current_volume_lots);
-          return row.action?.active_launch_fallback!==true &&
-            String(row.item?.as_of||'')===expectedSignalDataDate() && Number(row.item?.score)>=75 && lots>=1000 &&
-            mc.all_rising===true && mc.above_all_mas===true &&
-            close>0 && ma20>0 && close>=ma20 && (close/ma20-1)*100<=5 &&
-            Number.isFinite(pos)&&pos<80 && Number.isFinite(k)&&k<=80;
+        const market=taipeiMarketState(),afterClose=market.weekday&&market.totalMinutes>=810;
+        const expected=expectedSignalDataDate();
+        const byRank = a=>[...a].sort((x,y)=>
+          Number(y.item?.score||0)-Number(x.item?.score||0)
+          ||Number(y.action?.rank||0)-Number(x.action?.rank||0)
+          ||Number(y.item?.metrics?.current_volume_lots||0)-Number(x.item?.metrics?.current_volume_lots||0)
+          ||String(y.item?.scanned_at||'').localeCompare(String(x.item?.scanned_at||'')));
+        const b={blocked:[],weak:[],high:[],focus:[],signal:[],eod:[],
+          queued:[],wait:[],recalc:[]};
+        const safeRow=(row,a)=>({...row,action:{...(row.action||{}),...a,buyable:false,trialable:false}});
+        const visualReady=row=>{
+          const m=row.item?.metrics||{},mc=m.ma_cluster||{},close=Number(m.close);
+          const ma20=Number(m.ma20),pos=Number(m.position_1y_pct),k=Number(m.daily_k);
+          return row.action?.active_launch_fallback!==true
+            &&Number(row.item?.score)>=75&&Number(m.current_volume_lots)>=1000
+            &&Number(m.avg_volume_20_lots)>=500
+            &&mc.all_rising===true&&mc.above_all_mas===true
+            &&close>0&&ma20>0&&close>=ma20&&(close/ma20-1)*100<=5
+            &&Number.isFinite(pos)&&pos<80&&Number.isFinite(k)&&k<=80;
         };
-        const focusRows=sortEntryVisual(safeWatch.filter(row=>!inRows(recalcRows,row)&&visuallyStrong(row))).slice(0,8);
-        const focusIds=new Set(focusRows.map(rowId));
-        // The top-eight cap is display-only. An existing S-model entry/launch signal
-        // must not become a yellow "waiting" stock simply because it ranks ninth.
-        // Off-hours actions remain observational; these are NOT newly issued buy signals.
-        const signalSourceIds=new Set([...earlyRows,...starterRows,...completedRows].map(rowId));
-        const hasExistingEntrySignal=row=>
-          String(row?.item?.as_of||'')===expectedSignalDataDate()
-          && row?.action?.stale_model!==true
-          && row?.action?.candle_guard!==true
-          && row?.action?.active_launch_fallback!==true
-          && row?.action?.live_selloff!==true
-          && !newEntryRiskGate(row.item,row.quote)
-          && (signalSourceIds.has(rowId(row))
-            || ['pre','breakout','add'].includes(String(row?.action?.key||'')));
-        const signalRows=sortEntryVisual(safeWatch.filter(row=>
-          !focusIds.has(rowId(row)) && hasExistingEntrySignal(row)));
-        const signalIds=new Set(signalRows.map(rowId));
-        // Completed EOD starter/ACTIVE/formal_candidate is a TRACKING state, not
-        // a trialable/formal buy. Keep it in a separate visible bucket after close
-        // instead of losing it in the generic waiting/recalc section.
-        const eodTrackRows=sortEntryVisual(safeWatch.filter(row=>{
-          if(focusIds.has(rowId(row))||signalIds.has(rowId(row)))return false;
-          if(String(row.item?.as_of||'')!==expectedSignalDataDate()||row.action?.stale_model===true)return false;
-          const m=row.item?.metrics||{},ent=String(m.trade_lifecycle?.entry?.state||'');
-          return ['ACTIVE','ENTRY'].includes(modelLaunchPhase(row.item));
-        }));
-        const eodTrackIds=new Set(eodTrackRows.map(rowId));
-        const separateRows=list=>sortEntryVisual(list.filter(row=>
-          !focusIds.has(rowId(row)) && !signalIds.has(rowId(row)) && !eodTrackIds.has(rowId(row))));
-        const queuedDisplayRows=separateRows(queuedRows);
-        const recalcDisplayRows=separateRows(recalcRows);
-        const separateIds=new Set([...queuedDisplayRows,...recalcDisplayRows].map(rowId));
-        const waitRows=sortEntryVisual(safeWatch.filter(row=>
-          !focusIds.has(rowId(row)) && !signalIds.has(rowId(row)) && !eodTrackIds.has(rowId(row)) && !separateIds.has(rowId(row))));
-        const pullbackRows=sortEntryVisual(highRows);
-        const avoidRows=sortEntryVisual([...blockedRows,...weakeningRows]);
-        const displayedTotal=focusRows.length+signalRows.length+eodTrackRows.length+queuedDisplayRows.length+
-          recalcDisplayRows.length+waitRows.length+pullbackRows.length+avoidRows.length;
+        const assign=row=>{
+          const item=row.item||{},m=item.metrics||{},a=row.action||{};
+          const date=String(item.as_of||''),q=validTodayQuote(row.quote)?row.quote:null;
+          row={...row,quote:q};
+          // Old model never becomes a new launch, high-priority, or risk assessment.
+          if(date!==expected||a.stale_model===true){
+            const old={key:'wait',phase:'observe',stale_model:true,className:'wait',
+              text:'⚪ 舊模型｜僅供觀察',
+              detail:'模型 '+(date||'日期不明')+'｜應為 '+expected+'；需補算，不得視為新買點'};
+            b[afterClose?'recalc':'wait'].push(safeRow(row,{
+              ...old,text:afterClose?'⚡ 舊模型待補算｜僅觀察':old.text}));
+            return;
+          }
+          const risk=newEntryRiskGate(item,q),detail=String(a.text||'')+'｜'+String(a.detail||'');
+          if(risk?.kind==='hard'||a.phase==='blocked'){
+            b.blocked.push(safeRow(row,{...(risk?.kind==='hard'?risk:a),
+              phase:'blocked',text:risk?.kind==='hard'?risk.text:(a.text||'🔴 結構風險｜暫不新買')}));
+            return;
+          }
+          const g=m.entry_candle_guard||{};
+          const weak=g.weak_after_breakout===true||detail.includes('明顯轉弱')
+            ||detail.includes('跌破支撐')
+            ||(detail.includes('均線／價格結構未通過')&&m.bottom_start?.confirmed!==true);
+          if(risk?.kind==='momentum'||weak){
+            const warning=risk?.kind==='momentum'?risk:{
+              text:'🟠 轉弱／回踩觀察',
+              detail:'短線結構轉弱，先避開新買，等待價格站回支撐'};
+            b.weak.push(safeRow(row,{...warning,phase:'observe'}));return;
+          }
+          const price=Number(q?.price??m.close),ma20=Number(m.ma20);
+          const gap=price>0&&ma20>0?(price/ma20-1)*100:null;
+          const pos=Number(m.position_1y_pct),k=Number(m.daily_k),d=Number(m.daily_d);
+          const high=(Number.isFinite(pos)&&pos>=85)||(gap!=null&&gap>5)
+            ||(Number.isFinite(k)&&k>80)
+            ||(item.cautions||[]).some(x=>String(x).includes('日KD偏高'))
+            ||detail.includes('位置過高')||risk?.kind==='position';
+          if(high){
+            const reasons=[];
+            if(Number.isFinite(pos)&&pos>=85)reasons.push('1年位階 '+num(pos,1)+'%');
+            if(gap!=null&&gap>5)reasons.push('距MA20 +'+num(gap,1)+'%（5%上限）');
+            if(Number.isFinite(k)&&k>80)reasons.push('KD K '+num(k,1)+(Number.isFinite(d)?'／D '+num(d,1):''));
+            b.high.push(safeRow(row,{text:'🔵 位置偏高｜等回踩',
+              detail:(reasons.join('｜')||'位置風險')+'｜不追價，等回踩確認'}));
+            return;
+          }
+          if(a.phase==='final_wait'){
+            b.recalc.push(safeRow(row,{text:'⚡ 收盤資料待補算',detail:a.detail||'更新前不列買點'}));return;
+          }
+          if(a.candle_guard===true){
+            b.wait.push(safeRow(row,{phase:'observe',text:a.text||'🟡 K棒條件未齊｜先觀察'}));return;
+          }
+          const lifecycle=modelLaunchPhase(item);
+          // An explicitly confirmed base can be watched even before all three MAs turn.
+          if(m.bottom_start?.confirmed===true&&!['ACTIVE','ENTRY'].includes(lifecycle)){
+            const mc=m.ma_cluster||{},ready=mc.all_rising===true&&mc.above_all_mas===true;
+            b.queued.push(safeRow(row,{
+              text:'🌱 底部已成形｜等發動',
+              detail:ready?'底部型態已確認，仍等當日量價與原風控確認'
+                :'底部型態已確認，但MA10／20／60尚未全部轉強；不可試單'}));return;
+          }
+          if(risk){
+            b.wait.push(safeRow(row,{...risk,phase:'observe',
+              text:risk.text||'🟡 條件未齊｜先觀察'}));return;
+          }
+          // Fresh current-day prints beneath any required MA cannot be new entries.
+          const mas=[Number(m.ma10),Number(m.ma20),Number(m.ma60)];
+          if(q&&mas.every(v=>Number.isFinite(v)&&v>0)&&price<Math.max(...mas)){
+            b.wait.push(safeRow(row,{key:'wait',phase:'observe',text:'🟡 今日均線尚未站穩｜停止試單',
+              detail:'當日有效成交 '+num(price,2)+' 低於必要短中期均線；站回MA10／20／60後重新核對'}));
+            return;
+          }
+          const phase=String(a.phase||''),key=String(a.key||'');
+          const signal=['pre','breakout','add'].includes(key)
+            ||a.intraday_early_launch===true||a.intraday_early_watch===true
+            ||['starter','trial','confirmed'].includes(phase);
+          if(signal&&a.active_launch_fallback!==true){
+            b[visualReady(row)?'focus':'signal'].push(row);return;
+          }
+          if(['ACTIVE','ENTRY'].includes(lifecycle)){
+            b.eod.push(row);return;
+          }
+          b.wait.push(row);
+        };
+        for(const row of rows)assign(row);
+        const blockedRows=byRank(b.blocked),weakeningRows=byRank(b.weak);
+        const highRows=byRank(b.high),recalcRows=byRank(b.recalc);
+        const queuedRows=byRank(b.queued),trackingRows=[];
+        const allSignal=[...b.focus,...b.signal];
+        const earlyRows=byRank(allSignal.filter(row=>
+          row.action?.intraday_early_launch===true||row.action?.intraday_early_watch===true));
+        const starterRows=byRank(allSignal.filter(row=>
+          row.action?.phase==='starter'||row.action?.phase==='trial'));
+        const completedRows=byRank(allSignal.filter(row=>row.action?.phase==='confirmed'));
+        const nearRows=byRank(b.wait);
+        const focusRows=byRank(b.focus).slice(0,8);
+        const signalRows=byRank([...byRank(b.focus).slice(8),...b.signal]);
+        const eodTrackRows=byRank(b.eod);
+        const queuedDisplayRows=queuedRows,recalcDisplayRows=recalcRows;
+        const waitRows=nearRows,pullbackRows=highRows;
+        const avoidRows=byRank([...blockedRows,...weakeningRows]);
+        const displayedTotal=focusRows.length+signalRows.length+eodTrackRows.length
+          +queuedDisplayRows.length+recalcDisplayRows.length+waitRows.length
+          +pullbackRows.length+avoidRows.length;
         const banner=`<div class="entry-list-overview" data-stable-key="entry-overview">
           <strong>🎯 進場雷達｜${displayedTotal} 檔追蹤</strong>
-          <span>🟢 V5盤後確認且未觸發風控 ${rows.filter(row=>String(row.item?.as_of||'')===expectedSignalDataDate()&&row.item?.metrics?.v5?.entry_confirmed===true&&!row.action?.candle_guard&&!newEntryRiskGate(row.item,row.quote)).length}　⭐ 優先 ${focusRows.length}　📋 已起漲追蹤 ${eodTrackRows.length}　🟠 進場待核對 ${signalRows.length}　🌱 等發動 ${queuedDisplayRows.length}　🟡 條件未齊 ${waitRows.length}　⚡ 待補算 ${recalcDisplayRows.length}　🔵 等回踩 ${pullbackRows.length}　🔴 風險避開 ${avoidRows.length}</span>
+          <span>🟢 V5候選且通過分類風控 ${[...focusRows,...signalRows].filter(row=>row.item?.metrics?.v5?.entry_confirmed===true).length}　⭐ 優先 ${focusRows.length}　📋 已起漲追蹤 ${eodTrackRows.length}　🟠 進場待核對 ${signalRows.length}　🌱 等發動 ${queuedDisplayRows.length}　🟡 條件未齊 ${waitRows.length}　⚡ 待補算 ${recalcDisplayRows.length}　🔵 等回踩 ${pullbackRows.length}　🔴 風險避開 ${avoidRows.length}</span>
           <small>基準交易日 ${esc(expectedSignalDataDate())}｜舊模型僅觀察、不列新買點｜非盤中即時買進指令｜點股票名稱展開資料${staleRows.length?'｜另有 '+staleRows.length+' 檔過期快照未列入':''}</small>
         </div>`;
         const outHtml = banner+
