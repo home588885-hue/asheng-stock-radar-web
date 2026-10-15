@@ -3485,31 +3485,34 @@ h1 {
             b.wait.push(safeRow(row,{phase:'observe',text:a.text||'🟡 K棒條件未齊｜先觀察'}));return;
           }
           const lifecycle=modelLaunchPhase(item);
-          // An explicitly confirmed base can be watched even before all three MAs turn.
-          if(m.bottom_start?.confirmed===true&&!['ACTIVE','ENTRY'].includes(lifecycle)){
-            const mc=m.ma_cluster||{},ready=mc.all_rising===true&&mc.above_all_mas===true;
-            b.queued.push(safeRow(row,{
-              text:'🌱 底部已成形｜等發動',
-              detail:ready?'底部型態已確認，仍等當日量價與原風控確認'
-                :'底部型態已確認，但MA10／20／60尚未全部轉強；不可試單'}));return;
-          }
+          // An incomplete or unconfirmed entry gate outranks a historical base flag.
           if(risk){
             b.wait.push(safeRow(row,{...risk,phase:'observe',
               text:risk.text||'🟡 條件未齊｜先觀察'}));return;
           }
-          // Fresh current-day prints beneath any required MA cannot be new entries.
+          // Today's verified price must hold the original three required MAs.
           const mas=[Number(m.ma10),Number(m.ma20),Number(m.ma60)];
           if(q&&mas.every(v=>Number.isFinite(v)&&v>0)&&price<Math.max(...mas)){
             b.wait.push(safeRow(row,{key:'wait',phase:'observe',text:'🟡 今日均線尚未站穩｜停止試單',
-              detail:'當日有效成交 '+num(price,2)+' 低於必要短中期均線；站回MA10／20／60後重新核對'}));
+              detail:'當日有效成交 '+num(price,2)+' 低於必要均線；站回MA10／20／60再核對'}));
             return;
           }
           const phase=String(a.phase||''),key=String(a.key||'');
           const signal=['pre','breakout','add'].includes(key)
             ||a.intraday_early_launch===true||a.intraday_early_watch===true
             ||['starter','trial','confirmed'].includes(phase);
-          if(signal&&a.active_launch_fallback!==true){
+          // Confirmed base remains waiting until genuine intraday launch appears.
+          const prelaunchBase=m.bottom_start?.confirmed===true&&!['ACTIVE','ENTRY'].includes(lifecycle);
+          const liveLaunch=!!q&&(a.intraday_early_launch===true||a.intraday_early_watch===true||key==='breakout');
+          if(signal&&a.active_launch_fallback!==true&&(!prelaunchBase||liveLaunch)){
             b[visualReady(row)?'focus':'signal'].push(row);return;
+          }
+          if(prelaunchBase){
+            const mc=m.ma_cluster||{},ready=mc.all_rising===true&&mc.above_all_mas===true;
+            b.queued.push(safeRow(row,{
+              text:'🌱 底部已成形｜等發動',
+              detail:ready?'底部型態已確認，仍等當日量價與原風控確認'
+                :'底部已成形，但MA10／20／60尚未全部轉強；不可試單'}));return;
           }
           if(['ACTIVE','ENTRY'].includes(lifecycle)){
             b.eod.push(row);return;
