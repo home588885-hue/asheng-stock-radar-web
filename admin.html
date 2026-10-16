@@ -4014,14 +4014,21 @@ h1 {
       // Cross-day tracking is a separate audit shelf, not a fresh candidate or
       // an automatic orange/green buy signal. Watches are stored in S per portfolio.
       const entryPersistedTrackingHtml = () => {
-        const active=[...pullbackWatch.values()]
-          .filter(w=>w.active===true&&!holdings.has(String(w.stock_id||'')))
-          .sort((a,b)=>String(b.trial_last_as_of||b.first_seen_at||'')
-            .localeCompare(String(a.trial_last_as_of||a.first_seen_at||'')));
+        const tracked=[...pullbackWatch.values()]
+          .filter(w=>w.active===true&&!holdings.has(String(w.stock_id||'')));
+        const active=tracked.filter(w=>{
+          const item=pullbackWatchSnapshots.get(String(w.stock_id||''));
+          return !!item&&pullbackWatchState(item).active===true;
+        }).sort((a,b)=>String(b.trial_last_as_of||b.first_seen_at||'')
+          .localeCompare(String(a.trial_last_as_of||a.first_seen_at||'')));
+        const pending=tracked.filter(w=>{
+          const item=pullbackWatchSnapshots.get(String(w.stock_id||''));
+          return !item||pullbackWatchState(item).unverified===true;
+        });
         const archived=(pullbackWatchArchived||[])
           .filter(w=>w.active===false&&w.state==='invalid'
             &&!holdings.has(String(w.stock_id||'')));
-        if(!active.length&&!archived.length)return '';
+        if(!active.length&&!archived.length&&!pending.length)return '';
         const trackCard=(w,invalid=false)=>{
           const id=String(w.stock_id||'');
           const item=pullbackWatchSnapshots.get(id)||null;
@@ -4062,11 +4069,16 @@ h1 {
         return '<section class="entry-bucket entry-bucket-persistent" data-stable-key="entry-crossday-watch">'
           +'<details class="entry-bucket-fold" data-entry-fold="persistent" open>'
           +'<summary class="entry-bucket-head"><span class="entry-bucket-headline">'
-          +'<b>📌 跨日保留｜曾可試單、發動中、回踩追蹤 '+active.length+' 檔</b>'
-          +'<small>每天更新仍可從此處查看；舊訊號只記錄歷史，不代表今天仍可買</small>'
+          +'<b>📌 有效跨日追蹤 '+active.length+' 檔｜小量、回踩、再轉強</b>'
+          +'<small>每日新版完整日K重新確認，不符合便退出追蹤，不佔位置</small>'
           +'</span></summary><div style="padding:10px">'+normal
-          +(active.length>120?'<small>其餘 '+(active.length-120)+' 檔已保存，待縮小顯示範圍</small>':'')
+          +(active.length>120?'<small>另有 '+(active.length-120)+' 檔符合，首屏限120檔</small>':'')
           +'</div></details>'
+          +(pending.length?'<details class="entry-bucket-fold" data-entry-fold="watch-pending">'
+            +'<summary class="entry-bucket-head"><span class="entry-bucket-headline">'
+            +'<b>⚪ 待新版補算 '+pending.length+' 檔（不佔有效追蹤）</b>'
+            +'<small>尚無新日K不能假淘汰；補算符合才重回有效名單</small>'
+            +'</span></summary></details>':'')
           +(archived.length?'<details class="entry-bucket-fold" data-entry-fold="invalid-history">'
             +'<summary class="entry-bucket-head"><span class="entry-bucket-headline"><b>🔴 最近失效追蹤 '+archived.length+' 檔</b>'
             +'<small>保留原因供複盤，不會當成買進候選</small></span></summary>'
