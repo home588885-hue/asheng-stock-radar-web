@@ -3380,6 +3380,19 @@ h1 {
         if(entryRisk)return entryRisk;
         const guard=entryCandleGuard(item,quote);
         if(guard)return guard;
+        // Keep a verified breakout first bar visible, even when V5 has not
+        // approved a formal entry; don't rewrite an existing V5 official signal.
+        if(boxFirstBreakoutReady(item)&&!['v5buy','highwin'].includes(String(base?.className||''))){
+          const top=Number(item.metrics.box_strategy.anchor.top);
+          const bottom=Number(item.metrics.box_strategy.anchor.bottom);
+          return {key:'box_first_eod_watch',rank:120,className:'scout',
+            text:'📦 箱型突破第一根｜模型日已確認，非即時買點',
+            detail:'模型日 '+String(item.as_of)+'｜突破20日箱頂 '+num(top,2)
+              +'｜固定箱底 '+num(bottom,2)
+              +'｜量價／法人籌碼與原風控通過，隔日須核對最新成交；'
+              +'這是該模型日的首根，非今日盤中才突破',
+            keep_candidate:true,active_launch_fallback:false,buyable:false,trialable:false};
+        }
         const bottomConfirmed=item?.metrics?.bottom_start?.confirmed===true;
         const modelPhase=modelLaunchPhase(item);
         // Keep locked risk/guard warnings above any lifecycle display label.
@@ -4099,29 +4112,37 @@ h1 {
           &&row.action?.trialable===true&&quoteFreshForTrial(row.quote)));
         const completedRows=byRank(allSignal.filter(row=>row.action?.phase==='confirmed'
           &&row.action?.buyable===true&&formalEntryValidation.enabled&&quoteFreshForTrial(row.quote)));
-        // One stock appears in exactly ONE category; the actionable lists get top priority.
+        // One stock appears in exactly ONE category; live actionable signals
+        // retain their priority. Completed-EOD first bars get their own section.
         const actionableIds=new Set([...starterRows,...completedRows].map(row=>rowId(row)));
-        const passiveFocus=byRank(b.focus.filter(row=>!actionableIds.has(rowId(row))));
-        const passiveSignal=byRank(b.signal.filter(row=>!actionableIds.has(rowId(row))));
+        const boxFirstRows=byRank([...b.focus,...b.signal,...b.eod]
+          .filter(row=>!actionableIds.has(rowId(row))&&boxFirstBreakoutReady(row.item)));
+        const boxFirstIds=new Set(boxFirstRows.map(row=>rowId(row)));
+        const passiveFocus=byRank(b.focus.filter(row=>!actionableIds.has(rowId(row))
+          &&!boxFirstIds.has(rowId(row))));
+        const passiveSignal=byRank(b.signal.filter(row=>!actionableIds.has(rowId(row))
+          &&!boxFirstIds.has(rowId(row))));
         const nearRows=byRank(b.wait);
         const focusRows=passiveFocus.slice(0,8);
         const signalRows=byRank([...passiveFocus.slice(8),...passiveSignal]);
-        const eodTrackRows=byRank(b.eod),reclaimRows=byRank(b.reclaim);
+        const eodTrackRows=byRank(b.eod.filter(row=>!boxFirstIds.has(rowId(row)))),
+          reclaimRows=byRank(b.reclaim);
         const queuedDisplayRows=queuedRows,recalcDisplayRows=recalcRows;
         const waitRows=nearRows,pullbackRows=highRows;
         const avoidRows=byRank([...blockedRows,...weakeningRows]);
-        const displayedTotal=starterRows.length+completedRows.length
+        const displayedTotal=starterRows.length+completedRows.length+boxFirstRows.length
           +focusRows.length+signalRows.length+eodTrackRows.length+reclaimRows.length
           +queuedDisplayRows.length+recalcDisplayRows.length+waitRows.length
           +pullbackRows.length+avoidRows.length;
         const banner=`<div class="entry-list-overview" data-stable-key="entry-overview">
           <strong>🎯 進場雷達｜${displayedTotal} 檔追蹤</strong>
-          <span>🟠 有效盤中試單 ${starterRows.length}　🟢 驗證通過正式買點 ${completedRows.length}　⭐ 優先觀察 ${focusRows.length}　📋 已起漲追蹤 ${eodTrackRows.length}　🟡 MA10／20回踩確認 ${reclaimRows.length}　🟠 待核對 ${signalRows.length}　🌱 等發動 ${queuedDisplayRows.length}　🟡 條件未齊 ${waitRows.length}　⚡ 待補算 ${recalcDisplayRows.length}　🔵 等回踩 ${pullbackRows.length}　🔴 風險避開 ${avoidRows.length}</span>
+          <span>🟠 有效盤中試單 ${starterRows.length}　🟢 驗證通過正式買點 ${completedRows.length}　📦 箱型第一根 ${boxFirstRows.length}　⭐ 優先觀察 ${focusRows.length}　📋 已起漲追蹤 ${eodTrackRows.length}　🟡 MA10／20回踩確認 ${reclaimRows.length}　🟠 待核對 ${signalRows.length}　🌱 等發動 ${queuedDisplayRows.length}　🟡 條件未齊 ${waitRows.length}　⚡ 待補算 ${recalcDisplayRows.length}　🔵 等回踩 ${pullbackRows.length}　🔴 風險避開 ${avoidRows.length}</span>
           <small>模型日 ${esc(expectedSignalDataDate())}｜V5正式進場：${formalEntryValidation.enabled?'歷史驗證已通過':'暫停（'+esc(formalEntryValidation.reason)+'）'}｜⏱12分鐘存活僅於12:50～13:20、進場雷達在前景且有橘色試單時沿用C報價取樣；非逐筆、不能補算，通過也不會升級正式買點｜點股票展開未達條件${staleRows.length?'｜另有 '+staleRows.length+' 檔過期快照未列入':''}</small>
         </div>`;
         const outHtml = banner+
           entryBucketHtml('formal','🟢 正式買點｜V5驗證與有效成交完成','必須同時符合原模型、歷史驗證及當日風控；不代表保證獲利',completedRows,{open:true,tone:'focus',preview:6})+
           entryBucketHtml('trial','🟠 可小量試單｜盤中有效成交確認','5分鐘內成交且既有起漲條件與風控通過；試單不等於V5正式買點',starterRows,{open:true,tone:'focus',preview:6})+
+          entryBucketHtml('box-first','📦 山川20日箱型突破第一根｜優先追蹤','模型日第一根已突破且量價、法人籌碼及原風控符合；仍是盤後追蹤，須核對新交易日報價，非🟢正式買點',boxFirstRows,{open:true,tone:'focus',preview:6})+
           entryBucketHtml('reclaim','🟡 MA10／MA20 回踩後再轉強｜非買點','區分尚未收復與當日有效成交已收復；正式策略回測未通過前保持觀察，不允許用此分類直接下單',reclaimRows,{open:true,tone:'near',preview:6})+
           entryBucketHtml('focus','⭐ 優先查看','原模型條件相對成熟，仍須核對當日行情',focusRows,{open:true,tone:'focus',preview:6})+
           entryBucketHtml('signal','🟠 進場訊號｜先核對','已有模型追蹤或突破訊號，仍須確認今日量價與風險，並非直接買進指令',signalRows,{open:!focusRows.length,tone:'focus',preview:5})+
@@ -4133,7 +4154,7 @@ h1 {
           entryBucketHtml('avoid','🔴 風險警戒｜先避開','已觸發風險或轉弱條件，不列買進候選',avoidRows,{open:!focusRows.length&&!signalRows.length&&!queuedDisplayRows.length&&!waitRows.length&&!pullbackRows.length,tone:'blocked',preview:5});
         updateBuySignalNotice([...completedRows,...starterRows]);
         stableListRender(outHtml,{quoteUpdate});
-        return { earlyRows, starterRows, completedRows, recalcRows, blockedRows, highRows,
+        return { earlyRows, starterRows, completedRows, boxFirstRows, recalcRows, blockedRows, highRows,
           weakeningRows, queuedRows, nearRows, trackingRows, staleRows,
           focusRows, signalRows, eodTrackRows, reclaimRows, queuedDisplayRows, recalcDisplayRows,
           waitRows, pullbackRows, avoidRows, displayedTotal };
@@ -6372,6 +6393,31 @@ h1 {
           &&highest/lowest<=1.08&&ma20>0&&close/ma20<=1.04
           &&avg>=500&&pos>=0&&pos<=80&&k>=30&&k<=85;
       };
+      // Shan-Chuan first confirmed 20-session box breakout. Completed EOD only:
+      // prioritize display, NEVER bypass original V5/MA/risk rules or trigger an order.
+      const boxFirstBreakoutReady = item => {
+        const m=item?.metrics||{},b=m.box_strategy||{},anchor=b.anchor||{},g=m.entry_candle_guard||{};
+        if(String(item?.as_of||'')!==expectedSignalDataDate()
+          ||b.breakout_today!==true
+          ||String(anchor.breakout_date||'')!==String(item?.as_of||''))return false;
+        const top=Number(anchor.top),bottom=Number(anchor.bottom);
+        const close=Number(m.close),ma20=Number(m.ma20);
+        const volume=Number(m.current_volume_lots),avg=Number(m.avg_volume_20_lots);
+        const position=Number(m.position_1y_pct),chip=m.chip||{},inst=chip.institutional||{};
+        const mas=[Number(m.ma10),ma20,Number(m.ma60)];
+        const ratio=avg>0?volume/avg:0;
+        return top>bottom&&bottom>0&&close>top*1.003
+          &&mas.every(x=>Number.isFinite(x)&&x>0&&close>=x)
+          &&ma20>0&&close/ma20<=1.05
+          &&m.ma_cluster?.all_rising===true
+          &&Number.isFinite(position)&&position>=0&&position<=45
+          &&volume>=1000&&avg>=500&&ratio>=1.2&&ratio<=2.5
+          &&Number(chip.coverage_modules)>=2&&Number(chip.score)>=60
+          &&(Number(inst.net_5d||0)>0||Number(inst.positive_days_5d||0)>=3)
+          &&g.main_bull!==false&&g.weak_after_breakout!==true
+          &&g.kd_high_weak!==true&&g.macd_weak!==true
+          &&m.holding_management?.strong_breakdown!==true;
+      };
       const buildEntryPool = (v5Picks = [], launchPicks = []) => {
         // UI exclusivity: exclude only stocks actually supplied to the visible LAUNCH
         // list; never hide a candidate absent from that source or change S selection.
@@ -6386,7 +6432,11 @@ h1 {
           if (!merged.has(key)) merged.set(key, item);
         });
         const rankItem = item => {
-          // Fill only a passive C-price observation slot; all trade gates remain downstream.
+          // A verified box first-bar ranks before follow-on/retest tracking.
+          // A prepared box remains an observation target until an actual breakout.
+          if(boxFirstBreakoutReady(item))return 160;
+          if(item?.metrics?.box_strategy?.prepared===true
+            &&String(item?.as_of||'')===expectedSignalDataDate())return 112;
           if (!isEntryRadarItem(item))
             return (item?.metrics?.box_strategy?.prepared===true
               ||item?.metrics?.box_strategy?.breakout_today===true
