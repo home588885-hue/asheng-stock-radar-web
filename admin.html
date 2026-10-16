@@ -1780,13 +1780,13 @@ h1 {
       // liveBasePicks (the actively displayed candidate pool). Preserve its
       // observed model in memory only, without any extra S/C requests.
       let searchedStockModelForManualTrade = null;
-      const LAUNCH_DATA_CACHE_KEY = 'asheng-launch-data-v2-fresh-only';
+      const LAUNCH_DATA_CACHE_KEY = 'asheng-launch-data-v3-unified-shanchuan';
       const readLaunchDataCache = () => {
         try {
           const cached = JSON.parse(localStorage.getItem(LAUNCH_DATA_CACHE_KEY) || 'null');
           if (!cached?.saved_at || !cached?.data || Date.now() - Number(cached.saved_at) > 20 * 60 * 1000) return null;
           if (!isLockedRulePayload(cached.data) || !Array.isArray(cached.data.picks) || !cached.data.picks.length) return null;
-          if(cached.data.quality_screen!=='2026-10-16-current-day-only-prelaunch-v2'
+          if(cached.data.quality_screen!=='2026-10-16-unified-shanchuan-generation-v3' || cached.data.candidate_generation!=='shanchuan-independent-v2'
             ||String(cached.data.progress?.latest_as_of||'')!==expectedSignalDataDate()
             ||cached.data.picks.some(item=>String(item?.as_of||'')!==expectedSignalDataDate()))return null;
           return cached.data;
@@ -1795,7 +1795,7 @@ h1 {
       const writeLaunchDataCache = data => {
         try {
           if (!data?.ok || !isLockedRulePayload(data) || !Array.isArray(data.picks) || !data.picks.length) return;
-          if(data.quality_screen!=='2026-10-16-current-day-only-prelaunch-v2'
+          if(data.quality_screen!=='2026-10-16-unified-shanchuan-generation-v3' || data.candidate_generation!=='shanchuan-independent-v2'
             ||String(data.progress?.latest_as_of||'')!==expectedSignalDataDate()
             ||data.picks.some(item=>String(item?.as_of||'')!==expectedSignalDataDate()))return;
           const compact = {
@@ -1807,13 +1807,14 @@ h1 {
             stage_counts:data.stage_counts || {},
             launch_counts:data.launch_counts || {},
             quality_screen:data.quality_screen || null,
+            candidate_generation:data.candidate_generation||null,
             quality_total:data.quality_total ?? null,
             picks:data.picks.slice(0,250)
           };
           localStorage.setItem(LAUNCH_DATA_CACHE_KEY, JSON.stringify({ saved_at:Date.now(), data:compact }));
         } catch (error) {}
       };
-      const ENTRY_POOL_CACHE_KEY = 'asheng-entry-pool-v9-fresh-only';
+      const ENTRY_POOL_CACHE_KEY = 'asheng-entry-pool-v10-unified-shanchuan';
       const readEntryPoolCache = () => {
         try {
           const cached = JSON.parse(localStorage.getItem(ENTRY_POOL_CACHE_KEY) || 'null');
@@ -3369,6 +3370,9 @@ h1 {
         const stockId=String(item?.stock_id||'');
         const expected=expectedSignalDataDate();
         const modelDay=String(item?.as_of||'');
+        if(!holdings.has(stockId)&&modelDay===expected&&!unifiedRadarGeneration(item))
+          return {key:'wait',rank:2,className:'wait',stale_model:true,
+            text:'⚪ 舊模型版本｜待新版重新掃描',detail:'不可把同日期的舊訊號當成新版買點'};
         if(!holdings.has(stockId)&&modelDay!==expected){
           return {key:'wait',rank:2,className:'wait',text:'⚪ 舊模型｜僅供觀察',
             detail:'模型 '+(modelDay||'日期不明')+'｜最新有效交易日 '+expected+'；不得當成今日新買點，等完整模型補齊',
@@ -3970,7 +3974,8 @@ h1 {
       };
       const renderEntrySections = (rows,{quoteUpdate=false}={}) => {
         rows=[...new Map((rows||[]).map(row=>[String(row?.item?.stock_id||''),row])).values()]
-          .filter(row=>row?.item?.stock_id && !holdings.has(String(row.item.stock_id)));
+          .filter(row=>row?.item?.stock_id && !holdings.has(String(row.item.stock_id))
+            &&unifiedRadarGeneration(row.item));
 
         // 過期模型不進進場雷達。以本批最新模型日為基準，超過5個日曆日直接排除，
         // 避免下市／停牌／舊資料被誤當成現在的買點候選。
@@ -4064,6 +4069,14 @@ h1 {
           }
           const lifecycle=modelLaunchPhase(item);
           // An incomplete or unconfirmed entry gate outranks a historical base flag.
+          // First observed bar is not suppressed merely because MA60 is not rising.
+          if(boxFirstBreakoutReady(item)){
+            b.focus.push(safeRow(row,{key:'box_first_eod_watch',phase:'observe',
+              rank:130,className:'scout',
+              text:'📦 山川箱型第一根｜MA/V5待確認（非買點）',
+              detail:'模型日 '+String(item.as_of)+'｜原MA10/20/60、V5及風控決定真正買進資格'}));
+            return;
+          }
           if(risk){
             b.wait.push(safeRow(row,{...risk,phase:'observe',
               text:risk.text||'🟡 條件未齊｜先觀察'}));return;
@@ -4188,17 +4201,27 @@ h1 {
       };
       // Shared visual lifecycle across launch, entry, and stock cards.
       // No days_since_first means UNKNOWN, not day zero (Number(null) == 0).
+      // Shared epoch: a fresh date may still contain a previous analyzer version.
+      const unifiedRadarGeneration=item=>{
+        const b=item?.metrics?.box_strategy||{},d=b.discovery||{};
+        return b.model_generation==='shanchuan-independent-v2'
+          &&d.version==='2026-10-16-shanchuan-independent-v2'
+          &&String(d.as_of||'')===String(item?.as_of||'')
+          &&item?.metrics?.shanchuan_v2?.mother_child?.lifecycle!=null;
+      };
       const modelLaunchPhase = item => {
         const m=item?.metrics||{},mc=m.ma_cluster||{},seq=m.launch_sequence||mc.launch_sequence||{};
         const entry=String(m?.trade_lifecycle?.entry?.state||'');
         const effective=String(m?.scan_intelligence?.effective_lifecycle||'');
         const rawDays=seq.days_since_first;
         const days=rawDays==null||rawDays===''?NaN:Number(rawDays);
-        // Shan-Chuan EOD box readiness is an ENTRY watch lifecycle, not a
-        // formal V5/green signal. Transport once, do not duplicate in LAUNCH.
-        if(String(item?.as_of||'')===expectedSignalDataDate()
-          &&(m.box_strategy?.prepared===true||m.box_strategy?.breakout_today===true))
-          return 'ENTRY';
+        // Independent Shan-Chuan discovery: ready box at LAUNCH; first bar at ENTRY.
+        // Original V5 buy and risk checks are unchanged.
+        const d=unifiedRadarGeneration(item)?m.box_strategy.discovery:{};
+        if(String(item?.as_of||'')===expectedSignalDataDate()&&d.first_bar_today===true)return 'ENTRY';
+        if(String(item?.as_of||'')===expectedSignalDataDate()&&d.ready_watch===true
+          &&m.v5?.entry_confirmed!==true&&effective!=='ENTRY'&&entry!=='formal_candidate')
+          return 'PRELAUNCH';
         if(m?.v5?.entry_confirmed===true||effective==='ENTRY'||entry==='formal_candidate')return 'ENTRY';
         if(effective==='ACTIVE'||entry==='starter'||m.first_breakout20===true||
           mc.breakout_detected_raw===true||mc.breakout_first_bar===true||
@@ -4221,9 +4244,19 @@ h1 {
         const expectedMs=expected ? Date.parse(expected+'T00:00:00Z') : NaN;
 
         // Previous-day PRELAUNCH history must not inflate today's list.
-        if(!expected||asOf!==expected){
+        if(!expected||asOf!==expected)
           return {keep:false,rank:0,className:'stale',label:'⚪ 舊模型｜不列今日發動前'};
-        }
+        if(!unifiedRadarGeneration(item))
+          return {keep:false,rank:0,className:'legacy',label:'⚪ 新版山川模型尚未重算'};
+        const d=m.box_strategy.discovery||{};
+        if(d.first_bar_today===true)
+          return {keep:false,rank:0,className:'box-promoted',label:'📦 山川第一根已轉進場雷達'};
+        const gap20=Number(m.ma20)>0?(Number(m.close)/Number(m.ma20)-1)*100:null;
+        if(d.ready_watch===true&&gap20!=null&&gap20<=5
+          &&m.entry_candle_guard?.weak_after_breakout!==true
+          &&m.holding_management?.strong_breakdown!==true)
+          return {keep:true,rank:145,className:'box-near-top',
+            label:'📦 山川箱型近壓力｜等第一根（非買點）'};
         // Original active-launch S predicate, now in prelaunch. Only presentation
         // order changes; stock model, holdings and trading rules are untouched.
         const preRisk=newEntryRiskGate(item);
@@ -4234,8 +4267,7 @@ h1 {
         if(preRisk?.kind==='hard') return {keep:false,rank:0,className:'blocked',label:'🔴 結構風險｜暫不新買'};
         // Route a verified fresh box watch exclusively into ENTRY tracking,
         // keeping the original MA/V5 formal-buy gates unchanged.
-        if(modelLaunchPhase(item)==='ENTRY'
-          &&(m.box_strategy?.prepared===true||m.box_strategy?.breakout_today===true))
+        if(modelLaunchPhase(item)==='ENTRY'&&d.first_bar_today===true)
           return {keep:false,rank:0,className:'box-promoted',
             label:'📦 箱型已進進場雷達｜待盤中量價'};
         // ACTIVE has already launched. Remove it from the LAUNCH display ONLY
@@ -5814,6 +5846,8 @@ h1 {
       const holdingMiniHtml = (item, quote = null) => {
         const id=String(item.stock_id||'');
         const safeQuote=bestTodayQuote(validTodayQuote(quote)?quote:null,id);
+        if(!unifiedRadarGeneration(item))
+          return holdingPlaceholderHtml(id,'新版山川模型待重算；持股、股數、成本保留，舊版不顯示買賣訊號。');
         return `<section class="holding-full-wrap" data-stock-id="${esc(id)}">${card(item,{quote:safeQuote})}</section>`;
       };
       const holdingPlaceholderHtml = (symbol, note = '完整模型載入中…', isError = false) => {
@@ -6395,28 +6429,16 @@ h1 {
       };
       // Shan-Chuan first confirmed 20-session box breakout. Completed EOD only:
       // prioritize display, NEVER bypass original V5/MA/risk rules or trigger an order.
-      const boxFirstBreakoutReady = item => {
-        const m=item?.metrics||{},b=m.box_strategy||{},anchor=b.anchor||{},g=m.entry_candle_guard||{};
-        if(String(item?.as_of||'')!==expectedSignalDataDate()
-          ||b.breakout_today!==true
-          ||String(anchor.breakout_date||'')!==String(item?.as_of||''))return false;
-        const top=Number(anchor.top),bottom=Number(anchor.bottom);
-        const close=Number(m.close),ma20=Number(m.ma20);
-        const volume=Number(m.current_volume_lots),avg=Number(m.avg_volume_20_lots);
-        const position=Number(m.position_1y_pct),chip=m.chip||{},inst=chip.institutional||{};
-        const mas=[Number(m.ma10),ma20,Number(m.ma60)];
-        const ratio=avg>0?volume/avg:0;
-        return top>bottom&&bottom>0&&close>top*1.003
-          &&mas.every(x=>Number.isFinite(x)&&x>0&&close>=x)
-          &&ma20>0&&close/ma20<=1.05
-          &&m.ma_cluster?.all_rising===true
-          &&Number.isFinite(position)&&position>=0&&position<=45
-          &&volume>=1000&&avg>=500&&ratio>=1.2&&ratio<=2.5
-          &&Number(chip.coverage_modules)>=2&&Number(chip.score)>=60
-          &&(Number(inst.net_5d||0)>0||Number(inst.positive_days_5d||0)>=3)
-          &&g.main_bull!==false&&g.weak_after_breakout!==true
-          &&g.kd_high_weak!==true&&g.macd_weak!==true
-          &&m.holding_management?.strong_breakdown!==true;
+      // Independent Shan-Chuan first-bar research discovery. NOT a buy gate.
+      const boxFirstBreakoutReady=item=>{
+        const m=item?.metrics||{},d=m.box_strategy?.discovery||{};
+        const c=Number(m.close),v=Number(m.current_volume_lots),avg=Number(m.avg_volume_20_lots);
+        const pos=Number(m.position_1y_pct),top=Number(d.top),bottom=Number(d.bottom);
+        return unifiedRadarGeneration(item)&&String(item?.as_of||'')===expectedSignalDataDate()
+          &&d.first_bar_today===true&&String(d.first_bar_date||'')===String(item.as_of)
+          &&top>bottom&&bottom>0&&c>top*1.003&&v>=1000&&avg>=500
+          &&Number(d.first_volume_ratio)>=1.2&&Number(d.first_volume_ratio)<=2.5
+          &&Number.isFinite(pos)&&pos>=0&&pos<=60;
       };
       const buildEntryPool = (v5Picks = [], launchPicks = []) => {
         // UI exclusivity: exclude only stocks actually supplied to the visible LAUNCH
@@ -6435,11 +6457,10 @@ h1 {
           // A verified box first-bar ranks before follow-on/retest tracking.
           // A prepared box remains an observation target until an actual breakout.
           if(boxFirstBreakoutReady(item))return 160;
-          if(item?.metrics?.box_strategy?.prepared===true
+          if(unifiedRadarGeneration(item)&&item?.metrics?.box_strategy?.discovery?.ready_watch===true
             &&String(item?.as_of||'')===expectedSignalDataDate())return 112;
           if (!isEntryRadarItem(item))
-            return (item?.metrics?.box_strategy?.prepared===true
-              ||item?.metrics?.box_strategy?.breakout_today===true
+            return (item?.metrics?.box_strategy?.discovery?.first_bar_today===true
               ||item?.metrics?.shanchuan_v2?.quality?.all_confirmed===true)
               ?82:(isNearMaTurnWatch(item)||maPullbackReclaimWatchState(item))?78:0;
           if (item?.metrics?.bottom_start?.confirmed === true) return 130;
@@ -6459,7 +6480,7 @@ h1 {
         };
         return [...merged.values()]
           .filter(item=>String(item?.as_of||'')===expectedSignalDataDate()
-            &&rankItem(item)>0&&!launchShownIds.has(String(item.stock_id||'')))
+            &&unifiedRadarGeneration(item)&&rankItem(item)>0&&!launchShownIds.has(String(item.stock_id||'')))
           .sort((a,b) => rankItem(b) - rankItem(a) || companyProfileState(b).rank - companyProfileState(a).rank)
           .slice(0, 60);
       };
@@ -6476,6 +6497,7 @@ h1 {
           if (settledItem.status !== 'fulfilled') return null;
           const value = settledItem.value;
           if (!value?.response?.ok || !value?.data?.ok || !isLockedRulePayload(value.data)) return null;
+          if(value.data.candidate_generation!=='shanchuan-independent-v2')return null;
           return value.data;
         };
         const v5Data=unwrap(settled[0]),launchData=unwrap(settled[1]);
@@ -6748,7 +6770,7 @@ h1 {
         // during the request or the user is scrolling when the fetch resolves.
         // Do not wait for today's C quotes or the live-price refresh loop.
         // This forced upgrade runs once per holdings load, preserving the stable stock anchors.
-        const baselineHtml = holdingOverviewHtml(symbols.length,items.length,items) + items.map(item => {
+        const baselineHtml = holdingOverviewHtml(symbols.length,items.filter(unifiedRadarGeneration).length,items.filter(unifiedRadarGeneration)) + items.map(item => {
           try { return holdingMiniHtml(item); }
           catch (error) {
             console.error('holding_model_card_render_failed',String(item?.stock_id||''),String(error));
@@ -6756,7 +6778,8 @@ h1 {
           }
         }).join('') + fallbackHtml;
         stableListRender(baselineHtml,{force:true});
-        const freshHoldingCount = items.filter(item => String(item.as_of||'') === expectedSignalDataDate()).length;
+        const freshHoldingCount = items.filter(item => String(item.as_of||'') === expectedSignalDataDate()
+          &&unifiedRadarGeneration(item)).length;
         $('#note').textContent = items.length
           ? '📌 已買進 '+symbols.length+' 檔｜已載入 '+items.length+' 檔盤後模型（最近有效日K '
             +expectedSignalDataDate()+'：'+freshHoldingCount+' 檔）｜今日成交價待 C 開盤後確認。'
@@ -6765,7 +6788,7 @@ h1 {
         const render = async () => {
           if (!holdingStillCurrent() || document.hidden || holdingQuoteRefreshing) return;
           if (!items.length || typeof window.getLiveQuotes !== 'function') {
-            stableListRender(holdingOverviewHtml(symbols.length,items.length,items)
+            stableListRender(holdingOverviewHtml(symbols.length,items.filter(unifiedRadarGeneration).length,items.filter(unifiedRadarGeneration))
               + items.map(item => holdingMiniHtml(item)).join('') + fallbackHtml);
             const freshCount = items.filter(item => String(item.as_of || '') === expectedSignalDataDate()).length;
             $('#note').textContent = `📌 已買進 ${symbols.length} 檔｜持股優先更新中｜模型 ${freshCount}/${items.length} 檔已到 ${expectedSignalDataDate()}。`;
@@ -6780,7 +6803,7 @@ h1 {
               : { ok:true,quotes:items.map(item => bestTodayQuote(null, item.stock_id)).filter(Boolean) };
             if (!payload?.ok) throw new Error('live_quote_failed');
             const quoteMap = new Map((payload.quotes || []).map(quote => [String(quote.stock_id || ''), quote]));
-            stableListRender(holdingOverviewHtml(symbols.length,items.length,items) + items.map(item => {
+            stableListRender(holdingOverviewHtml(symbols.length,items.filter(unifiedRadarGeneration).length,items.filter(unifiedRadarGeneration)) + items.map(item => {
               const quote = quoteMap.get(String(item.stock_id)) || null;
               if (quote) recordHoldingCloseWatch(item, quote);
               return holdingMiniHtml(item, quote);
@@ -6798,7 +6821,7 @@ h1 {
               +(absent.length?'｜未取得 '+absent.join('、'):'')
               +'｜約3分鐘取樣｜日K模型 '+freshCount+'/'+items.length+' 檔｜存活只算有效成交樣本';
           } catch (error) {
-            stableListRender(holdingOverviewHtml(symbols.length,items.length,items)
+            stableListRender(holdingOverviewHtml(symbols.length,items.filter(unifiedRadarGeneration).length,items.filter(unifiedRadarGeneration))
               + items.map(item => holdingMiniHtml(item)).join('') + fallbackHtml);
             $('#note').textContent = `📌 持股 ${symbols.length} 檔已保留｜收盤前行情暫時未回；不補抓全天盤中報價，晚上9點再更新完整模型。`;
           } finally {
