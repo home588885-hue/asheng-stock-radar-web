@@ -2537,6 +2537,51 @@ h1 {
       // Provisional first-tranche setup: an EOD MA10 pullback needs the NEXT
       // session's actual trade reclaiming yesterday's open. Display only,
       // not a new S signal, an automatic order or a green formal buy.
+      // Separate EOD observation route for MA10/MA20 support/recovery.
+      // Research validation is HOLD: this helper NEVER approves a formal buy.
+      const maPullbackReclaimWatchState = item => {
+        const m=item?.metrics||{},mc=m.ma_cluster||{},g=m.entry_candle_guard||{};
+        const close=Number(m.close),ma10=Number(m.ma10),ma20=Number(m.ma20),ma60=Number(m.ma60);
+        const avg=Number(m.avg_volume_20_lots),vol=Number(m.current_volume_lots);
+        const pos=Number(m.position_1y_pct),k=Number(m.daily_k);
+        const seq=m.launch_sequence||mc.launch_sequence||{},rawDays=seq.days_since_first;
+        const days=rawDays==null?NaN:Number(rawDays);
+        const priorBreak=g.recent_breakout===true||
+          ['ACTIVE','ENTRY'].includes(String(m.scan_intelligence?.effective_lifecycle||''))
+          ||(Number.isFinite(days)&&days>=1&&days<=5);
+        if(!priorBreak||g.main_bull!==true||g.weak_after_breakout===true
+          ||g.macd_weak===true||g.kd_high_weak===true
+          ||m.holding_management?.strong_breakdown===true
+          ||mc.all_rising!==true||![close,ma10,ma20,ma60,avg,vol,pos,k].every(Number.isFinite)
+          ||Math.min(close,ma10,ma20,ma60,avg)<=0
+          ||close<ma60||close<ma20*.985||close>ma20*1.05
+          ||avg<500||vol<1000||pos<0||pos>=80||k<30||k>80)return null;
+        const ten=close/ma10>=.985&&close/ma10<=1.025;
+        const twenty=close/ma20>=.985&&close/ma20<=1.025;
+        if(!ten&&!twenty)return null;
+        const line=ten?'MA10':'MA20';
+        return {line,price:line==='MA10'?ma10:ma20,
+          below:close<(line==='MA10'?ma10:ma20)};
+      };
+      // This is an observation proof only, not an unvalidated orange/green entry.
+      // Reuses the existing MA10 recovery checks for volume, candle close and pace.
+      const maPullbackReclaimTodayState = (item,quote,watch) => {
+        if(!watch||!quoteFreshForTrial(quote))return null;
+        const m=item?.metrics||{},price=Number(quote.price),open=Number(quote.open);
+        const prevOpen=Number(m.open),prevClose=Number(m.close),high=Number(quote.high);
+        const ma10=Number(m.ma10),ma20=Number(m.ma20),ma60=Number(m.ma60);
+        const vol=Number(quote.volume_lots),avg=Number(m.avg_volume_20_lots);
+        const fraction=marketFraction(quote.quote_time),pace=avg>0&&fraction>0?vol/(avg*fraction):0;
+        if(![price,open,prevOpen,prevClose,high,ma10,ma20,ma60,vol].every(Number.isFinite)
+          ||Math.min(price,open,prevOpen,prevClose,ma10,ma20,ma60)<=0
+          ||price<=Math.max(open,prevOpen,prevClose)
+          ||price<Math.max(ma10,ma20,ma60)
+          ||price/ma20>1.05||vol<1000||pace<.9
+          ||high<=0||price<high*.985)return null;
+        return {text:'🟡 '+watch.line+' 回踩收復已核對｜等待正式策略驗證',
+          detail:'今日已站回昨日開收盤與 MA10／20／60，量速約 '+num(pace,2)
+            +'x；歷史樣本尚未通過正期望門檻，維持觀察，非可買進指令'};
+      };
       const ma10PullbackTrialState = (item, quote = null) => {
         if(!ma10PullbackWatchState(item)||!marketBridgeReady()||!validTodayQuote(quote))return null;
         const market=taipeiMarketState(),m=item?.metrics||{};
@@ -3335,7 +3380,12 @@ h1 {
         return minute>=540&&minute<=market.totalMinutes&&market.totalMinutes-minute<=5;
       };
       const entrySnapshotState = (item, baseAction, quote = null) => {
-        if(!baseAction)return null;
+        const recovery=maPullbackReclaimWatchState(item);
+        const originalMa10Watch=ma10PullbackWatchState(item);
+        if(!baseAction&&!recovery&&!originalMa10Watch)return null;
+        if(!baseAction)baseAction={key:'pullback_watch',rank:32,className:'scout',
+          text:'🟡 回踩支撐觀察｜等盤中量價',detail:'最近完整日K模型待核對',
+          keep_candidate:true};
         const quoteValid=marketBridgeReady()&&validTodayQuote(quote),fresh=quoteFreshForTrial(quote);
         const risk=newEntryRiskGate(item,quoteValid?quote:null);
         if(risk)return {...risk,phase:risk.kind==='hard'?'blocked':'observe',
@@ -3353,11 +3403,30 @@ h1 {
           live_quote_verified:true,text:'🟢 正式買點｜V5與有效成交確認',
           detail:'歷史驗證已開放＋既有V5成立＋當日5分鐘內成交與均線／位置風控通過｜'
           +String(baseAction.detail||'仍須自行控管部位')};
-        const trial=eligible&&baseAction.key==='breakout'&&baseAction.intraday_early_launch===true;
-        if(trial)return {...baseAction,phase:'trial',buyable:false,trialable:true,
-          live_quote_verified:true,className:'trial',text:'🟠 可小量試單｜盤中起漲確認',
-          detail:'當日5分鐘內成交＋原MA10／20／60、量價與風控通過；並非V5正式買點｜'
+        const firstBarTrial=eligible&&baseAction.key==='breakout'
+          &&baseAction.intraday_early_launch===true;
+        if(firstBarTrial)return {...baseAction,phase:'trial',buyable:false,trialable:true,
+          live_quote_verified:true,className:'trial',text:'🟠 第一根起漲｜可小量試單',
+          detail:'當日5分鐘內成交＋原MA10／20／60、量價與風控通過；不是正式買點｜'
             +String(baseAction.detail||'僅供小部位評估')};
+        // Preserve the user's original strict MA10 pullback trial route.
+        // Never convert the NEW research-rejected MA20 observation to orange.
+        const originalTrial=eligible&&originalMa10Watch
+          ?ma10PullbackTrialState(item,quote):null;
+        if(originalTrial)return {...baseAction,phase:'trial',buyable:false,trialable:true,
+          live_quote_verified:true,className:'trial',key:'ma10_reclaim_trial',
+          text:originalTrial.text,
+          detail:originalTrial.detail+'｜沿用原有MA10回踩試單條件；不是V5正式買點'};
+        if(recovery){
+          const recovered=maPullbackReclaimTodayState(item,quote,recovery);
+          return {...baseAction,key:'pullback_watch',phase:'candidate',buyable:false,
+            trialable:false,pullback_confirm_watch:true,
+            live_quote_verified:quoteValid,className:'scout',rank:39,
+            text:recovered?.text||'🟡 回踩'+recovery.line+'支撐｜等待收復確認',
+            detail:(recovered?.detail || '完整日K貼近'+recovery.line+' '+num(recovery.price,2)
+              +'；等待5分鐘內有效成交站回昨開／均線，未通過前不能買')
+              +'｜盤後模型日 '+String(item?.as_of||'未知')};
+        }
         const eodBreak=baseAction.key==='breakout';
         return {...baseAction,phase:'candidate',buyable:false,trialable:false,
           live_quote_verified:quoteValid,
@@ -3503,7 +3572,7 @@ h1 {
           ||Number(y.item?.metrics?.current_volume_lots||0)-Number(x.item?.metrics?.current_volume_lots||0)
           ||String(y.item?.scanned_at||'').localeCompare(String(x.item?.scanned_at||'')));
         const b={blocked:[],weak:[],high:[],focus:[],signal:[],eod:[],
-          queued:[],wait:[],recalc:[]};
+          queued:[],reclaim:[],wait:[],recalc:[]};
         const safeRow=(row,a)=>({...row,action:{...(row.action||{}),...a,buyable:false,trialable:false}});
         const visualReady=row=>{
           const m=row.item?.metrics||{},mc=m.ma_cluster||{},close=Number(m.close);
@@ -3579,6 +3648,10 @@ h1 {
               detail:'當日有效成交 '+num(price,2)+' 低於必要均線；站回MA10／20／60再核對'}));
             return;
           }
+          if(a.pullback_confirm_watch===true){
+            b.reclaim.push(safeRow(row,{phase:'observe',key:'pullback_watch'}));
+            return;
+          }
           const phase=String(a.phase||''),key=String(a.key||'');
           const signal=['pre','breakout','add'].includes(key)
             ||a.intraday_early_launch===true||a.intraday_early_watch===true
@@ -3619,20 +3692,21 @@ h1 {
         const nearRows=byRank(b.wait);
         const focusRows=passiveFocus.slice(0,8);
         const signalRows=byRank([...passiveFocus.slice(8),...passiveSignal]);
-        const eodTrackRows=byRank(b.eod);
+        const eodTrackRows=byRank(b.eod),reclaimRows=byRank(b.reclaim);
         const queuedDisplayRows=queuedRows,recalcDisplayRows=recalcRows;
         const waitRows=nearRows,pullbackRows=highRows;
         const avoidRows=byRank([...blockedRows,...weakeningRows]);
         const displayedTotal=starterRows.length+completedRows.length
-          +focusRows.length+signalRows.length+eodTrackRows.length
+          +focusRows.length+signalRows.length+eodTrackRows.length+reclaimRows.length
           +queuedDisplayRows.length+recalcDisplayRows.length+waitRows.length
           +pullbackRows.length+avoidRows.length;
         const banner=`<div class="entry-list-overview" data-stable-key="entry-overview">
           <strong>🎯 進場雷達｜${displayedTotal} 檔追蹤</strong>
-          <span>🟠 有效盤中試單 ${starterRows.length}　🟢 驗證通過正式買點 ${completedRows.length}　⭐ 優先觀察 ${focusRows.length}　📋 已起漲追蹤 ${eodTrackRows.length}　🟠 待核對 ${signalRows.length}　🌱 等發動 ${queuedDisplayRows.length}　🟡 條件未齊 ${waitRows.length}　⚡ 待補算 ${recalcDisplayRows.length}　🔵 等回踩 ${pullbackRows.length}　🔴 風險避開 ${avoidRows.length}</span>
+          <span>🟠 有效盤中試單 ${starterRows.length}　🟢 驗證通過正式買點 ${completedRows.length}　⭐ 優先觀察 ${focusRows.length}　📋 已起漲追蹤 ${eodTrackRows.length}　🟡 MA10／20回踩確認 ${reclaimRows.length}　🟠 待核對 ${signalRows.length}　🌱 等發動 ${queuedDisplayRows.length}　🟡 條件未齊 ${waitRows.length}　⚡ 待補算 ${recalcDisplayRows.length}　🔵 等回踩 ${pullbackRows.length}　🔴 風險避開 ${avoidRows.length}</span>
           <small>模型日 ${esc(expectedSignalDataDate())}｜V5正式進場：${formalEntryValidation.enabled?'歷史驗證已通過':'暫停（'+esc(formalEntryValidation.reason)+'）'}｜🟠小量試單需5分鐘內有效成交與原風控通過；其他追蹤不是買點｜點股票展開未達條件${staleRows.length?'｜另有 '+staleRows.length+' 檔過期快照未列入':''}</small>
         </div>`;
         const outHtml = banner+
+          entryBucketHtml('reclaim','🟡 MA10／MA20 回踩後再轉強｜非買點','區分尚未收復與當日有效成交已收復；正式策略回測未通過前保持觀察，不允許用此分類直接下單',reclaimRows,{open:true,tone:'near',preview:6})+
           entryBucketHtml('formal','🟢 正式買點｜V5驗證與有效成交完成','必須同時符合原模型、歷史驗證及當日風控；不代表保證獲利',completedRows,{open:true,tone:'focus',preview:6})+
           entryBucketHtml('trial','🟠 可小量試單｜盤中有效成交確認','5分鐘內成交且既有起漲條件與風控通過；試單不等於V5正式買點',starterRows,{open:true,tone:'focus',preview:6})+
           entryBucketHtml('focus','⭐ 優先查看','原模型條件相對成熟，仍須核對當日行情',focusRows,{open:true,tone:'focus',preview:6})+
@@ -3647,7 +3721,7 @@ h1 {
         stableListRender(outHtml,{quoteUpdate});
         return { earlyRows, starterRows, completedRows, recalcRows, blockedRows, highRows,
           weakeningRows, queuedRows, nearRows, trackingRows, staleRows,
-          focusRows, signalRows, eodTrackRows, queuedDisplayRows, recalcDisplayRows,
+          focusRows, signalRows, eodTrackRows, reclaimRows, queuedDisplayRows, recalcDisplayRows,
           waitRows, pullbackRows, avoidRows, displayedTotal };
       };
 
@@ -5734,8 +5808,8 @@ h1 {
         });
         const rankItem = item => {
           // Fill only a passive C-price observation slot; all trade gates remain downstream.
-          if (isNearMaTurnWatch(item)) return 78;
-          if (!isEntryRadarItem(item)) return 0;
+          if (!isEntryRadarItem(item))
+            return (isNearMaTurnWatch(item)||maPullbackReclaimWatchState(item))?78:0;
           if (item?.metrics?.bottom_start?.confirmed === true) return 130;
           const entryState=String(item?.metrics?.trade_lifecycle?.entry?.state||'');
           if (entryState==='formal_candidate') return 120;
