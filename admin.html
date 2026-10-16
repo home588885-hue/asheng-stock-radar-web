@@ -3427,8 +3427,15 @@ h1 {
           +'～'+String(row.lastMinute==null?'-':Math.floor(row.lastMinute/60)+':'+String(row.lastMinute%60).padStart(2,'0'));
         if(row.status==='failed')return {tone:'failed',text:'⚠️ 12分鐘存活｜期間試單訊號失守，未通過'+evidence};
         if(row.status==='interrupted')return {tone:'failed',text:'⚠️ 12分鐘存活｜有效報價中斷超過6分，無法確認'+evidence};
-        if(row.status==='passed')return {tone:'passed',text:
-          '✅ 12分鐘存活取樣通過（非逐筆）'+(phase==='after'?'｜已截止':'｜持續監看至13:20')+evidence};
+        if(row.status==='passed'){
+          const last=Number(row.lastMinute),market=taipeiMarketState();
+          if(phase==='after' && last<794)return {tone:'pending',text:
+            '⚠️ 12分鐘曾取樣通過，但13:14後無新成交，收盤前未確認'+evidence};
+          if(phase==='active' && market.totalMinutes-last>6)return {tone:'pending',text:
+            '⚠️ 12分鐘曾取樣通過，但最新成交已過6分，需再確認'+evidence};
+          return {tone:'passed',text:
+            '✅ 12分鐘存活取樣通過（非逐筆）'+(phase==='after'?'｜13:20 已截止':'｜持續監看至13:20')+evidence};
+        }
         return {tone:'pending',text:phase==='after'
           ?'⚪ 12分鐘存活｜13:20 已截止，取樣不足（'+elapsed+'/12 分）'+evidence
           :'⏱ 12分鐘存活｜取樣 '+elapsed+'/12 分'+evidence};
@@ -5043,6 +5050,8 @@ h1 {
           updatedAt: Date.now(),
           samples: Math.min(20, Number(existing?.samples || 0) + 1),
           failed: existing?.failed === true || hardRisk,
+          interrupted: existing?.interrupted === true ||
+            (!!existing && quoteMinute-Number(existing.lastQuoteMinute)>6),
           price: Number.isFinite(price) ? price : null,
           volume: Number.isFinite(volume) ? volume : null,
           avg20: avg20 > 0 ? avg20 : null,
@@ -5064,21 +5073,25 @@ h1 {
         const span=validTimes?last-first:0;
         const observedMinutes=Math.max(0,Math.min(12,Math.floor(span)));
         const samples=Number(row?.samples||0);
-        const failed=row?.failed===true;
-        const passed=observedMinutes>=12 && samples>=3 && !failed;
+        const failed=row?.failed===true,interrupted=row?.interrupted===true;
         const settled=watch.phase==='after';
-        const label=settled
-          ? (failed?'⚠️ 13:20 已結算｜風控未通過'
-            :passed?'✅ 13:20 已結算｜12分鐘存活通過'
-            :'⚪ 13:20 已截止｜有效成交取樣不足，無法確認存活')
-          : failed?'⚠️ 取樣期間風控未通過'
-          : passed?'✅ 有效成交已跨12分鐘｜持續監看到13:20'
-          : watch.phase==='before'?'⏱ 12:50 才開始有效成交取樣'
-          : `⏱ 有效成交取樣 ${observedMinutes}/12 分（${samples}筆）`;
+        const lastNearClose=validTimes&&last>=794;
+        const staleNow=watch.phase==='active'&&validTimes&&watch.totalMinutes-last>6;
+        const reached=observedMinutes>=12&&samples>=3&&!failed&&!interrupted;
+        // A 12-minute sample span is NOT proof the stock held near 13:20.
+        const passed=reached&&!staleNow&&(!settled||lastNearClose);
+        const label=failed?'⚠️ 取樣期間風控未通過'
+          :interrupted?'⚠️ 有效成交取樣中斷超過6分，無法確認存活'
+          :settled&&!lastNearClose?'⚪ 13:20 已截止｜缺13:14後有效成交，收盤前未確認'
+          :staleNow?'⚠️ 最近有效成交超過6分，等待恢復取樣'
+          :settled?(passed?'✅ 13:20 結算｜12分鐘存活取樣通過':'⚪ 13:20 已截止｜取樣不足')
+          :passed?'✅ 有效成交取樣已跨12分｜持續監看到13:20'
+          :watch.phase==='before'?'⏱ 12:50 才開始有效成交取樣'
+          :`⏱ 有效成交取樣 ${observedMinutes}/12 分（${samples}筆）`;
         return {
           elapsed:observedMinutes,
           progress:Math.round(observedMinutes/12*100),
-          passed,failed,settled,label
+          passed,failed,interrupted,settled,label
         };
       };
       // Pure DOM updates every 30 seconds; no new S/C requests or timers.
@@ -6289,7 +6302,9 @@ h1 {
           }
         };
 
-        // 已買進 12:50～13:20 計算12分鐘存活；C 原本的三分鐘報價取樣不變。
+        // 已買進 12:50～13:20 計算12分鐘取樣證據（非逐筆）；報價
+      // 中斷超過6分或13:14後無新成交不得宣稱收盤前通過。
+      // C 原本的三分鐘報價取樣不變。
         await render();
         if (!holdingStillCurrent()) return;
         // 已買進只保留原有約三分鐘報價取樣，存活統計於13:20停止。
