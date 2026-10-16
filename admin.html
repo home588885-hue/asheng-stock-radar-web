@@ -1780,18 +1780,24 @@ h1 {
       // liveBasePicks (the actively displayed candidate pool). Preserve its
       // observed model in memory only, without any extra S/C requests.
       let searchedStockModelForManualTrade = null;
-      const LAUNCH_DATA_CACHE_KEY = 'asheng-launch-data-v1';
+      const LAUNCH_DATA_CACHE_KEY = 'asheng-launch-data-v2-fresh-only';
       const readLaunchDataCache = () => {
         try {
           const cached = JSON.parse(localStorage.getItem(LAUNCH_DATA_CACHE_KEY) || 'null');
-          if (!cached?.saved_at || !cached?.data || Date.now() - Number(cached.saved_at) > 24 * 60 * 60 * 1000) return null;
+          if (!cached?.saved_at || !cached?.data || Date.now() - Number(cached.saved_at) > 20 * 60 * 1000) return null;
           if (!isLockedRulePayload(cached.data) || !Array.isArray(cached.data.picks) || !cached.data.picks.length) return null;
+          if(cached.data.quality_screen!=='2026-10-16-current-day-only-prelaunch-v2'
+            ||String(cached.data.progress?.latest_as_of||'')!==expectedSignalDataDate()
+            ||cached.data.picks.some(item=>String(item?.as_of||'')!==expectedSignalDataDate()))return null;
           return cached.data;
         } catch (error) { return null; }
       };
       const writeLaunchDataCache = data => {
         try {
           if (!data?.ok || !isLockedRulePayload(data) || !Array.isArray(data.picks) || !data.picks.length) return;
+          if(data.quality_screen!=='2026-10-16-current-day-only-prelaunch-v2'
+            ||String(data.progress?.latest_as_of||'')!==expectedSignalDataDate()
+            ||data.picks.some(item=>String(item?.as_of||'')!==expectedSignalDataDate()))return;
           const compact = {
             ok:true,
             rule_version:data.rule_version,
@@ -1807,18 +1813,21 @@ h1 {
           localStorage.setItem(LAUNCH_DATA_CACHE_KEY, JSON.stringify({ saved_at:Date.now(), data:compact }));
         } catch (error) {}
       };
-      const ENTRY_POOL_CACHE_KEY = 'asheng-entry-pool-v8';
+      const ENTRY_POOL_CACHE_KEY = 'asheng-entry-pool-v9-fresh-only';
       const readEntryPoolCache = () => {
         try {
           const cached = JSON.parse(localStorage.getItem(ENTRY_POOL_CACHE_KEY) || 'null');
           if (!cached || !Array.isArray(cached.items) || !cached.items.length) return [];
           if (!cached.saved_at || Date.now() - Number(cached.saved_at) > 15 * 60 * 1000) return [];
-          return cached.items;
+          return cached.items.filter(item=>String(item?.as_of||'')===expectedSignalDataDate());
         } catch (error) { return []; }
       };
       const writeEntryPoolCache = items => {
         try {
-          if (Array.isArray(items) && items.length) localStorage.setItem(ENTRY_POOL_CACHE_KEY, JSON.stringify({ saved_at:Date.now(), items }));
+          if (Array.isArray(items) && items.length) {
+            const fresh=items.filter(item=>String(item?.as_of||'')===expectedSignalDataDate());
+            if(fresh.length)localStorage.setItem(ENTRY_POOL_CACHE_KEY, JSON.stringify({ saved_at:Date.now(), items:fresh }));
+          }
         } catch (error) {}
       };
       const ENTRY_QUOTE_REFRESH_MS = LOCKED_SETTINGS.entryQuoteRefreshMs;
@@ -4101,17 +4110,9 @@ h1 {
         const expected=expectedSignalDataDate();
         const expectedMs=expected ? Date.parse(expected+'T00:00:00Z') : NaN;
 
-        // Keep stale or outdated models out of both merged groups.
-        if (Number.isFinite(expectedMs) && (!Number.isFinite(asOfMs) || asOfMs < expectedMs - 5*86400000)) {
-          return { keep:false, rank:0, className:'stale', label:'⚪ 模型資料過期' };
-        }
-        // Previous trading-day snapshot is a waiting-room item, NEVER a buy signal.
-        // The S API includes at most one previous model date and safety-screens it.
-        // Keep its stock visible during a partial nightly scan, without promoting
-        // historic ACTIVE/formal metadata to a fresh entry state.
-        if (expected && asOf && asOf !== expected) {
-          return {keep:true,rank:5,className:'prior-day-model-observe',
-            label:'⚪ '+asOf+' 舊模型｜等待今日更新，僅供觀察（不可當新買點）'};
+        // Previous-day PRELAUNCH history must not inflate today's list.
+        if(!expected||asOf!==expected){
+          return {keep:false,rank:0,className:'stale',label:'⚪ 舊模型｜不列今日發動前'};
         }
         // Original active-launch S predicate, now in prelaunch. Only presentation
         // order changes; stock model, holdings and trading rules are untouched.
@@ -4162,11 +4163,13 @@ h1 {
 
         // 底部型態可以保留，但沒有 MA10/20/60 全轉強時要明確寫成等待三線轉強，
         // 不得誤標成已發動／起漲。
-        if (bottom.current_base===true) {
-          if (mc.all_rising===true && mc.above_all_mas===true) {
-            return { keep:true, rank:70, className:'bottom-base', label:'🌱 底部型態｜等盤中起漲' };
-          }
-          return { keep:true, rank:45, className:'bottom-base-wait', label:'🌱 底部型態｜等MA10/20/60轉強' };
+        if(bottom.current_base===true
+          &&mc.all_rising===true&&mc.above_all_mas===true
+          &&Number(item?.score)>=75&&Number(m.current_volume_lots)>=1000
+          &&Number(m.avg_volume_20_lots)>=500
+          &&ma20>0&&ext20!=null&&ext20>=-1.5&&ext20<=5
+          &&Number.isFinite(pos1y)&&pos1y<=35){
+          return {keep:true,rank:65,className:'bottom-base',label:'🌱 低位底部整理｜待量價'};
         }
 
         // 一般發動前至少必須 MA10/20/60 全上揚且價格站上三線。
@@ -5701,7 +5704,7 @@ h1 {
       // Do not reorder by C intraday quotes: cards must not jump every three minutes.
       const holdingUrgencyRank = item => {
         const status = holdingMa20DayState(item);
-        if (status.tone === 'exit') return 0;
+        if(status.tone==='exit'||holdingBoxState(item)?.exitReady===true)return 0;
         const hm = item?.metrics?.holding_management || {};
         const modelDate = String(item?.as_of || '').slice(0, 10);
         const age = (Date.parse(expectedSignalDataDate() + 'T00:00:00Z') -
@@ -5716,7 +5719,7 @@ h1 {
       const holdingOverviewHtml = (total,modelCount = 0, modelItems = []) => {
         const exitItems = modelItems.filter(item => holdingUrgencyRank(item) === 0);
         const alert = exitItems.length
-          ? '<strong class="holding-exit-alert" role="status">🔴 已確認 MA20 出場條件 ' + exitItems.length
+          ? '<strong class="holding-exit-alert" role="status">🔴 已確認 MA20／固定箱底出場條件 ' + exitItems.length
             + ' 檔｜置頂提醒，請核對各檔模型日期與原出場規則</strong>'
           : '';
         return `<div class="holding-list-overview" data-stable-key="holding-overview">
@@ -6134,7 +6137,8 @@ h1 {
         const renderStage = stage;
         if (stage === 'ENTRY' && !liveBasePicks.length) {
           const cachedPool = readEntryPoolCache();
-          if (cachedPool.length) liveBasePicks = applyEntryEodCache(cachedPool);
+          if (cachedPool.length) liveBasePicks = applyEntryEodCache(cachedPool)
+          .filter(item=>String(item?.as_of||'')===expectedSignalDataDate());
         }
         if (!liveBasePicks.length) {
           if (stage === 'ENTRY') {
@@ -6294,7 +6298,8 @@ h1 {
           return 0;
         };
         return [...merged.values()]
-          .filter(item => rankItem(item) > 0 && !launchShownIds.has(String(item.stock_id || '')))
+          .filter(item=>String(item?.as_of||'')===expectedSignalDataDate()
+            &&rankItem(item)>0&&!launchShownIds.has(String(item.stock_id||'')))
           .sort((a,b) => rankItem(b) - rankItem(a) || companyProfileState(b).rank - companyProfileState(a).rank)
           .slice(0, 60);
       };
@@ -6328,7 +6333,8 @@ h1 {
             return;
           }
           if (launchData) applyGlobalHeaderSummary(launchData);
-          const nextPool = applyEntryEodCache(await mergePullbackWatchItems(buildEntryPool(v5Data?.picks || [], launchData?.picks || [])));
+          const nextPool = applyEntryEodCache(await mergePullbackWatchItems(buildEntryPool(v5Data?.picks || [], launchData?.picks || [])))
+              .filter(item=>String(item?.as_of||'')===expectedSignalDataDate());
           liveBasePicks = nextPool;
           if (nextPool.length) writeEntryPoolCache(nextPool);
           else localStorage.removeItem(ENTRY_POOL_CACHE_KEY);
@@ -6350,7 +6356,8 @@ h1 {
           if (stage === 'ENTRY') {
             const cachedPool = readEntryPoolCache();
             if (cachedPool.length && !liveBasePicks.length) {
-              liveBasePicks = applyEntryEodCache(await mergePullbackWatchItems(cachedPool));
+              liveBasePicks = applyEntryEodCache(await mergePullbackWatchItems(cachedPool))
+                .filter(item=>String(item?.as_of||'')===expectedSignalDataDate());
               await refreshLiveQuotes();
             }
             const { v5Data, launchData } = await loadEntrySourcePair();
@@ -6366,7 +6373,8 @@ h1 {
               }
               throw new Error('進場資料來源暫時無法讀取');
             }
-            const nextPool = applyEntryEodCache(await mergePullbackWatchItems(buildEntryPool(v5Data?.picks || [], launchData?.picks || [])));
+            const nextPool = applyEntryEodCache(await mergePullbackWatchItems(buildEntryPool(v5Data?.picks || [], launchData?.picks || [])))
+              .filter(item=>String(item?.as_of||'')===expectedSignalDataDate());
             liveBasePicks = nextPool;
             if (nextPool.length) writeEntryPoolCache(nextPool);
             else localStorage.removeItem(ENTRY_POOL_CACHE_KEY);
