@@ -1776,6 +1776,10 @@ h1 {
       let liveTimer = null;
       let livePoolTimer = null;
       let liveBasePicks = [];
+      // A manually inspected single-stock result is not necessarily part of
+      // liveBasePicks (the actively displayed candidate pool). Preserve its
+      // observed model in memory only, without any extra S/C requests.
+      let searchedStockModelForManualTrade = null;
       const LAUNCH_DATA_CACHE_KEY = 'asheng-launch-data-v1';
       const readLaunchDataCache = () => {
         try {
@@ -6221,6 +6225,8 @@ h1 {
       }
 
       async function searchStock() {
+        // A new search must not accidentally inherit the previous stock model.
+        searchedStockModelForManualTrade = null;
         const input = $('#stockSearch');
         const symbol = input.value.trim().toUpperCase();
         if (!symbol) {
@@ -6243,6 +6249,9 @@ h1 {
           const baseItem = picks[0] || null;
           const exact = await refreshExactStock(symbol, baseItem, data.master || null);
           if (exact.item) {
+            // Attach the exact model already shown to the user to a later
+            // manual portfolio record; still NOT a broker execution.
+            searchedStockModelForManualTrade = exact.item;
             const actualDate = String(exact.item.as_of || '-');
             const freshness = exact.fresh
               ? `<div class="signal-note">✅ 個股已重算至 ${esc(actualDate)} 完整日K${exact.refreshed ? '｜剛剛即時補算' : ''}</div>`
@@ -6490,7 +6499,18 @@ h1 {
         livePoolTimer = null; // 不在使用者開啟頁面時反覆更新完整模型
       }
 
+      let manualTradeObservedModel = null;
       function openHoldingDialog(stockId) {
+        const id = String(stockId);
+        const candidate = (liveBasePicks || []).find(row => String(row?.stock_id || '') === id) || null;
+        const searched = String(searchedStockModelForManualTrade?.stock_id || '') === id
+          ? searchedStockModelForManualTrade : null;
+        // Prefer whichever of the *already observed* candidates has the newer
+        // actual model date. Freeze it on dialog opening so a tab refresh
+        // cannot silently change historical provenance while the user types.
+        manualTradeObservedModel = candidate && searched
+          ? (String(searched.as_of || '') >= String(candidate.as_of || '') ? searched : candidate)
+          : (candidate || searched);
         const current = holdings.get(String(stockId));
         $('#holdingStock').value = stockId;
         $('#holdingTitle').textContent = `${stockId}｜${current ? '調整持股／部分賣出' : '我已買進'}`;
@@ -6507,7 +6527,8 @@ h1 {
         if (!Number.isFinite(avgCost) || avgCost <= 0 || !Number.isFinite(quantity) || quantity <= 0) return;
         // This form records a manually maintained position, never a broker
         // confirmation. Keep only the on-screen model and quote context.
-        const model = (liveBasePicks || []).find(row => String(row?.stock_id || '') === stockId);
+        const model = String(manualTradeObservedModel?.stock_id || '') === stockId
+          ? manualTradeObservedModel : null;
         const rawQuote = liveQuoteCache.get(stockId);
         const observedQuote = validTodayQuote(rawQuote) ? rawQuote : null;
         const modelAction = stage === 'ENTRY' && model
@@ -6559,6 +6580,14 @@ h1 {
         }
         if (soldPrice === null && !confirm('確定不填成交價？這筆賣出將無法計入可核對的實際獲利。')) return;
         const existingHolding = holdings.get(String(stockId));
+        const salePoolModel = (liveBasePicks || []).find(row => String(row?.stock_id || '') === String(stockId)) || null;
+        const saleSearchModel = String(searchedStockModelForManualTrade?.stock_id || '') === String(stockId)
+          ? searchedStockModelForManualTrade : null;
+        const saleModel = salePoolModel && saleSearchModel
+          ? (String(saleSearchModel.as_of || '') >= String(salePoolModel.as_of || '') ? saleSearchModel : salePoolModel)
+          : (salePoolModel || saleSearchModel);
+        const saleObservedQuote = validTodayQuote(liveQuoteCache.get(String(stockId)))
+          ? liveQuoteCache.get(String(stockId)) : null;
         const response = await memberFetch(HOLDINGS_API, { method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -6566,6 +6595,11 @@ h1 {
             snapshot:{ source:'manual_admin_sell',broker_price_user_reported:soldPrice!==null,
               cost_basis_at_sale:Number(existingHolding?.avg_cost) > 0 ? Number(existingHolding.avg_cost) : null,
               quantity_at_sale:Number(existingHolding?.quantity) > 0 ? Number(existingHolding.quantity) : null,
+              observed_model_day:String(saleModel?.as_of || '') || null,
+              observed_eod_close:Number(saleModel?.metrics?.close) > 0 ? Number(saleModel.metrics.close) : null,
+              observed_ma20:Number(saleModel?.metrics?.ma20) > 0 ? Number(saleModel.metrics.ma20) : null,
+              observed_quote_time:saleObservedQuote?.quote_time || null,
+              observed_quote_date:saleObservedQuote?.quote_date || null,
               fees_excluded:true }
           })
         });
