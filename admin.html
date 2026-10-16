@@ -3120,6 +3120,12 @@ h1 {
           const watchText=watch.state==='pullback'?'🟠 回踩追蹤中':watch.state==='ready'?'🟢 回踩守住轉強':'🔵 等回踩守住再轉強';
           return {key:'wait',rank:11,className:'wait',text:watchText,detail:'已加入持續追蹤池，不因下一輪篩選落榜而消失',keep_candidate:true,persistent_watch:true};
         }
+        if(isNearMaTurnWatch(item))return {
+          key:'ma_turn_watch',rank:24,className:'scout',
+          text:'🌱 三線轉強預備｜等待盤中第一根',
+          detail:'MA10／20／60結構已成立、收盤貼近均線｜今天仍須取得有效成交與原量價／位置條件，不是買點',
+          keep_candidate:true,ma_turn_watch:true
+        };
         return null;
       };
       const pullbackWatchHeaders = async () => {
@@ -5701,6 +5707,18 @@ h1 {
         }
       }
 
+      // Passive MA10/20/60 near-turn OBSERVATION sent by the existing S model.
+      // Do not convert a transport watch into a buy without live C validation.
+      const isNearMaTurnWatch = item => {
+        const m=item?.metrics||{},mc=m.ma_cluster||{},g=m.entry_candle_guard||{};
+        const close=Number(m.close),ma=[Number(m.ma10),Number(m.ma20),Number(m.ma60)];
+        const highest=Math.max(...ma),lowest=Math.min(...ma),ma20=Number(m.ma20);
+        const avg=Number(m.avg_volume_20_lots),pos=Number(m.position_1y_pct),k=Number(m.daily_k);
+        return mc.all_rising===true&&mc.above_all_mas===true&&g.main_bull===true
+          &&ma.every(v=>Number.isFinite(v)&&v>0)&&close>=highest&&close<=highest*1.005
+          &&highest/lowest<=1.08&&ma20>0&&close/ma20<=1.04
+          &&avg>=500&&pos>=0&&pos<=80&&k>=30&&k<=85;
+      };
       const buildEntryPool = (v5Picks = [], launchPicks = []) => {
         // UI exclusivity: exclude only stocks actually supplied to the visible LAUNCH
         // list; never hide a candidate absent from that source or change S selection.
@@ -5715,6 +5733,8 @@ h1 {
           if (!merged.has(key)) merged.set(key, item);
         });
         const rankItem = item => {
+          // Fill only a passive C-price observation slot; all trade gates remain downstream.
+          if (isNearMaTurnWatch(item)) return 78;
           if (!isEntryRadarItem(item)) return 0;
           if (item?.metrics?.bottom_start?.confirmed === true) return 130;
           const entryState=String(item?.metrics?.trade_lifecycle?.entry?.state||'');
