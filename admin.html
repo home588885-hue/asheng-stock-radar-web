@@ -3940,6 +3940,24 @@ h1 {
         return `<article class="card" data-stock-id="${esc(item.stock_id)}"><div class="top"><div><div class="name">${esc(item.stock_id)} ${esc(item.stock_name)}</div><div class="meta">${esc(item.market)}${item.industry ? '・' + esc(item.industry) : ''}${timeInfoStages() ? '' : '｜資料日 ' + esc(item.as_of || '-')}</div></div><div class="badge ${esc(item.stage)}">模型 ${Number(item.score || 0)}分</div></div>${companyProfileHtml(item)}${activeLaunchVisibleHtml}${volumePriceHtml(item, displayQuote)}${pullbackWatchHtml(item, displayQuote)}${holding ? (options.compactHolding ? '' : holdingTodayHtml + holdingDipHtml) : actionHtml + quickHtml + deviationWarningHtml + riskSummary}${holdingHtml}${options.compactHolding && holding ? `<details class="card-details holding-combined"><summary>完整判斷與技術數據</summary>${holdingStatusHtml}${detailHtml}</details>` : holdingStatusHtml+detailHtml}${timeInfoStages() ? timeInfoHtml(item, displayQuote) : '<div class="time">背景模型掃描：' + updated + '</div>'}</article>`;
       }
 
+      // Explain an empty launch list using *the actual API result and this
+      // portfolio's held symbols*. Presentation only; does not change screening.
+      const launchCandidateExplanation = (data, visible) => {
+        const source = Array.isArray(data?.picks) ? data.picks : [];
+        const heldCount = source.filter(item => holdings.has(String(item?.stock_id || ''))).length;
+        const shownCount = Array.isArray(visible) ? visible.length : 0;
+        const excludedCount = Math.max(0, source.length - heldCount - shownCount);
+        const qualityTotal = Number(data?.quality_total);
+        const notDeliveredCount = Number.isFinite(qualityTotal)
+          ? Math.max(0, qualityTotal - source.length) : 0;
+        return {
+          sourceCount:source.length,heldCount,shownCount,excludedCount,notDeliveredCount,
+          text:'來源初篩 ' + source.length + ' 檔｜已買進 ' + heldCount
+            + ' 檔｜其他分類／風控排除 ' + excludedCount
+            + ' 檔｜發動前可觀察 ' + shownCount + ' 檔'
+            + (notDeliveredCount ? '｜另有 ' + notDeliveredCount + ' 檔未隨本次回傳' : '')
+        };
+      };
       async function load() {
         const navToken = navigationSeq;
         const requestedStage = stage;
@@ -4100,6 +4118,7 @@ h1 {
             const bCombined = Number(b.metrics?.chip?.combined_score ?? b.score ?? 0);
             return bCombined - aCombined || Number(b.score || 0) - Number(a.score || 0);
           });
+          const launchTally = stage === 'LAUNCH' ? launchCandidateExplanation(data, rankedPicks) : null;
           if (stage === 'LAUNCH') {
             const actionRows = rankedPicks.map(item => ({item,action:simpleActionState(item)})).filter(row=>row.action);
             updateBuySignalNotice(actionRows);
@@ -4111,16 +4130,16 @@ h1 {
             const scanText = launchIncomplete
               ? `｜⚠️ 最新交易日僅更新 ${Number(progress.latest_count || 0)}/${Number(progress.total_stocks || 0)} 檔；未掃齊，不能判定全市場為零`
               : '';
-            $('#note').textContent = `🌱 發動前｜追蹤 ${rankedPicks.length} 檔｜🔥發動中 ${activeCount}｜🟠發動前 ${pre}｜🟢突破 ${breakout}｜🔁回踩 ${add}${scanText}`
-              + (data.quality_total > rankedPicks.length ? `｜另有 ${Number(data.quality_total)-rankedPicks.length} 檔尚未呈現` : '');
+            $('#note').textContent = `🌱 發動前｜追蹤 ${rankedPicks.length} 檔｜🔥發動中 ${activeCount}｜🟠發動前 ${pre}｜🟢突破 ${breakout}｜🔁回踩 ${add}｜${launchTally.text}${scanText}`;
           }
           const launchStillIncomplete = progress.latest_complete !== true || String(progress.latest_as_of || '') !== expectedSignalDataDate();
           stableListRender(rankedPicks.length
             ? (stage === 'LAUNCH' ? launchListHtml(rankedPicks) : rankedPicks.map(card).join(''))
             : `<div class="box empty">${stage === 'LAUNCH'
-                ? (launchStillIncomplete
-                    ? '⚠️ 發動前最新模型尚未掃齊｜目前已驗證達標 0 檔，不代表市場沒有候選。最新完整日K ' + Number(progress.latest_count || 0) + '/' + Number(progress.total_stocks || 0) + ' 檔，未更新的股票不冒充新買點；原有追蹤資料不會因此刪除。'
-                    : '本輪已更新模型中，沒有符合原定發動前量價、均線與風險條件的股票；不放寬條件湊數。')
+                ? '🌱 目前發動前可觀察 0 檔。' + launchTally.text + '。'
+                  + (launchStillIncomplete
+                    ? ' ⚠️ 最新完整日K僅更新 ' + Number(progress.latest_count || 0) + '/' + Number(progress.total_stocks || 0) + ' 檔；覆蓋未完成，不代表全市場沒有候選。'
+                    : ' 本輪沒有符合展示規則的未持有候選；不放寬條件湊數。')
                 : stage === 'ENTRY' ? '目前沒有符合正式可進場條件的股票。' : '目前這個階段沒有候選股。'}</div>`);
           if (stage === 'LAUNCH' && rankedPicks.length) {
             liveBasePicks = rankedPicks.slice(0,100);
