@@ -24,6 +24,9 @@ async (tools,options={})=>{
     let peak=entry,peakEquity=1,maxDrawdown=0,sellIdx=start+horizon,why="horizon",triggerDay=null;
     for(let t=start;t<=start+horizon;t++){
       const bar=bars[t],prev=bars[t-1];
+      // At the session cap, exit the whole remainder once at the open.
+      // Avoid a queued partial sale and full exit at the same price/open.
+      if(t===start+horizon){cash+=shares*bar.o*(1-feeSell);shares=0;why="horizon_open";sellIdx=t;break}
       if(pending){
         if(pending==="exit"){cash+=shares*bar.o*(1-feeSell);shares=0;why="three_ma20_closes";sellIdx=t;break}
         if(pending==="add"&&!added){const investment=1/3,quantity=investment/(bar.o*(1+feeBuy));shares+=quantity;spent+=investment;buyShares+=quantity;buyGross+=bar.o*quantity;added=true}
@@ -31,7 +34,6 @@ async (tools,options={})=>{
         if(pending==="protect"&&!protectedPart){const selling=shares/3;cash+=selling*bar.o*(1-feeSell);shares-=selling;protectedPart=true}
         pending=null;
       }
-      if(t===start+horizon){cash+=shares*bar.o*(1-feeSell);shares=0;why="horizon_open";sellIdx=t;break}
       const equity=(cash+shares*bar.c*(1-feeSell))/spent;
       peakEquity=Math.max(peakEquity,equity);
       maxDrawdown=Math.min(maxDrawdown,(equity/peakEquity-1)*100);
@@ -111,7 +113,7 @@ async (tools,options={})=>{
       }
     }
   }
-  return {version:"2026-10-16-shanchuan-protect-pilot-v1",ids,source:sourceRepo,
+  return {version:"2026-10-16-shanchuan-protect-pilot-v2",ids,source:sourceRepo,
     coverage:sources.map(x=>({id:x.id,days:x.days,from:x.from,to:x.to,error:x.error})),
     events:events.length,accepted:trades.length/2,skipReasons,audit,trades,
     assumptions:{feeBuy,feeSell,signal:"archived MA10/20/60 FIRST_BREAKOUT, not production intraday",
