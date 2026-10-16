@@ -2742,13 +2742,13 @@ h1 {
           (chipPass?'✅':'⚪')+'籌碼≥65／法人支持',
           (basePass?'✅':'⚪')+(baseConfirmed?'底部型態':lowTurn?'低位C波轉強':'底部／低位轉強')
         ];
-        const label=passed?'✨ 四重共振已齊｜待原進場確認'
-          : '📚 四重共振 '+count+'/4｜缺項不追';
+        const label=passed?'✨ 四重共振條件齊｜獲利優勢未驗證'
+          : '📚 四項條件 '+count+'/4｜僅供觀察';
         return {passed,count,details,kind:passed?'confluence':'observing',
           text:label,detail:details.join('｜')+'｜'+
             (freshModel?(live&&!fresh?'成交不新鮮，不採盤中確認':'模型 '+String(item?.as_of||''))
               :'模型非最新日，不得當買點')+
-            '｜共振只供排序與判讀，不是獨立買進訊號'};
+            '｜山川研究判讀，歷史績效未證明較高勝率；不作買進排序或交易指令'};
       };
       const newEntryRiskGate = (item, quote = null) => {
         const m=item?.metrics||{}, g=m.entry_candle_guard||{}, hm=m.holding_management||{};
@@ -6087,7 +6087,7 @@ h1 {
         };
         return [...merged.values()]
           .filter(item => rankItem(item) > 0 && !launchShownIds.has(String(item.stock_id || '')))
-          .sort((a,b) => rankItem(b) - rankItem(a) || Number(shanchuanConfluenceState(b).passed) - Number(shanchuanConfluenceState(a).passed) || shanchuanState(b).priority - shanchuanState(a).priority || companyProfileState(b).rank - companyProfileState(a).rank)
+          .sort((a,b) => rankItem(b) - rankItem(a) || companyProfileState(b).rank - companyProfileState(a).rank)
           .slice(0, 60);
       };
 
