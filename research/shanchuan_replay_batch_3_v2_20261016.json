@@ -1,0 +1,207 @@
+{
+  "version": "2026-10-16-shanchuan-protect-pilot-v2",
+  "ids": [
+    "4939",
+    "3551",
+    "6176",
+    "6245"
+  ],
+  "source": "voidful/tw_stocker",
+  "coverage": [
+    {
+      "id": "4939",
+      "error": "NOT_FOUND: Error code: NOT_FOUND; Error: GitHub API error 404: {\"message\":\"Not Found\",\"documentation_url\":\"https://docs.github.com/rest/repos/contents#get-repos"
+    },
+    {
+      "id": "3551",
+      "error": "NOT_FOUND: Error code: NOT_FOUND; Error: GitHub API error 404: {\"message\":\"Not Found\",\"documentation_url\":\"https://docs.github.com/rest/repos/contents#get-repos"
+    },
+    {
+      "id": "6176",
+      "days": 516,
+      "from": "2024-02-15",
+      "to": "2026-04-01"
+    },
+    {
+      "id": "6245",
+      "error": "NOT_FOUND: Error code: NOT_FOUND; Error: GitHub API error 404: {\"message\":\"Not Found\",\"documentation_url\":\"https://docs.github.com/rest/repos/contents#get-repos"
+    }
+  ],
+  "events": 11,
+  "accepted": 2,
+  "skipReasons": {
+    "source_missing": 9
+  },
+  "audit": [
+    {
+      "id": "6176",
+      "signal": "2024-10-21",
+      "entry": "2024-10-22"
+    },
+    {
+      "id": "6176",
+      "signal": "2024-12-23",
+      "entry": "2024-12-24"
+    }
+  ],
+  "trades": [
+    {
+      "id": "6176",
+      "signal": "2024-10-21",
+      "year": "2024",
+      "horizon": 20,
+      "baseline": {
+        "net": -6.6518,
+        "drawdown": -8.3527,
+        "held": 12,
+        "added": false,
+        "taken": false,
+        "protectedPart": false,
+        "triggerDay": null,
+        "exit": "three_ma20_closes"
+      },
+      "guard_A": {
+        "net": -6.6518,
+        "drawdown": -8.3527,
+        "held": 12,
+        "added": false,
+        "taken": false,
+        "protectedPart": false,
+        "triggerDay": null,
+        "exit": "three_ma20_closes"
+      },
+      "guard_B": {
+        "net": -6.6518,
+        "drawdown": -8.3527,
+        "held": 12,
+        "added": false,
+        "taken": false,
+        "protectedPart": false,
+        "triggerDay": null,
+        "exit": "three_ma20_closes"
+      }
+    },
+    {
+      "id": "6176",
+      "signal": "2024-10-21",
+      "year": "2024",
+      "horizon": 30,
+      "baseline": {
+        "net": -6.6518,
+        "drawdown": -8.3527,
+        "held": 12,
+        "added": false,
+        "taken": false,
+        "protectedPart": false,
+        "triggerDay": null,
+        "exit": "three_ma20_closes"
+      },
+      "guard_A": {
+        "net": -6.6518,
+        "drawdown": -8.3527,
+        "held": 12,
+        "added": false,
+        "taken": false,
+        "protectedPart": false,
+        "triggerDay": null,
+        "exit": "three_ma20_closes"
+      },
+      "guard_B": {
+        "net": -6.6518,
+        "drawdown": -8.3527,
+        "held": 12,
+        "added": false,
+        "taken": false,
+        "protectedPart": false,
+        "triggerDay": null,
+        "exit": "three_ma20_closes"
+      }
+    },
+    {
+      "id": "6176",
+      "signal": "2024-12-23",
+      "year": "2024",
+      "horizon": 20,
+      "baseline": {
+        "net": -4.5509,
+        "drawdown": -5.2946,
+        "held": 10,
+        "added": false,
+        "taken": false,
+        "protectedPart": false,
+        "triggerDay": null,
+        "exit": "three_ma20_closes"
+      },
+      "guard_A": {
+        "net": -4.5509,
+        "drawdown": -5.2946,
+        "held": 10,
+        "added": false,
+        "taken": false,
+        "protectedPart": false,
+        "triggerDay": null,
+        "exit": "three_ma20_closes"
+      },
+      "guard_B": {
+        "net": -4.5509,
+        "drawdown": -5.2946,
+        "held": 10,
+        "added": false,
+        "taken": false,
+        "protectedPart": false,
+        "triggerDay": null,
+        "exit": "three_ma20_closes"
+      }
+    },
+    {
+      "id": "6176",
+      "signal": "2024-12-23",
+      "year": "2024",
+      "horizon": 30,
+      "baseline": {
+        "net": -4.5509,
+        "drawdown": -5.2946,
+        "held": 10,
+        "added": false,
+        "taken": false,
+        "protectedPart": false,
+        "triggerDay": null,
+        "exit": "three_ma20_closes"
+      },
+      "guard_A": {
+        "net": -4.5509,
+        "drawdown": -5.2946,
+        "held": 10,
+        "added": false,
+        "taken": false,
+        "protectedPart": false,
+        "triggerDay": null,
+        "exit": "three_ma20_closes"
+      },
+      "guard_B": {
+        "net": -4.5509,
+        "drawdown": -5.2946,
+        "held": 10,
+        "added": false,
+        "taken": false,
+        "protectedPart": false,
+        "triggerDay": null,
+        "exit": "three_ma20_closes"
+      }
+    }
+  ],
+  "assumptions": {
+    "feeBuy": 0.001425,
+    "feeSell": 0.004425,
+    "signal": "archived MA10/20/60 FIRST_BREAKOUT, not production intraday",
+    "entry": "next open",
+    "add": "once near MA10/20 on day-close and next open 1/3 initial capital",
+    "profit": "at +20% from weighted average gross buy cost, next-open sell 1/3 current shares",
+    "exit": "third consecutive close below MA20, next open exit, at 20/30 sessions otherwise",
+    "protect_A": "peak high +5% then giveback >=1.5%, close below previous low OR below MA5 with two bearish daily candles, sell 1/3 next open",
+    "protect_B": "peak high +8% then giveback >=2.5%, close below prev low with vol>=1.2*prior20d or 2 bearish daily candles, sell 1/3 next open",
+    "capital": "no margin, no position limit; fees 0.1425% buy, 0.4425% sell incl tax; no slippage",
+    "maxDrawdown": "trade equity close-to-close after sale fee",
+    "validation": "exclude stale historical 5-minute CSV bars with signal/entry mismatch >2% or archived r20 mismatch >3%; holdout not untouched; research only"
+  }
+}
