@@ -4549,17 +4549,20 @@ h1 {
         const deviationWarningHtml = deviation20 != null && deviation20 > 12 ? `<div class="risk-summary">⚠️ 20日線乖離過大 +${num(deviation20)}%｜避免追價</div>` : '';
         const riskSummary = cautionList.length ? `<div class="risk-summary">⚠️ ${esc(cautionList[0])}${cautionList.length > 1 ? ` ＋${cautionList.length - 1}項` : ''}</div>` : '';
         const sc=shanchuanState(item, displayQuote);
+        // Only show Shan-Chuan research panels on holdings after its NEW research
+        // epoch is calculated. Original MA20 holding management remains visible.
+        const showShanchuanResearch=stage!=='HOLDING'||unifiedRadarGeneration(item);
         const scConfluence=shanchuanConfluenceState(item,displayQuote);
         const scPattern=shanchuanPatternChecklistState(item);
-        const scPatternHtml=['LAUNCH','ENTRY','HOLDING'].includes(stage)&&scPattern.visible
+        const scPatternHtml=showShanchuanResearch&&['LAUNCH','ENTRY','HOLDING'].includes(stage)&&scPattern.visible
           ? '<div class="signal-note" data-shanchuan-pattern="1"><b>'+esc(scPattern.text)
             +'</b><small style="display:block;margin-top:3px">'
             +esc(scPattern.detail)+'</small></div>':'';
-        const scConfluenceHtml=['LAUNCH','ENTRY','HOLDING'].includes(stage)&&scConfluence.count>=2
+        const scConfluenceHtml=showShanchuanResearch&&['LAUNCH','ENTRY','HOLDING'].includes(stage)&&scConfluence.count>=2
           ? '<div class="signal-note"><b>'+esc(scConfluence.text)+'</b>'
             +'<small style="display:block;margin-top:3px">'+esc(scConfluence.detail)+'</small></div>'
           : '';
-        const shanchuanHtml=['LAUNCH','ENTRY','HOLDING'].includes(stage)&&sc.kind!=='neutral'
+        const shanchuanHtml=showShanchuanResearch&&['LAUNCH','ENTRY','HOLDING'].includes(stage)&&sc.kind!=='neutral'
           ? '<div class="signal-note" data-shanchuan-state="'+esc(sc.kind)+'">'
             +'<b>📚 山川量價｜'+esc(sc.text)+'</b><small style="display:block;margin-top:3px">'
             +esc(sc.detail)+'</small></div>' : '';
@@ -4585,7 +4588,7 @@ h1 {
         };
         const boxStateText=fixedBox?'持股原箱頂／箱底固定'
           :(boxStateLabels[String(boxSignal.range_state||'')]||'20日箱型觀察');
-        const boxInfo=boxImportant?'<div class="signal-note"><b>📦 山川箱型支撐壓力｜'
+        const boxInfo=boxImportant&&(showShanchuanResearch||!!fixedBox)?'<div class="signal-note"><b>📦 山川箱型支撐壓力｜'
           +esc(boxStateText)
           +'</b><small style="display:block;margin-top:3px">20日箱頂／壓力 '
           +esc(num(shownBoxTop,2))+'｜20日箱底／支撐 '+esc(num(shownBoxBottom,2))
