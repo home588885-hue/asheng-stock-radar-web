@@ -5280,7 +5280,14 @@ h1 {
         const dataCaution = !isLive
           ? '<small class="model-only-note">目前無今日有效成交報價；以下判斷以'+esc(modelDate||'待更新')+'完整日K為基準，不代表當下即時股價。</small>'
           : '';
-        return `<section class="live-banner holding-action ${action.className}"><h2>${actionIcon} ${esc(actionDateLabel)}</h2><div class="holding-main-action">${main}</div><span>${esc(modelPrefix)}：${held}</span><span>${esc(reminder)}</span>${dataCaution}<dl class="holding-quote-grid">${fields.map(([label,value]) => `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl>${holdingCloseWatchHtml(item, safeQuote)}</section>`;
+        // Keep the locked main exit/MA20 rule unchanged. If an independently
+        // observed peak has already suffered a verified giveback, surface the
+        // existing research alert even when another holding action has priority.
+        const giveback = holdingProfitProtection(item, safeQuote);
+        const givebackAlert = giveback?.triggered && main !== '出清'
+          ? '<small class="model-only-note">🛡 獲利回吐警示（'+(giveback.live?'今日有效成交':'最近完整模型')+'）：已記錄高點回落 '+esc(num(giveback.retreat,1))+'%，短線風控轉弱；'+(giveback.live?'盤中先檢查，不當作成交或收盤訊號。':'請核對持股與是否需要保護浮盈；不是自動賣出。')+'</small>'
+          : '';
+        return `<section class="live-banner holding-action ${action.className}"><h2>${actionIcon} ${esc(actionDateLabel)}</h2><div class="holding-main-action">${main}</div><span>${esc(modelPrefix)}：${held}</span><span>${esc(reminder)}</span>${givebackAlert}${dataCaution}<dl class="holding-quote-grid">${fields.map(([label,value]) => `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl>${holdingCloseWatchHtml(item, safeQuote)}</section>`;
       };
       const holdingRulesHtml = (item, quote = null, embedded = false) => {
         const { action, main, rulesTitle } = holdingDisplay(item, quote);
