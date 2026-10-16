@@ -2568,13 +2568,13 @@ h1 {
       const maPullbackReclaimTodayState = (item,quote,watch) => {
         if(!watch||!quoteFreshForTrial(quote))return null;
         const m=item?.metrics||{},price=Number(quote.price),open=Number(quote.open);
-        const prevOpen=Number(m.open),prevClose=Number(m.close),high=Number(quote.high);
+        const prevClose=Number(m.close),high=Number(quote.high);
         const ma10=Number(m.ma10),ma20=Number(m.ma20),ma60=Number(m.ma60);
         const vol=Number(quote.volume_lots),avg=Number(m.avg_volume_20_lots);
         const fraction=marketFraction(quote.quote_time),pace=avg>0&&fraction>0?vol/(avg*fraction):0;
-        if(![price,open,prevOpen,prevClose,high,ma10,ma20,ma60,vol].every(Number.isFinite)
-          ||Math.min(price,open,prevOpen,prevClose,ma10,ma20,ma60)<=0
-          ||price<=Math.max(open,prevOpen,prevClose)
+        if(![price,open,prevClose,high,ma10,ma20,ma60,vol].every(Number.isFinite)
+          ||Math.min(price,open,prevClose,ma10,ma20,ma60)<=0
+          ||price<=Math.max(open,prevClose)
           ||price<Math.max(ma10,ma20,ma60)
           ||price/ma20>1.05||vol<1000||pace<.9
           ||high<=0||price<high*.985)return null;
