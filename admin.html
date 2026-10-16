@@ -3679,7 +3679,7 @@ h1 {
         const boxStructure=m.ma_cluster?.all_rising===true
           &&m.entry_candle_guard?.weak_after_breakout!==true
           &&m.entry_candle_guard?.main_bull!==false;
-        const boxTrial=!!(boxSetup&&eligible&&boxTop>boxBottom&&boxBottom>0
+        const boxTrial=!!(boxModel?.prepared===true&&boxSetup&&eligible&&boxTop>boxBottom&&boxBottom>0
           &&boxStructure&&boxChip>=60&&boxPrice>boxTop*1.003
           &&(!Number.isFinite(boxHigh)||boxHigh<=0||boxPrice>=boxHigh*.985)
           &&boxAvg>=500&&boxVol>=1000&&boxPace>=1.2&&boxPace<=2.5);
@@ -6705,18 +6705,21 @@ h1 {
         const observedBox=model?.metrics?.box_strategy||null;
         const observedBoxTop=Number(observedBox?.anchor?.top||observedBox?.box_range?.top);
         const observedBoxBottom=Number(observedBox?.anchor?.bottom||observedBox?.box_range?.bottom);
-        const liveBreakout=observedBox?.prepared===true&&observedQuote
+        const liveBreakout=observedBox?.prepared===true&&validTodayQuote(observedQuote)
           &&Number(observedQuote.price)>observedBoxTop*1.003
           &&Number(model?.metrics?.ma20)>0
           &&Number(observedQuote.price)/Number(model.metrics.ma20)<=1.05;
         const confirmedBox=observedBox?.breakout_today===true
           &&observedBox?.anchor?.breakout_date===String(model?.as_of||'')
           &&(!observedQuote||Number(observedQuote.price)>observedBoxTop*1.003);
+        const quoteDayRaw=String(observedQuote?.quote_date||'').replace(/[^0-9]/g,'');
+        const quoteDay=quoteDayRaw.length===8
+          ?quoteDayRaw.slice(0,4)+'-'+quoteDayRaw.slice(4,6)+'-'+quoteDayRaw.slice(6,8):null;
         const boxAnchor=model&&String(model.as_of||'')===expectedSignalDataDate()
           &&observedBoxTop>observedBoxBottom&&observedBoxBottom>0
           &&(liveBreakout||confirmedBox)
           ?{top:observedBoxTop,bottom:observedBoxBottom,
-            breakout_date:liveBreakout?String(observedQuote.quote_date||'').slice(0,10)
+            breakout_date:liveBreakout?quoteDay
               :String(observedBox.anchor.breakout_date||'')} : null;
         const snapshot = {
           source:'manual_admin_input', broker_execution_verified:false,
