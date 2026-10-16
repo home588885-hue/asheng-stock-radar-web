@@ -5853,17 +5853,23 @@ h1 {
         const id=String(item.stock_id||'');
         const safeQuote=bestTodayQuote(validTodayQuote(quote)?quote:null,id);
         if(!unifiedRadarGeneration(item))
-          return holdingPlaceholderHtml(id,'新版山川模型待重算；持股、股數、成本保留，舊版不顯示買賣訊號。');
+          return holdingPlaceholderHtml(id,'新版山川模型待重算；持股、股數、成本與有效成交資訊保留，舊版不顯示買賣訊號。',false,safeQuote,item.stock_name||'');
         return `<section class="holding-full-wrap" data-stock-id="${esc(id)}">${card(item,{quote:safeQuote})}</section>`;
       };
-      const holdingPlaceholderHtml = (symbol, note = '完整模型載入中…', isError = false) => {
+      const holdingPlaceholderHtml = (symbol, note = '完整模型載入中…', isError = false, quote = null, displayName = '') => {
         const id=String(symbol||''),h=holdings.get(id)||{},cost=Number(h.avg_cost),qty=Number(h.quantity);
+        const trade=validTodayQuote(quote)?quote:null;
+        const todayPrice=trade?Number(trade.price):null;
+        const pnl=todayPrice>0&&cost>0?(todayPrice/cost-1)*100:null;
         return `<section class="holding-mini-wrap" data-stock-id="${esc(id)}">
           <details class="holding-mini" data-stock-key="${esc(id)}"${holdingExpandedIds.has(id)?' open':''}>
             <summary class="holding-mini-summary">
-              <span class="holding-mini-name"><strong>${esc(id)}</strong><small>已核對持股紀錄，模型待更新</small></span>
+              <span class="holding-mini-name"><strong>${esc(id)} ${esc(displayName||'')}</strong><small>持股已核對｜新版模型補算中</small></span>
               <span class="holding-mini-action warn">⚪ 待更新</span><span class="holding-mini-expand">詳情</span>
-              <span class="holding-mini-stats">成本 <b>${Number.isFinite(cost)&&cost>0?esc(num(cost,2)):'-'}</b>｜最新成交及損益待核對</span>
+              <span class="holding-mini-stats">成本 <b>${Number.isFinite(cost)&&cost>0?esc(num(cost,2)):'-'}</b>${todayPrice>0
+                ?'｜今日有效成交 <b>'+esc(num(todayPrice,2))+'</b>'
+                  +(pnl!=null?'｜損益 '+(pnl>=0?'+':'')+esc(num(pnl,2))+'%':'')
+                :'｜今日成交及損益待核對'}</span>
               <span class="holding-ma20-days pending"><strong>⚪ MA20 跌破天數：模型載入中</strong><small>後台連續交易日計數載入後才顯示，不以舊股價冒充</small></span>
               <span class="holding-mini-date">持有 ${Number.isFinite(qty)&&qty>0?esc(qty.toLocaleString('zh-TW')):'-'} 股｜點擊查看狀態</span>
             </summary>
