@@ -2706,6 +2706,47 @@ h1 {
         // The model owns mother-child OHLCV computation. The client merely
         // explains its latest completed EOD result, without further S/C calls.
         const fresh=String(item?.as_of||'')===expectedSignalDataDate();
+        const pat=model?.mother_child?.lifecycle||{};
+        if(fresh&&pat.active===true&&String(pat.as_of||'')===String(item?.as_of||'')){
+          const levels='母K壓力 '+String(pat.mother_high??'-')
+            +'｜母K低點 '+String(pat.mother_low??'-')
+            +'｜子K支撐 '+String(pat.child_low??'-')
+            +'｜形成 '+String(pat.child_date||'-')
+            +'｜距今 '+String(pat.age_days??'-')+' 個交易日';
+          const chipStatus=model?.quality?.chip_status==='unavailable'
+            ?'｜法人資料不足，不能視為主力確認'
+            :model?.quality?.chip_confirmed===true
+              ?'｜法人籌碼支持（不等於主力分點）':'｜法人籌碼未確認';
+          const common={priority:0,highRisk:false};
+          if(pat.state==='mother_low_broken')return {...common,kind:'mother_k_invalid',highRisk:true,
+            text:'🔴 母子K失效｜收盤跌破母K低點',
+            detail:levels+'｜失效日 '+String(pat.broken_date||'-')
+              +'｜新型態重建前不當作突破買點；不改原持股MA20出場'};
+          if(pat.state==='child_low_broken')return {...common,kind:'child_k_broken',highRisk:true,
+            text:'🟠 母子K警戒｜收盤跌破子K低點',
+            detail:levels+'｜警戒日 '+String(pat.broken_date||'-')
+              +'｜停止當作有效突破追價；母K低點才是型態最終失效線'};
+          if(pat.state==='breakout_confirmed')return {...common,kind:'mother_child_breakout',
+            text:'📚 母子K帶量突破｜型態確認（非買點）',
+            detail:levels+'｜突破日 '+String(pat.breakout_date||'-')
+              +chipStatus+'｜仍須原進場風控與獨立績效認證'};
+          if(pat.state==='breakout_wait_volume')return {...common,kind:'mother_child_weak_break',
+            text:'🟡 母子K突破價位但量不足｜不可追',
+            detail:levels+'｜未通過突破量價，尚非有效突破'};
+          if(pat.state==='formed')return {...common,kind:'mother_child_formed',
+            text:'📚 母子K成立｜等待突破母K高點',
+            detail:levels+'｜K棒與量能收縮確認；尚未突破，不可當買點'};
+          if(pat.state==='waiting_breakout')return {...common,kind:'mother_child_wait',
+            text:'📚 母子K整理中｜支撐未破、待量價',
+            detail:levels+'｜只列觀察，收盤帶量突破母K高點才確認'};
+          if(pat.state==='breakout_held')return {...common,kind:'mother_child_holding',
+            text:'📚 母子K突破後守住｜持續追蹤',
+            detail:levels+'｜突破日 '+String(pat.breakout_date||'-')
+              +'｜不是新的第一根買點'};
+          if(pat.state==='breakout_retest_watch')return {...common,kind:'mother_child_retest',
+            text:'🟡 母子K突破後回測｜觀察支撐',
+            detail:levels+'｜已回到母K高點下方，須觀察子K低點與母K低點'};
+        }
         if(fresh&&model?.mother_child?.breakout_confirmed===true){
           const conf=model.quality?.all_confirmed===true;
           const chipLabel=model.quality?.chip_status==='unavailable'
@@ -2776,13 +2817,59 @@ h1 {
           (chipPass?'✅':'⚪')+'籌碼≥65／法人支持',
           (basePass?'✅':'⚪')+(baseConfirmed?'底部型態':lowTurn?'低位C波轉強':'底部／低位轉強')
         ];
-        const label=passed?'✨ 四重共振條件齊｜獲利優勢未驗證'
-          : '📚 四項條件 '+count+'/4｜僅供觀察';
+        const label=passed?'✨ 底部起漲四項符合｜山川型態另查'
+          : '📊 底部起漲四項 '+count+'/4｜觀察';
         return {passed,count,details,kind:passed?'confluence':'observing',
           text:label,detail:details.join('｜')+'｜'+
             (freshModel?(live&&!fresh?'成交不新鮮，不採盤中確認':'模型 '+String(item?.as_of||''))
               :'模型非最新日，不得當買點')+
-            '｜山川研究判讀，歷史績效未證明較高勝率；不作買進排序或交易指令'};
+            '｜這四項是原底部起漲條件，並不代表箱型＋母子K已成立；不是買點或獲利率保證'};
+      };
+      // Independent Shan-Chuan evidence checklist. Never label the old four
+      // MA/volume/chip/base criteria as proof of actual mother-child + box shape.
+      // Research status only. No change to V5 entry, portfolio or scan budget.
+      const shanchuanPatternChecklistState = item => {
+        const m=item?.metrics||{},box=m.box_strategy||{},study=m.shanchuan_v2||{};
+        const k=study.mother_child||{},lifecycle=k.lifecycle||{},levels=box.levels||{};
+        const inst=m.chip?.institutional||{};
+        const modelFresh=String(item?.as_of||'')===expectedSignalDataDate();
+        const boxBreak=['support_broken_3d','support_lost_warning','support_below_watch']
+          .includes(String(box.range_state||''));
+        const childBroken=['child_low_broken','mother_low_broken']
+          .includes(String(lifecycle.state||''));
+        const support=box.levels?.as_of===String(item?.as_of||'')
+          &&Number(levels.top)>Number(levels.bottom)&&Number(levels.bottom)>0
+          &&!boxBreak;
+        const mother=lifecycle.active===true
+          &&String(lifecycle.as_of||'')===String(item?.as_of||'')
+          &&['formed','waiting_breakout','breakout_confirmed',
+              'breakout_wait_volume','breakout_held','breakout_retest_watch']
+            .includes(String(lifecycle.state||''));
+        const volume=(k.breakout_confirmed===true||box.breakout_today===true)
+          &&Number(m.current_volume_lots)>=1000
+          &&Number(m.avg_volume_20_lots)>=500;
+        const chip=Number(m.chip?.coverage_modules)>=2&&Number(m.chip?.score)>=65
+          &&(Number(inst.net_5d||0)>0||Number(inst.positive_days_5d||0)>=3);
+        const flags=[support,mother,volume,chip];
+        const count=flags.filter(Boolean).length;
+        const failure=childBroken||boxBreak;
+        const passed=modelFresh&&count===4&&!failure
+          &&m.entry_candle_guard?.weak_after_breakout!==true;
+        const visible=modelFresh&&(!!levels.top||lifecycle.active===true);
+        const details=[
+          (support?'✅':'⚪')+'20日箱型支撐壓力'+(boxBreak?'（支撐風險）':''),
+          (mother?'✅':'⚪')+'母子K成立且未失效'+(childBroken?'（跌破）':''),
+          (volume?'✅':'⚪')+'突破量價確認',
+          (chip?'✅':'⚪')+'法人籌碼佐證'
+        ];
+        const branch=m.chip?.advanced?.broker_branch===true
+          ?'｜券商分點資料已提供，仍須獨立判定'
+          :'｜未接入主力券商分點，不能稱主力確認';
+        return {visible,passed,count,details,
+          text:passed?'📚 山川型態四項符合｜獲利優勢待驗證'
+            :'📚 山川型態 '+count+'/4'+(failure?'｜支撐跌破警戒':'｜觀察'),
+          detail:details.join('｜')+branch
+            +'｜僅研究型態，不解鎖🟢正式買點或自動下單'};
       };
       const newEntryRiskGate = (item, quote = null) => {
         const m=item?.metrics||{}, g=m.entry_candle_guard||{}, hm=m.holding_management||{};
@@ -3786,6 +3873,7 @@ h1 {
             : '｜尚無當日有效成交，非即時買進訊號')};
         const expanded=v5MonitorCard(item, q, safeDisplayAction);
         const survival=entrySurvivalLabel(item,originalAction);
+        const patternChecklist=shanchuanPatternChecklistState(item);
         return `<details class="entry-mini" data-stock-key="${esc(id)}">
           <summary class="entry-mini-summary">
             <span class="entry-mini-name"><strong>${esc(id)} ${esc(item.stock_name||'')}</strong><small>${esc(actionText)}</small></span>
@@ -3795,6 +3883,7 @@ h1 {
             <span class="entry-mini-date">S 模型 ${esc(item.as_of||'待更新')}｜${tradeContext}${esc(missingText)}</span>
             ${shanchuanState(item,q).kind!=='neutral'?'<span class="entry-mini-date">📚 山川量價｜'+esc(shanchuanState(item,q).text)+'</span>':''}
             ${shanchuanConfluenceState(item,q).count>=2?'<span class="entry-mini-date">'+esc(shanchuanConfluenceState(item,q).text)+'</span>':''}
+            ${patternChecklist.visible?'<span class="entry-mini-date">'+esc(patternChecklist.text)+'</span>':''}
             <span class="entry-survival-status ${survival.tone}" data-entry-survival-id="${esc(id)}" data-entry-survival-trial="${activeTrial?'1':'0'}">${esc(survival.text)}</span>
           </summary>
           <div class="entry-mini-full">${expanded}</div>
@@ -4402,6 +4491,11 @@ h1 {
         const riskSummary = cautionList.length ? `<div class="risk-summary">⚠️ ${esc(cautionList[0])}${cautionList.length > 1 ? ` ＋${cautionList.length - 1}項` : ''}</div>` : '';
         const sc=shanchuanState(item, displayQuote);
         const scConfluence=shanchuanConfluenceState(item,displayQuote);
+        const scPattern=shanchuanPatternChecklistState(item);
+        const scPatternHtml=['LAUNCH','ENTRY','HOLDING'].includes(stage)&&scPattern.visible
+          ? '<div class="signal-note" data-shanchuan-pattern="1"><b>'+esc(scPattern.text)
+            +'</b><small style="display:block;margin-top:3px">'
+            +esc(scPattern.detail)+'</small></div>':'';
         const scConfluenceHtml=['LAUNCH','ENTRY','HOLDING'].includes(stage)&&scConfluence.count>=2
           ? '<div class="signal-note"><b>'+esc(scConfluence.text)+'</b>'
             +'<small style="display:block;margin-top:3px">'+esc(scConfluence.detail)+'</small></div>'
@@ -4411,18 +4505,34 @@ h1 {
             +'<b>📚 山川量價｜'+esc(sc.text)+'</b><small style="display:block;margin-top:3px">'
             +esc(sc.detail)+'</small></div>' : '';
         const boxSignal=metrics?.box_strategy||{},fixedBox=holdingBoxState(item,displayQuote);
-        const shownBoxTop=fixedBox?.top||Number(boxSignal.anchor?.top||boxSignal.box_range?.top);
-        const shownBoxBottom=fixedBox?.bottom||Number(boxSignal.anchor?.bottom||boxSignal.box_range?.bottom);
+        const shownBoxTop=fixedBox?.top||Number(boxSignal.levels?.top||boxSignal.anchor?.top||boxSignal.box_range?.top);
+        const shownBoxBottom=fixedBox?.bottom||Number(boxSignal.levels?.bottom||boxSignal.anchor?.bottom||boxSignal.box_range?.bottom);
         const boxImportant=shownBoxTop>shownBoxBottom
-          &&(fixedBox||boxSignal.prepared===true||boxSignal.breakout_today===true
+          &&(fixedBox||String(boxSignal.levels?.as_of||'')===String(item?.as_of||'')
+              ||boxSignal.prepared===true||boxSignal.breakout_today===true
               ||boxSignal.retest_held===true);
-        const boxInfo=boxImportant?'<div class="signal-note"><b>📦 山川箱型｜'
-          +(fixedBox?'持股固定箱型':boxSignal.retest_held?'回踩箱頂守住'
-            :boxSignal.breakout_today?'帶量突破箱頂':'整理接近箱頂')
-          +'</b><small style="display:block;margin-top:3px">箱頂 '
-          +esc(num(shownBoxTop,2))+'｜箱底 '+esc(num(shownBoxBottom,2))
-          +(fixedBox?'｜跌破箱底收盤 '+(fixedBox.belowDays==null?'待更新':fixedBox.belowDays)+'/3天':'')
-          +'｜原MA20風控並行</small></div>':'';
+        const boxStateLabels={
+          range_consolidation:'20日箱型區間整理',
+          near_resistance:'接近20日箱頂壓力｜待帶量突破',
+          near_support:'接近20日箱底支撐｜待守住',
+          breakout_without_confirmation:'⚠️ 過箱頂但量價未確認',
+          breakout_confirmed:'帶量突破20日箱頂',
+          above_resistance:'突破後維持箱頂上方',
+          retest_held:'回踩原箱頂守住',
+          back_in_range:'突破後跌回箱內｜警戒',
+          support_lost_warning:'跌破固定箱底｜收盤警戒',
+          support_broken_3d:'🔴 原箱底連3日跌破｜出場風險',
+          support_below_watch:'跌破20日箱底｜等待新整理'
+        };
+        const boxStateText=fixedBox?'持股原箱頂／箱底固定'
+          :(boxStateLabels[String(boxSignal.range_state||'')]||'20日箱型觀察');
+        const boxInfo=boxImportant?'<div class="signal-note"><b>📦 山川箱型支撐壓力｜'
+          +esc(boxStateText)
+          +'</b><small style="display:block;margin-top:3px">20日箱頂／壓力 '
+          +esc(num(shownBoxTop,2))+'｜20日箱底／支撐 '+esc(num(shownBoxBottom,2))
+          +(fixedBox?'｜收盤跌破已鎖定箱底 '+(fixedBox.belowDays==null?'待更新':fixedBox.belowDays)+'/3天':'')
+          +'｜'+(fixedBox?'持股固定價位，不跟著新區間上移':'箱型依最近完整日K，未帶量突破不等於買點')
+          +'｜原MA20出場規則並行</small></div>':'';
         const quoteUi = quoteDisplayState(displayQuote, item);
         const priceLabel = displayQuote ? quoteUi.label : todayOnly ? quoteUi.label : '模型收盤';
         const priceValue = Number.isFinite(quoteUi.value) ? num(quoteUi.value, 2) : (todayOnly ? quoteUi.text : (Number.isFinite(displayClose) ? num(displayClose,2) : '-'));
@@ -4431,7 +4541,7 @@ h1 {
         const detailBody = `<div class="detail-body">${hiddenModelHtml}${v5Html}${chipHtml}${holding ? '' : liquidityHtml}${playbookHtml}<div class="metrics"><span class="pill">3年位階 ${num(metrics.position_3y_pct)}%</span><span class="pill">週K ${num(metrics.weekly_k)}｜${gradeText(weeklyKGrade(metrics.weekly_k))}</span><span class="pill">月K ${num(metrics.monthly_k)}｜${gradeText(monthlyKGrade(metrics.monthly_k))}</span><span class="pill">${backtestSignal(item)}</span>${metrics.backtest ? `<span class="pill">5日 ${num(metrics.backtest.win_rate_5d_pct)}%</span><span class="pill">20日 ${num(metrics.backtest.win_rate_20d_pct)}%</span>` : ''}</div><div class="why">${reasons}</div>${cautions ? `<div class="warn">${cautions}</div>` : ''}</div>`;
         const detailHtml = options.compactHolding && holding ? detailBody : `<details class="card-details"><summary>完整判斷與數據</summary>${detailBody}</details>`;
         const actionHtml = options.hideSignal ? '' : `<div class="trade-signal ${signal.className}">${esc(memberFacingText(signal.text))}<small style="display:block;margin-top:4px;font-weight:500">${esc(memberFacingText(signal.detail || ''))}</small></div>`;
-        return `<article class="card" data-stock-id="${esc(item.stock_id)}"><div class="top"><div><div class="name">${esc(item.stock_id)} ${esc(item.stock_name)}</div><div class="meta">${esc(item.market)}${item.industry ? '・' + esc(item.industry) : ''}${timeInfoStages() ? '' : '｜資料日 ' + esc(item.as_of || '-')}</div></div><div class="badge ${esc(item.stage)}">模型 ${Number(item.score || 0)}分</div></div>${companyProfileHtml(item)}${activeLaunchVisibleHtml}${volumePriceHtml(item, displayQuote)}${shanchuanHtml}${boxInfo}${scConfluenceHtml}${pullbackWatchHtml(item, displayQuote)}${holding ? (options.compactHolding ? '' : holdingTodayHtml + holdingDipHtml) : actionHtml + quickHtml + deviationWarningHtml + riskSummary}${holdingHtml}${options.compactHolding && holding ? `<details class="card-details holding-combined"><summary>完整判斷與技術數據</summary>${holdingStatusHtml}${detailHtml}</details>` : holdingStatusHtml+detailHtml}${timeInfoStages() ? timeInfoHtml(item, displayQuote) : '<div class="time">背景模型掃描：' + updated + '</div>'}</article>`;
+        return `<article class="card" data-stock-id="${esc(item.stock_id)}"><div class="top"><div><div class="name">${esc(item.stock_id)} ${esc(item.stock_name)}</div><div class="meta">${esc(item.market)}${item.industry ? '・' + esc(item.industry) : ''}${timeInfoStages() ? '' : '｜資料日 ' + esc(item.as_of || '-')}</div></div><div class="badge ${esc(item.stage)}">模型 ${Number(item.score || 0)}分</div></div>${companyProfileHtml(item)}${activeLaunchVisibleHtml}${volumePriceHtml(item, displayQuote)}${shanchuanHtml}${boxInfo}${scPatternHtml}${scConfluenceHtml}${pullbackWatchHtml(item, displayQuote)}${holding ? (options.compactHolding ? '' : holdingTodayHtml + holdingDipHtml) : actionHtml + quickHtml + deviationWarningHtml + riskSummary}${holdingHtml}${options.compactHolding && holding ? `<details class="card-details holding-combined"><summary>完整判斷與技術數據</summary>${holdingStatusHtml}${detailHtml}</details>` : holdingStatusHtml+detailHtml}${timeInfoStages() ? timeInfoHtml(item, displayQuote) : '<div class="time">背景模型掃描：' + updated + '</div>'}</article>`;
       }
 
       // Explain an empty launch list using *the actual API result and this
