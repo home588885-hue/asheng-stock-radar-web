@@ -6353,7 +6353,36 @@ h1 {
         const avgCost = Number($('#holdingCost').value);
         const quantity = Math.trunc(Number($('#holdingQty').value));
         if (!Number.isFinite(avgCost) || avgCost <= 0 || !Number.isFinite(quantity) || quantity <= 0) return;
-        const response = await memberFetch(HOLDINGS_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'save_holding', stock_id: stockId, avg_cost: avgCost, quantity, entry_signal_key: 'member_ui', entry_signal_text: '會員雷達加入持股' }) });
+        // This form records a manually maintained position, never a broker
+        // confirmation. Keep only the on-screen model and quote context.
+        const model = (liveBasePicks || []).find(row => String(row?.stock_id || '') === stockId);
+        const rawQuote = liveQuoteCache.get(stockId);
+        const observedQuote = validTodayQuote(rawQuote) ? rawQuote : null;
+        const modelAction = stage === 'ENTRY' && model
+          ? entrySnapshotState(model, simpleActionState(model, observedQuote), observedQuote)
+          : null;
+        const snapshot = {
+          source:'manual_admin_input', broker_execution_verified:false,
+          ui_stage:stage, observed_model_day:String(model?.as_of || '') || null,
+          observed_model_score:Number.isFinite(Number(model?.score)) ? Number(model.score) : null,
+          observed_eod_close:Number(model?.metrics?.close) > 0 ? Number(model.metrics.close) : null,
+          observed_ma20:Number(model?.metrics?.ma20) > 0 ? Number(model.metrics.ma20) : null,
+          observed_signal_phase:modelAction?.phase || null,
+          observed_signal_text:String(modelAction?.text || '').slice(0,120) || null,
+          observed_quote_time:observedQuote?.quote_time || null,
+          observed_quote_date:observedQuote?.quote_date || null
+        };
+        const response = await memberFetch(HOLDINGS_API, { method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action:'save_holding',stock_id:stockId,avg_cost:avgCost,quantity,
+            entry_signal_key:'member_ui',
+            entry_signal_text:'手動登錄／調整持股，非已驗證的自動買進訊號',
+            entry_model_as_of:model?.as_of || null,
+            entry_quote_time:observedQuote?.quote_time || null,
+            entry_snapshot:snapshot
+          })
+        });
         const data = await response.json();
         if (!response.ok || !data.ok) { alert('持股資料暫時無法儲存，請稍後再試。'); return; }
         $('#holdingDialog').close();
@@ -6368,7 +6397,25 @@ h1 {
 
       async function sellHolding(stockId) {
         if (!confirm(`${stockId} 已經賣出？確認後會移出持有快速池。`)) return;
-        const response = await memberFetch(HOLDINGS_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'sell_holding', stock_id: stockId }) });
+        const priceInput = prompt('請輸入實際賣出成交單價（不是目前報價）。留空代表成交價未知，無法計算已實現損益。', '');
+        if (priceInput === null) return;
+        const entered = priceInput.trim();
+        const soldPrice = entered === '' ? null : Number(entered);
+        if (entered && (!Number.isFinite(soldPrice) || soldPrice <= 0)) {
+          alert('成交單價必須大於 0；尚未修改持股。'); return;
+        }
+        if (soldPrice === null && !confirm('確定不填成交價？這筆賣出將無法計入可核對的實際獲利。')) return;
+        const existingHolding = holdings.get(String(stockId));
+        const response = await memberFetch(HOLDINGS_API, { method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action:'sell_holding',stock_id:stockId,price:soldPrice,
+            snapshot:{ source:'manual_admin_sell',broker_price_user_reported:soldPrice!==null,
+              cost_basis_at_sale:Number(existingHolding?.avg_cost) > 0 ? Number(existingHolding.avg_cost) : null,
+              quantity_at_sale:Number(existingHolding?.quantity) > 0 ? Number(existingHolding.quantity) : null,
+              fees_excluded:true }
+          })
+        });
         const data = await response.json();
         if (!response.ok || !data.ok) { alert('持股資料暫時無法更新，請稍後再試。'); return; }
         holdings.delete(String(stockId));
