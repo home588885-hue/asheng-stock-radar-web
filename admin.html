@@ -6385,6 +6385,7 @@ h1 {
         });
         const data = await response.json();
         if (!response.ok || !data.ok) { alert('持股資料暫時無法儲存，請稍後再試。'); return; }
+        if (data.trade_log_saved === false) alert('持股已儲存，但操作紀錄未成功寫入。請先核對紀錄，不要重複送出。');
         $('#holdingDialog').close();
         const savedHolding = data.holding || { stock_id: stockId, avg_cost: avgCost, quantity };
         holdings.set(String(stockId), savedHolding);
@@ -6418,6 +6419,7 @@ h1 {
         });
         const data = await response.json();
         if (!response.ok || !data.ok) { alert('持股資料暫時無法更新，請稍後再試。'); return; }
+        if (data.trade_log_saved === false) alert('持股已標記賣出，但成交紀錄寫入失敗。請核對後台，不要重複送出。');
         holdings.delete(String(stockId));
         holdingExpandedIds.delete(String(stockId));
         stageViewCache.delete('HOLDING');
