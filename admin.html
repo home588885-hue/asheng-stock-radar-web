@@ -3703,6 +3703,22 @@ h1 {
           live_quote_verified:true,className:'trial',key:'ma10_reclaim_trial',
           text:originalTrial.text,
           detail:originalTrial.detail+'｜沿用原有MA10回踩試單條件；不是V5正式買點'};
+        if(boxSetup&&quoteValid&&boxTop>boxBottom&&boxPrice>boxTop*1.003){
+          const missing=[];
+          if(!fresh)missing.push('成交已超過5分鐘／非試單時段');
+          if(!eligible)missing.push('量能、均線或MA20乖離未過');
+          if(!(boxChip>=60))missing.push(Number.isFinite(boxChip)?'籌碼未達60':'籌碼尚無可信資料');
+          if(!(boxPace>=1.2&&boxPace<=2.5))missing.push('量速未落在1.2～2.5倍');
+          if(!boxStructure)missing.push('均線或K棒轉強條件不足');
+          if(boxModel?.breakout_today===true)missing.push('盤後模型已確認突破，非當日第一根');
+          return {...baseAction,phase:'candidate',buyable:false,trialable:false,
+            key:'box_breakout_watch',className:'scout',rank:46,
+            live_quote_verified:true,
+            text:'🟡 山川箱型｜已過箱頂但試單條件未齊',
+            detail:'箱頂 '+num(boxTop,2)+'｜箱底 '+num(boxBottom,2)
+              +'｜'+(missing.join('；')||'未通過完整當日交易驗證')
+              +'｜維持觀察，不以舊資料補發買進訊號'};
+        }
         if(recovery){
           const recovered=maPullbackReclaimTodayState(item,quote,recovery);
           return {...baseAction,key:'pullback_watch',phase:'candidate',buyable:false,
