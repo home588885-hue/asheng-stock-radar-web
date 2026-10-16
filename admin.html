@@ -1764,6 +1764,9 @@ h1 {
       let holdingModelRefreshing = false;
       let holdingVisibilityControl = null; // 已買進頁專屬，切換分頁後失效
       let pullbackWatch = new Map();
+      let pullbackWatchSnapshots = new Map();
+      let pullbackWatchArchived = [];
+      const persistentTrialInFlight = new Set();
       // Preserve only tab choice per verified account, never stored portfolio HTML.
       const LAST_RADAR_STAGE_KEY = 'asheng-last-stage-v1-' + portfolioId;
       let stage = 'LAUNCH';
@@ -3468,6 +3471,8 @@ h1 {
           const data = await response.json();
           if (!response.ok || !data?.ok) return [];
           pullbackWatch = new Map((data.watches || []).map(w => [String(w.stock_id), w]));
+          pullbackWatchSnapshots = new Map((data.items || []).map(item => [String(item.stock_id),item]));
+          pullbackWatchArchived = Array.isArray(data.archived)?data.archived:[];
           const boughtIds=[...pullbackWatch.keys()].filter(id => holdings.has(id));
           if (boughtIds.length) {
             await savePullbackWatchRows(boughtIds.map(stock_id => ({ stock_id, state:'bought', active:false, reason:'已買進，停止回踩天數追蹤' })));
@@ -3566,9 +3571,20 @@ h1 {
           const guardText=String(guard?.text || '');
           const baseWaitText=String(baseWait?.text || '');
           const isNewTrigger=(!!guard && guardText.includes('等回踩')) || (baseWait?.key==='wait' && baseWaitText.includes('等回踩'));
-          if (!current && !isNewTrigger) continue;
+          const modelUsable=unifiedRadarGeneration(item)
+            &&String(item.as_of||'')===expectedSignalDataDate();
+          // A stale/non-rescanned snapshot is not proof the watch failed.
+          // Keep its persisted state instead of silently invalidating it.
+          if(!modelUsable)continue;
+          const inActivePhase=['ACTIVE','ENTRY'].includes(modelLaunchPhase(item));
+          const firstBreak=item.metrics?.box_strategy?.discovery?.first_bar_today===true;
+          const activeOrigin=!current&&(inActivePhase||firstBreak)
+            &&!holdings.has(id)&&Number(item.metrics?.current_volume_lots)>=1000;
+          if(!current&&!isNewTrigger&&!activeOrigin)continue;
           const state=pullbackWatchState(item);
-          const reason=isNewTrigger ? String(guard?.detail || baseWait?.detail || state.reason) : state.reason;
+          if(!state.active&&!current)continue;
+          const reason=activeOrigin?'發動中已進追蹤，後續監看回踩與重新轉強；未重新驗證不得當作今日買點'
+            :isNewTrigger ? String(guard?.detail || baseWait?.detail || state.reason) : state.reason;
           if (!current || current.state!==state.state || current.active!==state.active || isNewTrigger && !current) {
             rows.push({
               stock_id:id,
@@ -3974,6 +3990,91 @@ h1 {
             + '｜下單前須核對今日股價、量能與風險</div>').join('')
           + (changes.length>8?'<div class="risk-note">其餘 '+(changes.length-8)+' 檔請查看進場雷達。</div>':'');
       };
+
+      // Cross-day tracking is a separate audit shelf, not a fresh candidate or
+      // an automatic orange/green buy signal. Watches are stored in S per portfolio.
+      const entryPersistedTrackingHtml = () => {
+        const active=[...pullbackWatch.values()]
+          .filter(w=>w.active===true&&!holdings.has(String(w.stock_id||'')))
+          .sort((a,b)=>String(b.trial_last_as_of||b.first_seen_at||'')
+            .localeCompare(String(a.trial_last_as_of||a.first_seen_at||'')));
+        const archived=(pullbackWatchArchived||[])
+          .filter(w=>w.active===false&&w.state==='invalid'
+            &&!holdings.has(String(w.stock_id||'')));
+        if(!active.length&&!archived.length)return '';
+        const trackCard=(w,invalid=false)=>{
+          const id=String(w.stock_id||'');
+          const item=pullbackWatchSnapshots.get(id)||null;
+          const current=!!item&&unifiedRadarGeneration(item)
+            &&String(item.as_of||'')===expectedSignalDataDate();
+          const first=String(w.first_as_of||'未記錄');
+          const day=String(item?.as_of||'未取得');
+          const name=String(item?.stock_name||'');
+          const title=invalid?'🔴 追蹤失效｜已移至歷史'
+            :w.trial_last_as_of?'🟠 曾符合小量試單｜持續追蹤（目前非試單）'
+            :w.state==='ready'?'🟡 回踩後轉強｜待當日驗證'
+            :w.state==='pullback'?'🟡 回踩追蹤中'
+            :'📋 發動中／突破後追蹤';
+          const lastTrial=w.trial_last_as_of
+            ?'｜最近曾符合試單 '+String(w.trial_last_as_of)
+            :'';
+          const price=Number(item?.metrics?.close);
+          const ma20=Number(item?.metrics?.ma20);
+          const since=w.first_seen_at
+            ?new Date(w.first_seen_at).toLocaleDateString('zh-TW',{timeZone:'Asia/Taipei'}):first;
+          return '<div class="entry-mini" data-tracking-symbol="'+esc(id)+'">'
+            +'<div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap">'
+            +'<strong>'+esc(id+' '+name)+'</strong>'
+            +'<span>'+esc(title)+'</span></div>'
+            +'<small style="display:block;margin-top:4px">首次追蹤 '+esc(since)
+            +'｜最近模型日 '+esc(day)
+            +(Number.isFinite(price)&&price>0?'｜該日收盤 '+esc(num(price,2)):'')
+            +(Number.isFinite(ma20)&&ma20>0?'｜MA20 '+esc(num(ma20,2)):'')
+            +esc(lastTrial)+'</small>'
+            +'<small style="display:block;margin-top:4px">'
+            +esc(invalid?String(w.reason||'歷史結構已失效')
+              :current?'今天新版模型已核對，仍須新成交才能重新判定橘色試單'
+                :'⚪ 尚無最新完整新版模型；沿用追蹤紀錄，絕非今日有效買點')
+            +'</small></div>';
+        };
+        const normal=active.slice(0,120).map(w=>trackCard(w)).join('');
+        const archive=archived.slice(0,40).map(w=>trackCard(w,true)).join('');
+        return '<section class="entry-bucket entry-bucket-persistent" data-stable-key="entry-crossday-watch">'
+          +'<details class="entry-bucket-fold" data-entry-fold="persistent" open>'
+          +'<summary class="entry-bucket-head"><span class="entry-bucket-headline">'
+          +'<b>📌 跨日保留｜曾可試單、發動中、回踩追蹤 '+active.length+' 檔</b>'
+          +'<small>每天更新仍可從此處查看；舊訊號只記錄歷史，不代表今天仍可買</small>'
+          +'</span></summary><div style="padding:10px">'+normal
+          +(active.length>120?'<small>其餘 '+(active.length-120)+' 檔已保存，待縮小顯示範圍</small>':'')
+          +'</div></details>'
+          +(archived.length?'<details class="entry-bucket-fold" data-entry-fold="invalid-history">'
+            +'<summary class="entry-bucket-head"><span class="entry-bucket-headline"><b>🔴 最近失效追蹤 '+archived.length+' 檔</b>'
+            +'<small>保留原因供複盤，不會當成買進候選</small></span></summary>'
+            +'<div style="padding:10px">'+archive+'</div></details>':'')
+          +'</section>';
+      };
+      const persistVerifiedTrialRows = rows => {
+        // Record only a REAL current, valid C trade which the existing locked
+        // entrySnapshotState classified trialable; never record EOD mock trials.
+        const updates=[];
+        for(const row of (rows||[])){
+          const id=String(row.item?.stock_id||''),day=String(row.item?.as_of||'');
+          const key=id+'@'+day,existing=pullbackWatch.get(id);
+          if(!id||!unifiedRadarGeneration(row.item)
+            ||row.action?.phase!=='trial'||row.action?.trialable!==true
+            ||!quoteFreshForTrial(row.quote)||existing?.trial_last_as_of===day
+            ||persistentTrialInFlight.has(key))continue;
+          persistentTrialInFlight.add(key);
+          updates.push({stock_id:id,first_as_of:day,first_price:Number(row.item.metrics?.close)||null,
+            state:existing?.active===true?existing.state:'tracking',
+            active:true,touch_signal:true,touch_trial:true,
+            reason:'先前曾通過盤中橘色小量試單；跨日僅追蹤，不代表今天仍能試單'});
+        }
+        if(!updates.length)return;
+        void savePullbackWatchRows(updates).finally(()=>{
+          for(const row of updates)persistentTrialInFlight.delete(row.stock_id+'@'+row.first_as_of);
+        });
+      };
       const renderEntrySections = (rows,{quoteUpdate=false}={}) => {
         rows=[...new Map((rows||[]).map(row=>[String(row?.item?.stock_id||''),row])).values()]
           .filter(row=>row?.item?.stock_id && !holdings.has(String(row.item.stock_id))
@@ -4127,6 +4228,7 @@ h1 {
           &&row.action?.trialable===true&&quoteFreshForTrial(row.quote)));
         const completedRows=byRank(allSignal.filter(row=>row.action?.phase==='confirmed'
           &&row.action?.buyable===true&&formalEntryValidation.enabled&&quoteFreshForTrial(row.quote)));
+        persistVerifiedTrialRows(starterRows);
         // One stock appears in exactly ONE category; live actionable signals
         // retain their priority. Completed-EOD first bars get their own section.
         const actionableIds=new Set([...starterRows,...completedRows].map(row=>rowId(row)));
@@ -4155,6 +4257,7 @@ h1 {
           <small>模型日 ${esc(expectedSignalDataDate())}｜V5正式進場：${formalEntryValidation.enabled?'歷史驗證已通過':'暫停（'+esc(formalEntryValidation.reason)+'）'}｜⏱12分鐘存活僅於12:50～13:20、進場雷達在前景且有橘色試單時沿用C報價取樣；非逐筆、不能補算，通過也不會升級正式買點｜點股票展開未達條件${staleRows.length?'｜另有 '+staleRows.length+' 檔過期快照未列入':''}</small>
         </div>`;
         const outHtml = banner+
+          entryPersistedTrackingHtml()+
           entryBucketHtml('formal','🟢 正式買點｜V5驗證與有效成交完成','必須同時符合原模型、歷史驗證及當日風控；不代表保證獲利',completedRows,{open:true,tone:'focus',preview:6})+
           entryBucketHtml('trial','🟠 可小量試單｜盤中有效成交確認','5分鐘內成交且既有起漲條件與風控通過；試單不等於V5正式買點',starterRows,{open:true,tone:'focus',preview:6})+
           entryBucketHtml('box-first','📦 山川20日箱型突破第一根｜優先追蹤','模型日第一根已突破且量價、法人籌碼及原風控符合；仍是盤後追蹤，須核對新交易日報價，非🟢正式買點',boxFirstRows,{open:true,tone:'focus',preview:6})+
@@ -6329,7 +6432,8 @@ h1 {
         }
         if (!liveBasePicks.length) {
           if (stage === 'ENTRY') {
-            $('#list').innerHTML = '<div class="box empty">新版山川模型尚在分批補算，或沒有符合條件的新版候選；不回填舊版。</div>';
+            $('#list').innerHTML = entryPersistedTrackingHtml()
+              +'<div class="box empty">新版今日候選尚在補算，跨日追蹤保留在上方；不可把昨日訊號當今天試單。</div>';
             $('#note').textContent = '只顯示新版山川候選；待原夜間掃描陸續補算，不能把尚未重算當成零訊號。';
             setCandidateSummary('bCount', 0, '最近完整日K追蹤名單');
           }
