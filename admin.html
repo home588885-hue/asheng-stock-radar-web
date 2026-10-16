@@ -2754,15 +2754,6 @@ h1 {
         const m=item?.metrics||{}, g=m.entry_candle_guard||{}, hm=m.holding_management||{};
         const intraday=liveSelloffRisk(item,quote);
         if(intraday)return intraday;
-        // 山川量價保護層：只在新鮮、有效成交、最新日K都齊全時降為觀察。
-        // 不製造新買點、不改持股出場；曾有高位爆量不代表一定是出貨。
-        const sc=shanchuanState(item,quote);
-        if(sc.highRisk&&String(item?.as_of||'')===expectedSignalDataDate())return {
-          kind:'momentum',key:'wait',phase:'observe',rank:9,className:'wait',
-          text:'🟡 山川高檔量價警戒｜暫停新試單',
-          detail:sc.detail+'｜須等收復關鍵價、重新通過原風控',
-          keep_candidate:true,buyable:false,trialable:false
-        };
         const price=validTodayQuote(quote)?Number(quote.price):Number(m.close);
         const ma20=Number(m.ma20), ma60=Number(m.ma60), pos=Number(m.position_1y_pct);
         const k=Number(m.daily_k), d=Number(m.daily_d);
