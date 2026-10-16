@@ -3638,15 +3638,18 @@ h1 {
         const recovery=modelFresh?maPullbackReclaimWatchState(item):null;
         const originalMa10Watch=modelFresh&&ma10PullbackWatchState(item);
         const mcModel=item?.metrics?.shanchuan_v2;
+        const boxModel=item?.metrics?.box_strategy;
+        const boxSetup=modelFresh&&boxModel
+          &&(boxModel.prepared===true||boxModel.breakout_today===true);
         const motherChildWatch=modelFresh
           &&mcModel?.mother_child?.breakout_confirmed===true
           &&mcModel?.quality?.bottom_structure===true
           &&mcModel?.quality?.chip_confirmed===true
           &&mcModel?.quality?.risk_pass===true;
-        if(!baseAction&&!recovery&&!originalMa10Watch&&!motherChildWatch)return null;
+        if(!baseAction&&!recovery&&!originalMa10Watch&&!motherChildWatch&&!boxSetup)return null;
         if(!baseAction)baseAction={key:'pullback_watch',rank:32,className:'scout',
-          text:motherChildWatch?'🟡 母子K突破｜研究追蹤':'🟡 回踩支撐觀察｜等盤中量價',
-          detail:motherChildWatch?'母子K量價與籌碼條件齊，等待獨立獲利驗證':'最近完整日K模型待核對',
+          text:motherChildWatch?'🟡 母子K突破｜研究追蹤':boxSetup?'🟡 箱型整理｜突破追蹤':'🟡 回踩支撐觀察｜等盤中量價',
+          detail:motherChildWatch?'母子K量價與籌碼條件齊，等待獨立獲利驗證':boxSetup?'等待箱頂突破並核對盤中成交量':'最近完整日K模型待核對',
           keep_candidate:true};
         const quoteValid=marketBridgeReady()&&validTodayQuote(quote),fresh=quoteFreshForTrial(quote);
         const risk=newEntryRiskGate(item,quoteValid?quote:null);
@@ -3665,6 +3668,27 @@ h1 {
           live_quote_verified:true,text:'🟢 正式買點｜V5與有效成交確認',
           detail:'歷史驗證已開放＋既有V5成立＋當日5分鐘內成交與均線／位置風控通過｜'
           +String(baseAction.detail||'仍須自行控管部位')};
+        // Box top comes from the completed EOD model; only an actual fresh
+        // Cloudflare trade can promote it to an orange trial.
+        const boxTop=Number(boxModel?.anchor?.top||boxModel?.box_range?.top);
+        const boxBottom=Number(boxModel?.anchor?.bottom||boxModel?.box_range?.bottom);
+        const boxPrice=Number(quote?.price),boxHigh=Number(quote?.high);
+        const boxAvg=Number(m.avg_volume_20_lots),boxVol=Number(quote?.volume_lots);
+        const boxPace=boxAvg>0&&fresh?boxVol/(boxAvg*marketFraction(quote.quote_time)):null;
+        const boxChip=Number(m.chip?.score);
+        const boxStructure=m.ma_cluster?.all_rising===true
+          &&m.entry_candle_guard?.weak_after_breakout!==true
+          &&m.entry_candle_guard?.main_bull!==false;
+        const boxTrial=!!(boxSetup&&eligible&&boxTop>boxBottom&&boxBottom>0
+          &&boxStructure&&boxChip>=60&&boxPrice>boxTop*1.003
+          &&(!Number.isFinite(boxHigh)||boxHigh<=0||boxPrice>=boxHigh*.985)
+          &&boxAvg>=500&&boxVol>=1000&&boxPace>=1.2&&boxPace<=2.5);
+        if(boxTrial)return {...baseAction,phase:'trial',buyable:false,
+          trialable:true,key:'box_breakout_trial',className:'trial',rank:Math.max(95,Number(baseAction.rank||0)),
+          live_quote_verified:true,text:'🟠 山川箱型突破｜小量試單',
+          detail:'固定箱頂 '+num(boxTop,2)+'｜箱底 '+num(boxBottom,2)
+            +'｜量速 '+num(boxPace,2)+'x｜MA20乖離≤5%、籌碼與原風控已核對；'
+            +'僅小量試單，非綠色正式買點'};
         const firstBarTrial=eligible&&baseAction.key==='breakout'
           &&baseAction.intraday_early_launch===true;
         if(firstBarTrial)return {...baseAction,phase:'trial',buyable:false,trialable:true,
@@ -4982,6 +5006,59 @@ h1 {
           && hm.strong_breakdown!==true && hm.exit_ready!==true
           && Number(hm.below_ma20_days||0)<3;
       };
+      // Fixed box range is bound to the actual recorded position, not the
+      // latest rolling box. Old holdings without a recorded anchor remain MA20-only.
+      const holdingBoxState = (item, quote = null) => {
+        const holding=holdings.get(String(item?.stock_id||''));
+        const top=Number(holding?.box_anchor_top),bottom=Number(holding?.box_anchor_bottom);
+        const date=String(holding?.box_breakout_date||'');
+        if(!(top>bottom&&bottom>0&&date))return null;
+        const model=item?.metrics?.box_strategy||{};
+        const modelFresh=String(item?.as_of||'')===expectedSignalDataDate();
+        const closes=Array.isArray(model.recent_closes)?model.recent_closes:[];
+        let days=0;
+        if(modelFresh)for(let k=closes.length-1;k>=0;k--){
+          const bar=closes[k],barDate=String(bar?.[0]||''),px=Number(bar?.[1]);
+          if(!barDate||barDate<=date||!(px>0))break;
+          if(px<bottom)days++;
+          else break;
+        }
+        const origin=model.anchor||{};
+        const sameBox=String(origin.breakout_date||'')===date
+          &&Math.abs(Number(origin.top)-top)<.012
+          &&Math.abs(Number(origin.bottom)-bottom)<.012;
+        return {top,bottom,date,belowDays:modelFresh?days:null,
+          exitReady:modelFresh&&days>=3,
+          retestHeld:modelFresh&&sameBox&&model.retest_held===true&&days===0,
+          modelFresh,liveBelow:validTodayQuote(quote)&&Number(quote.price)<bottom};
+      };
+      // Add-on candidate uses the locked box and the original holding risk checks.
+      // No intraday fill assumptions, no second order, no new S/C requests.
+      const holdingBoxAddState = (item, quote = null, box = null) => {
+        if(!box?.retestHeld || validTodayQuote(quote))return null;
+        const h=holdings.get(String(item.stock_id)),m=item.metrics||{},hm=m.holding_management||{};
+        const p=Number(m.close),cost=Number(h?.avg_cost),qty=Number(h?.quantity);
+        const ma10=Number(m.ma10),ma20=Number(m.ma20),ma60=Number(m.ma60);
+        const ratio=Number(hm.day_volume_ratio),k=Number(m.daily_k);
+        const pnl=cost>0?(p/cost-1)*100:null;
+        if(!(qty>0&&cost>0&&p>0&&ma10>0&&ma20>0&&ma60>0))return null;
+        if(String(h.bought_at||'').slice(0,10)>=String(item.as_of||''))return null;
+        if(pnl<0||pnl>=12||hm.exit_ready===true||hm.strong_breakdown===true
+          ||hm.effective_prev_low_break===true||Number(hm.below_ma20_days||0)>0
+          ||ma20<ma60||ma10<ma20*.995||p<Math.max(ma10,ma20,ma60)
+          ||p/ma20>1.05||p<box.top
+          ||!(ratio>=.8&&ratio<=2&&k>=25&&k<=85)
+          ||Number(m.current_volume_lots)<1000||Number(m.avg_volume_20_lots)<500
+          ||Number(m.chip?.score)<60)return null;
+        let record=null;
+        try{record=JSON.parse(localStorage.getItem(
+          HOLDING_ADD_ONCE_PREFIX+String(portfolioId||'')+'-'+String(item.stock_id))||'null');}
+        catch(e){}
+        if(record?.added===true&&record?.boughtDate===String(h.bought_at||'').slice(0,10))return null;
+        return {pnl,ratio,top:box.top,bottom:box.bottom,
+          suggestedQty:Math.max(1,Math.floor(qty/3))};
+      };
+
       const actionDecision = (item, quote = null) => {
         const metrics = item.metrics || {};
         const holding = holdings.get(String(item.stock_id));
@@ -5017,6 +5094,7 @@ h1 {
         const bottomState = bottomStartState(item, quote);
         if (holding) {
           const hm = metrics.holding_management || {};
+          const boxHolding=holdingBoxState(item,quote);
           const belowDays = Number(hm.below_ma20_days || 0);
           const exitReady = hm.exit_ready === true || belowDays >= 3;
           const strongBreak = hm.strong_breakdown === true;
@@ -5036,6 +5114,12 @@ h1 {
           const strongAddTrigger = Number(hm.strong_add_trigger || v5.rebreak_trigger_price || recentHigh);
           const strongAddReady = hm.strong_add_ready === true || (quote && Number.isFinite(strongAddTrigger) && strongAddTrigger > 0 && price >= strongAddTrigger * 1.003 && allAbove && Number.isFinite(ext20) && ext20 >= 0 && ext20 <= 8 && volume >= 1000 && avg20Volume >= 500 && Number.isFinite(liveVolumeRatio) && liveVolumeRatio >= 1.0 && liveVolumeRatio <= 2.2 && Number.isFinite(dailyK) && dailyK <= 85 && livePriceTurn);
           const livePrevLowBreak = quote && Number.isFinite(prevLow) && prevLow>0 && price < prevLow*.996;
+          if(boxHolding?.exitReady)return {
+            className:'live-late',title:'🔴 出清股票｜箱底連續3日失守',
+            detail:'原箱底 '+num(boxHolding.bottom,2)+'｜已連續 '
+              +boxHolding.belowDays+' 個交易日收盤低於箱底，未站回',
+            extra:'與MA20三日停損並行，先觸發的風險先處理；非自動下單'
+          };
           if (strongBreak) return { className:'live-late', title:'🔴 強警示｜結構快速轉弱', detail:'長黑＋爆量＋MA20下方＋籌碼偏弱', extra:'這是背景強風控，需優先檢查是否提早處理，不必機械等滿3天' };
           if (exitReady) return { className:'live-late', title:'🔴 出清股票', detail:`已連續 ${belowDays} 個交易日收盤跌破 MA20 ${num(ma20,2)}，仍未拉回`, extra:pnl == null ? '依3日規則出清' : `成本 ${num(avgCost,2)}｜目前損益 ${pnl>=0?'+':''}${num(pnl,1)}%` };
 
@@ -5098,6 +5182,19 @@ h1 {
             detail:'最近完整日K低於MA10 '+num(ma10,2)+'｜日量放大，仍在MA20之上',
             extra:'先觀察支撐是否收復；不將短線警戒誤作MA20正式出場'
           };
+          if(boxHolding?.modelFresh&&boxHolding.belowDays>0)return {
+            className:'live-warm',
+            title:'🟠 箱底下方第 '+boxHolding.belowDays+' 天｜暫停加碼',
+            detail:'固定箱底 '+num(boxHolding.bottom,2)
+              +'｜需在收盤重新站回，否則連續第3日確認後出場',
+            extra:'僅以完整日K計算；盤中站回不能代替收盤確認'
+          };
+          if(boxHolding?.liveBelow)return {
+            className:'live-warm',title:'🟠 盤中跌破箱底｜等待收盤核對',
+            detail:'原箱底 '+num(boxHolding.bottom,2)
+              +'｜目前有效成交低於箱底，暫停加碼',
+            extra:'箱底停損天數只在完整日K收盤後累計；原MA20停損照常有效'
+          };
           if (riskPlan?.takeTwenty && holdingTakeProfitPending(item, riskPlan)) return {
             className:'live-launch',
             title:riskPlan.live?'🟡 20%分批停利觀察｜盤中待確認':'🟢 20%分批停利｜評估賣出 1/3',
@@ -5125,6 +5222,15 @@ h1 {
           if (shortBreak) return { className:heavyBreak?'live-warm':'live-wait', title:heavyBreak?'🟠 短線轉弱｜放量收破昨日低點':'🟡 短線轉弱｜收破昨日低點', detail:'仍在MA20上方，先停止加碼，不直接出清', extra:heavyBreak?'量能放大，優先觀察MA20是否守住':'若隔日收復昨日低點，警示解除' };
           if (recovered) return { className:'live-launch', title:'🟢 警示解除', detail:'前一日短線跌破已收復', extra:'重新回到MA20趨勢管理；要加碼仍需回踩守住＋量價轉強' };
           if (livePrevLowBreak) return { className:'live-warm', title:'🟠 盤中跌破昨日低點｜等收盤確認', detail:`昨日低點 ${num(prevLow,2)}，目前盤中低於有效跌破門檻`, extra:'盤中只警示，收盤確認後才正式升級短線轉弱' };
+          const boxAdd=holdingBoxAddState(item, quote, boxHolding);
+          if(boxAdd)return {
+            className:'live-launch',title:'🟢 可加碼｜箱頂回踩守住',
+            detail:'原箱頂 '+num(boxAdd.top,2)+' 已由完整日K收復'
+              +'｜量比 '+num(boxAdd.ratio,2)+'x｜成本獲利 '
+              +num(boxAdd.pnl,1)+'%',
+            extra:'原MA20與箱底停損同時有效；單次加碼參考不超過'
+              +boxAdd.suggestedQty+'股，非自動委託'
+          };
           const addPlan = holdingAddPlan(item, quote, {addReady, strongAddReady, strongAddTrigger});
           if (addPlan?.eligible) return {
             className:addPlan.live?'live-wait':'live-launch',
@@ -6108,8 +6214,10 @@ h1 {
         const rankItem = item => {
           // Fill only a passive C-price observation slot; all trade gates remain downstream.
           if (!isEntryRadarItem(item))
-            return (item?.metrics?.shanchuan_v2?.quality?.all_confirmed===true
-              ?82:(isNearMaTurnWatch(item)||maPullbackReclaimWatchState(item))?78:0);
+            return (item?.metrics?.box_strategy?.prepared===true
+              ||item?.metrics?.box_strategy?.breakout_today===true
+              ||item?.metrics?.shanchuan_v2?.quality?.all_confirmed===true)
+              ?82:(isNearMaTurnWatch(item)||maPullbackReclaimWatchState(item))?78:0;
           if (item?.metrics?.bottom_start?.confirmed === true) return 130;
           const entryState=String(item?.metrics?.trade_lifecycle?.entry?.state||'');
           if (entryState==='formal_candidate') return 120;
