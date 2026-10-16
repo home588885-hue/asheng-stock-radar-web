@@ -4222,7 +4222,8 @@ h1 {
         const d=unifiedRadarGeneration(item)?m.box_strategy.discovery:{};
         if(String(item?.as_of||'')===expectedSignalDataDate()&&d.first_bar_today===true)return 'ENTRY';
         if(String(item?.as_of||'')===expectedSignalDataDate()&&d.ready_watch===true
-          &&m.v5?.entry_confirmed!==true&&effective!=='ENTRY'&&entry!=='formal_candidate')
+          &&m.v5?.entry_confirmed!==true&&effective!=='ENTRY'&&effective!=='ACTIVE'
+          &&entry!=='formal_candidate'&&entry!=='starter')
           return 'PRELAUNCH';
         if(m?.v5?.entry_confirmed===true||effective==='ENTRY'||entry==='formal_candidate')return 'ENTRY';
         if(effective==='ACTIVE'||entry==='starter'||m.first_breakout20===true||
@@ -4256,8 +4257,8 @@ h1 {
         const gap20=Number(m.ma20)>0?(Number(m.close)/Number(m.ma20)-1)*100:null;
         if(d.ready_watch===true&&gap20!=null&&gap20<=5
           &&m.v5?.entry_confirmed!==true
-          &&String(m.scan_intelligence?.effective_lifecycle||'')!=='ENTRY'
-          &&String(m.trade_lifecycle?.entry?.state||'')!=='formal_candidate'
+          &&!['ACTIVE','ENTRY'].includes(String(m.scan_intelligence?.effective_lifecycle||''))
+          &&!['formal_candidate','starter'].includes(String(m.trade_lifecycle?.entry?.state||''))
           &&m.entry_candle_guard?.weak_after_breakout!==true
           &&m.holding_management?.strong_breakdown!==true)
           return {keep:true,rank:145,className:'box-near-top',
