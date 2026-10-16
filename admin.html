@@ -5852,9 +5852,13 @@ h1 {
       const holdingMiniHtml = (item, quote = null) => {
         const id=String(item.stock_id||'');
         const safeQuote=bestTodayQuote(validTodayQuote(quote)?quote:null,id);
-        if(!unifiedRadarGeneration(item))
-          return holdingPlaceholderHtml(id,'新版山川模型待重算；持股、股數、成本與有效成交資訊保留，舊版不顯示買賣訊號。',false,safeQuote,item.stock_name||'');
-        return `<section class="holding-full-wrap" data-stock-id="${esc(id)}">${card(item,{quote:safeQuote})}</section>`;
+        // Independently rescanned Shan-Chuan research must never suppress the
+        // EXISTING personal portfolio's MA20, close, cost/P&L and trade controls.
+        const researchPending=!unifiedRadarGeneration(item);
+        const researchNote=researchPending
+          ? '<small class="model-only-note" style="display:block;margin-bottom:6px">📚 山川新版型態待補算｜原持股MA20風控與最近完整日K照常顯示（'
+              +esc(String(item.as_of||'日期待確認'))+'）</small>' : '';
+        return `<section class="holding-full-wrap" data-stock-id="${esc(id)}">${researchNote}${card(item,{quote:safeQuote})}</section>`;
       };
       const holdingPlaceholderHtml = (symbol, note = '完整模型載入中…', isError = false, quote = null, displayName = '') => {
         const id=String(symbol||''),h=holdings.get(id)||{},cost=Number(h.avg_cost),qty=Number(h.quantity);
@@ -5880,7 +5884,8 @@ h1 {
       // Presentation priority ONLY: model-confirmed MA20 exits first.
       // Do not reorder by C intraday quotes: cards must not jump every three minutes.
       const holdingUrgencyRank = item => {
-        if(!unifiedRadarGeneration(item))return 4;
+        // Original MA20/held fixed-box exits remain urgent even if only
+        // the new Shan-Chuan RESEARCH layer hasn't been rescanned.
         const status = holdingMa20DayState(item);
         if(status.tone==='exit'||holdingBoxState(item)?.exitReady===true)return 0;
         const hm = item?.metrics?.holding_management || {};
@@ -5903,7 +5908,7 @@ h1 {
         return `<div class="holding-list-overview" data-stable-key="holding-overview">
           <strong>📌 已買進｜${Number(total)||0} 檔</strong>
           ${alert}
-          <span>模型已載入 ${Number(modelCount)||0}/${Number(total)||0} 檔｜沒有今日有效報價時改用附日期的最近模型收盤價估算損益，點卡片展開技術數據與持股操作。</span>
+          <span>持股日K已載入 ${Number(modelCount)||0}/${Number(total)||0} 檔｜無今日有效成交時以附日期的最近模型收盤價估算損益；點卡片查看原MA20風控與持股操作。</span>
         </div>`;
       };
 
@@ -6787,7 +6792,7 @@ h1 {
         // during the request or the user is scrolling when the fetch resolves.
         // Do not wait for today's C quotes or the live-price refresh loop.
         // This forced upgrade runs once per holdings load, preserving the stable stock anchors.
-        const baselineHtml = holdingOverviewHtml(symbols.length,items.filter(unifiedRadarGeneration).length,items.filter(unifiedRadarGeneration)) + items.map(item => {
+        const baselineHtml = holdingOverviewHtml(symbols.length,items.length,items) + items.map(item => {
           try { return holdingMiniHtml(item); }
           catch (error) {
             console.error('holding_model_card_render_failed',String(item?.stock_id||''),String(error));
@@ -6798,14 +6803,14 @@ h1 {
         const freshHoldingCount = items.filter(item => String(item.as_of||'') === expectedSignalDataDate()
           &&unifiedRadarGeneration(item)).length;
         $('#note').textContent = items.length
-          ? '📌 已買進 '+symbols.length+' 檔｜新版山川已驗證 '+freshHoldingCount+'/'+symbols.length
-            +' 檔｜其他待既有夜間掃描補算；持股成本與股數仍保留。'
+          ? '📌 已買進 '+symbols.length+' 檔｜原持股日K已載入 '+items.length
+            +' 檔｜山川新版補算 '+freshHoldingCount+'/'+symbols.length+' 檔；MA20持股風控正常顯示。'
           : '⚠️ 已買進 '+symbols.length+' 檔｜持股資料仍保留，但完整模型快照未取得；請勿依暫存卡下單。';
         let lastHoldingQuoteRequestAt = 0;
         const render = async () => {
           if (!holdingStillCurrent() || document.hidden || holdingQuoteRefreshing) return;
           if (!items.length || typeof window.getLiveQuotes !== 'function') {
-            stableListRender(holdingOverviewHtml(symbols.length,items.filter(unifiedRadarGeneration).length,items.filter(unifiedRadarGeneration))
+            stableListRender(holdingOverviewHtml(symbols.length,items.length,items)
               + items.map(item => holdingMiniHtml(item)).join('') + fallbackHtml);
             const freshCount = items.filter(item => String(item.as_of || '') === expectedSignalDataDate()
               &&unifiedRadarGeneration(item)).length;
@@ -6821,7 +6826,7 @@ h1 {
               : { ok:true,quotes:items.map(item => bestTodayQuote(null, item.stock_id)).filter(Boolean) };
             if (!payload?.ok) throw new Error('live_quote_failed');
             const quoteMap = new Map((payload.quotes || []).map(quote => [String(quote.stock_id || ''), quote]));
-            stableListRender(holdingOverviewHtml(symbols.length,items.filter(unifiedRadarGeneration).length,items.filter(unifiedRadarGeneration)) + items.map(item => {
+            stableListRender(holdingOverviewHtml(symbols.length,items.length,items) + items.map(item => {
               const quote = quoteMap.get(String(item.stock_id)) || null;
               if (quote) recordHoldingCloseWatch(item, quote);
               return holdingMiniHtml(item, quote);
@@ -6840,7 +6845,7 @@ h1 {
               +(absent.length?'｜未取得 '+absent.join('、'):'')
               +'｜約3分鐘取樣｜日K模型 '+freshCount+'/'+items.length+' 檔｜存活只算有效成交樣本';
           } catch (error) {
-            stableListRender(holdingOverviewHtml(symbols.length,items.filter(unifiedRadarGeneration).length,items.filter(unifiedRadarGeneration))
+            stableListRender(holdingOverviewHtml(symbols.length,items.length,items)
               + items.map(item => holdingMiniHtml(item)).join('') + fallbackHtml);
             $('#note').textContent = `📌 持股 ${symbols.length} 檔已保留｜收盤前行情暫時未回；不補抓全天盤中報價，晚上9點再更新完整模型。`;
           } finally {
