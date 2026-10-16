@@ -2719,10 +2719,16 @@ h1 {
           ||Number(institutional.positive_days_5d||0)>=3
         );
         const baseRecent=Number(base.recent_base_days);
-        const basePass=base.confirmed===true||base.current_base===true
+        // Distinguish a confirmed base from a low-position C-wave recovery.
+        // Low-turn is an observation, not a retrospective assertion of a proven base.
+        const baseConfirmed=base.confirmed===true||base.current_base===true
           ||(base.recent_base_date && Number.isFinite(baseRecent)
              &&baseRecent>=0&&baseRecent<=10
              &&(mc.watch_ready===true||mc.breakout_first_bar===true));
+        const lowTurn=pos!=null&&pos<=35&&mc.all_rising===true
+          &&mc.watch_ready===true&&String(item?.stage||'')==='C'
+          &&['starter','near'].includes(String(m.trade_lifecycle?.entry?.state||''));
+        const basePass=baseConfirmed||lowTurn;
         const freshModel=String(item?.as_of||'')===expectedSignalDataDate();
         const risk=shanchuanState(item,quote);
         const freshAllowed=!live||fresh;
@@ -2734,7 +2740,7 @@ h1 {
           (structure?'✅':'⚪')+'均線轉強／底部位置',
           (liquidity?'✅':'⚪')+'量能≥1000張／量速≥1.2',
           (chipPass?'✅':'⚪')+'籌碼≥65／法人支持',
-          (basePass?'✅':'⚪')+'底部型態'
+          (basePass?'✅':'⚪')+(baseConfirmed?'底部型態':lowTurn?'低位C波轉強':'底部／低位轉強')
         ];
         const label=passed?'✨ 四重共振已齊｜待原進場確認'
           : '📚 四重共振 '+count+'/4｜缺項不追';
@@ -3708,8 +3714,8 @@ h1 {
             <span class="entry-mini-expand">詳情 ▾</span>
             <span class="entry-mini-metrics">${q?'今日成交':'模型收盤'} <b>${close>0?esc(num(close,2)):'-'}</b>｜距MA20 ${dist==null?'-':(dist>=0?'+':'')+esc(num(dist,1))+'%'}｜成交量 ${Number.isFinite(vol)?esc(num(vol,0))+'張':'-'}</span>
             <span class="entry-mini-date">S 模型 ${esc(item.as_of||'待更新')}｜${tradeContext}${esc(missingText)}</span>
-            <span class="entry-mini-date">📚 山川量價｜${esc(shanchuanState(item,q).text)}</span>
-            <span class="entry-mini-date">${esc(shanchuanConfluenceState(item,q).text)}</span>
+            ${shanchuanState(item,q).kind!=='neutral'?'<span class="entry-mini-date">📚 山川量價｜'+esc(shanchuanState(item,q).text)+'</span>':''}
+            ${shanchuanConfluenceState(item,q).count>=2?'<span class="entry-mini-date">'+esc(shanchuanConfluenceState(item,q).text)+'</span>':''}
             <span class="entry-survival-status ${survival.tone}" data-entry-survival-id="${esc(id)}" data-entry-survival-trial="${activeTrial?'1':'0'}">${esc(survival.text)}</span>
           </summary>
           <div class="entry-mini-full">${expanded}</div>
@@ -4312,11 +4318,11 @@ h1 {
         const riskSummary = cautionList.length ? `<div class="risk-summary">⚠️ ${esc(cautionList[0])}${cautionList.length > 1 ? ` ＋${cautionList.length - 1}項` : ''}</div>` : '';
         const sc=shanchuanState(item, displayQuote);
         const scConfluence=shanchuanConfluenceState(item,displayQuote);
-        const scConfluenceHtml=['LAUNCH','ENTRY','HOLDING'].includes(stage)
+        const scConfluenceHtml=['LAUNCH','ENTRY','HOLDING'].includes(stage)&&scConfluence.count>=2
           ? '<div class="signal-note"><b>'+esc(scConfluence.text)+'</b>'
             +'<small style="display:block;margin-top:3px">'+esc(scConfluence.detail)+'</small></div>'
           : '';
-        const shanchuanHtml=['LAUNCH','ENTRY','HOLDING'].includes(stage)
+        const shanchuanHtml=['LAUNCH','ENTRY','HOLDING'].includes(stage)&&sc.kind!=='neutral'
           ? '<div class="signal-note" data-shanchuan-state="'+esc(sc.kind)+'">'
             +'<b>📚 山川量價｜'+esc(sc.text)+'</b><small style="display:block;margin-top:3px">'
             +esc(sc.detail)+'</small></div>' : '';
