@@ -5133,8 +5133,10 @@ h1 {
               +boxHolding.belowDays+' 個交易日收盤低於箱底，未站回',
             extra:'與MA20三日停損並行，先觸發的風險先處理；非自動下單'
           };
-          if (strongBreak) return { className:'live-late', title:'🔴 強警示｜結構快速轉弱', detail:'長黑＋爆量＋MA20下方＋籌碼偏弱', extra:'這是背景強風控，需優先檢查是否提早處理，不必機械等滿3天' };
+          // A confirmed three-close exit outranks the earlier strong-risk
+          // warning. Preserve both MA20 and frozen box exit semantics.
           if (exitReady) return { className:'live-late', title:'🔴 出清股票', detail:`已連續 ${belowDays} 個交易日收盤跌破 MA20 ${num(ma20,2)}，仍未拉回`, extra:pnl == null ? '依3日規則出清' : `成本 ${num(avgCost,2)}｜目前損益 ${pnl>=0?'+':''}${num(pnl,1)}%` };
+          if (strongBreak) return { className:'live-late', title:'🔴 強警示｜結構快速轉弱', detail:'長黑＋爆量＋MA20下方＋籌碼偏弱', extra:'這是背景強風控，需優先檢查是否提早處理，不必機械等滿3天' };
 
           const addPlanTracking = holdingAddPlan(item, quote, {addReady:false, strongAddReady:false});
           const riskPlan = holdingRiskPlan(item, quote);
