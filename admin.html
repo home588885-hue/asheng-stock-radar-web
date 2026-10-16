@@ -3518,7 +3518,7 @@ h1 {
       const pullbackWatchState = (item, quote = null) => {
         const m=item?.metrics || {};
         const g=m.entry_candle_guard || {};
-        const hasTodayQuote=!!(quote && validTodayQuote(quote));
+        const hasTodayQuote=quoteFreshForTrial(quote);
         const q=hasTodayQuote ? Number(quote.price) : NaN;
         const price=Number.isFinite(q) && q>0 ? q : Number(g.close ?? m.close);
         const ma5=Number(g.ma5 ?? m.ma5);
@@ -3532,11 +3532,28 @@ h1 {
           && price >= Math.max(ma10,ma20,ma60)*.995;
 
         if (holdings.has(String(item.stock_id))) return {state:'bought',active:false,reason:'已買進，改由持股區管理'};
-
-        const invalid=(g.version==='2026-10-06-kbar-ma10-20-60-v3' && g.main_bull===false)
-          || (g.weak_after_breakout===true && ma20>0 && Number.isFinite(price) && price < ma20*.97);
+        if(!unifiedRadarGeneration(item)||String(item.as_of||'')!==expectedSignalDataDate())
+          return {state:'pending',active:false,unverified:true,
+            reason:'最新完整日K模型待更新，不列入有效追蹤'};
+        const day=String(item.as_of||''),watch=pullbackWatch.get(String(item.stock_id));
+        const firstBar=m.box_strategy?.discovery?.first_bar_today===true
+          &&String(m.box_strategy.discovery.first_bar_date||'')===day;
+        const lots=Number(m.current_volume_lots),avg=Number(m.avg_volume_20_lots);
+        const gap=ma20>0&&price>0?(price/ma20-1)*100:null;
+        const weak=g.weak_after_breakout===true||g.macd_weak===true
+          ||g.kd_high_weak===true||m.holding_management?.strong_breakdown===true;
+        const invalid=weak||gap==null||gap>5||gap< -1.5
+          ||!(lots>=1000)||!(avg>=500)||Number(m.position_1y_pct)>=85
+          ||(!firstBar&&g.version==='2026-10-06-kbar-ma10-20-60-v3'
+            &&g.main_bull===false);
         if (invalid) return {state:'invalid',active:false,reason:'主要均線結構失效或MA20明顯失守'};
 
+        // The first EOD breakout and recorded verified orange trial remain
+        // on the exact source day only, not as evergreen new-buy signals.
+        if(watch?.trial_last_as_of===day)
+          return {state:'tracking',active:true,reason:'本交易日曾可小量試單；翌日重新驗證'};
+        if(firstBar)
+          return {state:'tracking',active:true,reason:'本交易日箱型突破第一根，隔日待回踩或再轉強確認'};
         const base=baseSimpleActionState(item,quote);
 
         // ready 一律以今天有效成交價為準。沒有今日報價時，不得沿用舊模型價誤升級。
@@ -3548,17 +3565,20 @@ h1 {
         }
 
         // 靠近 MA20 或仍在短均線下方，維持回踩觀察。
-        if (g.ma20_pullback===true
-          || (ma20>0 && Number.isFinite(price) && price <= ma20*1.03)
-          || (Number.isFinite(price) && shortFloor.length && !shortReady)) {
+        const near10=ma10>0&&price>=ma10*.985&&price<=ma10*1.025;
+        const near20=ma20>0&&price>=ma20*.985&&price<=ma20*1.03;
+        const prior=!!watch||g.recent_breakout===true
+          ||['ACTIVE','ENTRY'].includes(modelLaunchPhase(item));
+        if(prior&&(near10||near20)
+          &&(g.ma20_pullback===true||(ma5>0&&price<ma5)
+            ||(ma10>0&&price<=ma10*1.025))) {
           return {state:'pullback',active:true,reason:hasTodayQuote
             ? '今日價格仍在回踩區／尚未重新站回短均線，持續追蹤'
             : '尚無今日有效報價，以模型結構維持回踩追蹤'};
         }
 
-        return {state:'tracking',active:true,reason:hasTodayQuote
-          ? '今日尚未形成重新轉強條件，等待回踩守住再轉強'
-          : '尚無今日有效報價，等待下一筆有效成交重新判斷'};
+        return {state:'invalid',active:false,
+          reason:'最新完整日K不符合小量試單、支撐回踩或再次轉強，直接退出有效追蹤'};
       };
       const syncPullbackWatchPool = async items => {
         const rows=[];
@@ -3576,12 +3596,12 @@ h1 {
           // A stale/non-rescanned snapshot is not proof the watch failed.
           // Keep its persisted state instead of silently invalidating it.
           if(!modelUsable)continue;
-          const inActivePhase=['ACTIVE','ENTRY'].includes(modelLaunchPhase(item));
           const firstBreak=item.metrics?.box_strategy?.discovery?.first_bar_today===true;
-          const activeOrigin=!current&&(inActivePhase||firstBreak)
+          const activeOrigin=!current&&firstBreak
             &&!holdings.has(id)&&Number(item.metrics?.current_volume_lots)>=1000;
           if(!current&&!isNewTrigger&&!activeOrigin)continue;
           const state=pullbackWatchState(item);
+          if(state.unverified===true)continue;
           if(!state.active&&!current)continue;
           const reason=activeOrigin?'發動中已進追蹤，後續監看回踩與重新轉強；未重新驗證不得當作今日買點'
             :isNewTrigger ? String(guard?.detail || baseWait?.detail || state.reason) : state.reason;
@@ -3636,7 +3656,7 @@ h1 {
           if (!id || !current || current.active===false) continue;
           const quote=quoteMap?.get(id) || null;
           const next=pullbackWatchState(item,quote);
-          if (!next) continue;
+          if (!next||next.unverified===true) continue;
           if (current.state!==next.state || current.active!==next.active || String(current.reason||'')!==String(next.reason||'')) {
             rows.push({
               stock_id:id,
