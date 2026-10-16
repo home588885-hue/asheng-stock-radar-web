@@ -4380,6 +4380,19 @@ h1 {
           ? '<div class="signal-note" data-shanchuan-state="'+esc(sc.kind)+'">'
             +'<b>📚 山川量價｜'+esc(sc.text)+'</b><small style="display:block;margin-top:3px">'
             +esc(sc.detail)+'</small></div>' : '';
+        const boxSignal=metrics?.box_strategy||{},fixedBox=holdingBoxState(item,displayQuote);
+        const shownBoxTop=fixedBox?.top||Number(boxSignal.anchor?.top||boxSignal.box_range?.top);
+        const shownBoxBottom=fixedBox?.bottom||Number(boxSignal.anchor?.bottom||boxSignal.box_range?.bottom);
+        const boxImportant=shownBoxTop>shownBoxBottom
+          &&(fixedBox||boxSignal.prepared===true||boxSignal.breakout_today===true
+              ||boxSignal.retest_held===true);
+        const boxInfo=boxImportant?'<div class="signal-note"><b>📦 山川箱型｜'
+          +(fixedBox?'持股固定箱型':boxSignal.retest_held?'回踩箱頂守住'
+            :boxSignal.breakout_today?'帶量突破箱頂':'整理接近箱頂')
+          +'</b><small style="display:block;margin-top:3px">箱頂 '
+          +esc(num(shownBoxTop,2))+'｜箱底 '+esc(num(shownBoxBottom,2))
+          +(fixedBox?'｜跌破箱底收盤 '+(fixedBox.belowDays==null?'待更新':fixedBox.belowDays)+'/3天':'')
+          +'｜原MA20風控並行</small></div>':'';
         const quoteUi = quoteDisplayState(displayQuote, item);
         const priceLabel = displayQuote ? quoteUi.label : todayOnly ? quoteUi.label : '模型收盤';
         const priceValue = Number.isFinite(quoteUi.value) ? num(quoteUi.value, 2) : (todayOnly ? quoteUi.text : (Number.isFinite(displayClose) ? num(displayClose,2) : '-'));
@@ -4388,7 +4401,7 @@ h1 {
         const detailBody = `<div class="detail-body">${hiddenModelHtml}${v5Html}${chipHtml}${holding ? '' : liquidityHtml}${playbookHtml}<div class="metrics"><span class="pill">3年位階 ${num(metrics.position_3y_pct)}%</span><span class="pill">週K ${num(metrics.weekly_k)}｜${gradeText(weeklyKGrade(metrics.weekly_k))}</span><span class="pill">月K ${num(metrics.monthly_k)}｜${gradeText(monthlyKGrade(metrics.monthly_k))}</span><span class="pill">${backtestSignal(item)}</span>${metrics.backtest ? `<span class="pill">5日 ${num(metrics.backtest.win_rate_5d_pct)}%</span><span class="pill">20日 ${num(metrics.backtest.win_rate_20d_pct)}%</span>` : ''}</div><div class="why">${reasons}</div>${cautions ? `<div class="warn">${cautions}</div>` : ''}</div>`;
         const detailHtml = options.compactHolding && holding ? detailBody : `<details class="card-details"><summary>完整判斷與數據</summary>${detailBody}</details>`;
         const actionHtml = options.hideSignal ? '' : `<div class="trade-signal ${signal.className}">${esc(memberFacingText(signal.text))}<small style="display:block;margin-top:4px;font-weight:500">${esc(memberFacingText(signal.detail || ''))}</small></div>`;
-        return `<article class="card" data-stock-id="${esc(item.stock_id)}"><div class="top"><div><div class="name">${esc(item.stock_id)} ${esc(item.stock_name)}</div><div class="meta">${esc(item.market)}${item.industry ? '・' + esc(item.industry) : ''}${timeInfoStages() ? '' : '｜資料日 ' + esc(item.as_of || '-')}</div></div><div class="badge ${esc(item.stage)}">模型 ${Number(item.score || 0)}分</div></div>${companyProfileHtml(item)}${activeLaunchVisibleHtml}${volumePriceHtml(item, displayQuote)}${shanchuanHtml}${scConfluenceHtml}${pullbackWatchHtml(item, displayQuote)}${holding ? (options.compactHolding ? '' : holdingTodayHtml + holdingDipHtml) : actionHtml + quickHtml + deviationWarningHtml + riskSummary}${holdingHtml}${options.compactHolding && holding ? `<details class="card-details holding-combined"><summary>完整判斷與技術數據</summary>${holdingStatusHtml}${detailHtml}</details>` : holdingStatusHtml+detailHtml}${timeInfoStages() ? timeInfoHtml(item, displayQuote) : '<div class="time">背景模型掃描：' + updated + '</div>'}</article>`;
+        return `<article class="card" data-stock-id="${esc(item.stock_id)}"><div class="top"><div><div class="name">${esc(item.stock_id)} ${esc(item.stock_name)}</div><div class="meta">${esc(item.market)}${item.industry ? '・' + esc(item.industry) : ''}${timeInfoStages() ? '' : '｜資料日 ' + esc(item.as_of || '-')}</div></div><div class="badge ${esc(item.stage)}">模型 ${Number(item.score || 0)}分</div></div>${companyProfileHtml(item)}${activeLaunchVisibleHtml}${volumePriceHtml(item, displayQuote)}${shanchuanHtml}${boxInfo}${scConfluenceHtml}${pullbackWatchHtml(item, displayQuote)}${holding ? (options.compactHolding ? '' : holdingTodayHtml + holdingDipHtml) : actionHtml + quickHtml + deviationWarningHtml + riskSummary}${holdingHtml}${options.compactHolding && holding ? `<details class="card-details holding-combined"><summary>完整判斷與技術數據</summary>${holdingStatusHtml}${detailHtml}</details>` : holdingStatusHtml+detailHtml}${timeInfoStages() ? timeInfoHtml(item, displayQuote) : '<div class="time">背景模型掃描：' + updated + '</div>'}</article>`;
       }
 
       // Explain an empty launch list using *the actual API result and this
@@ -5049,7 +5062,7 @@ h1 {
           ||p/ma20>1.05||p<box.top
           ||!(ratio>=.8&&ratio<=2&&k>=25&&k<=85)
           ||Number(m.current_volume_lots)<1000||Number(m.avg_volume_20_lots)<500
-          ||Number(m.chip?.score)<60)return null;
+          ||!(Number(m.chip?.score)>=60))return null;
         let record=null;
         try{record=JSON.parse(localStorage.getItem(
           HOLDING_ADD_ONCE_PREFIX+String(portfolioId||'')+'-'+String(item.stock_id))||'null');}
@@ -5574,15 +5587,21 @@ h1 {
         // observed peak has already suffered a verified giveback, surface the
         // existing research alert even when another holding action has priority.
         const giveback = holdingProfitProtection(item, safeQuote);
+        const box=holdingBoxState(item,safeQuote);
+        const boxBanner=box?'<small class="model-only-note">📦 固定箱頂 '
+          +esc(num(box.top,2))+'｜固定箱底 '+esc(num(box.bottom,2))
+          +'｜箱底下方連續收盤 '+(box.belowDays==null?'模型待更新':box.belowDays+' 天')
+          +'｜同時保留MA20三日停損</small>':'';
         const givebackAlert = giveback?.triggered && main !== '出清'
           ? '<small class="model-only-note">🛡 獲利回吐警示（'+(giveback.live?'今日有效成交':'最近完整模型')+'）：已記錄高點回落 '+esc(num(giveback.retreat,1))+'%，短線風控轉弱；'+(giveback.live?'盤中先檢查，不當作成交或收盤訊號。':'請核對持股與是否需要保護浮盈；不是自動賣出。')+'</small>'
           : '';
-        return `<section class="live-banner holding-action ${action.className}"><h2>${actionIcon} ${esc(actionDateLabel)}</h2><div class="holding-main-action">${main}</div><span>${esc(modelPrefix)}：${held}</span><span>${esc(reminder)}</span>${givebackAlert}${dataCaution}<dl class="holding-quote-grid">${fields.map(([label,value]) => `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl>${holdingCloseWatchHtml(item, safeQuote)}</section>`;
+        return `<section class="live-banner holding-action ${action.className}"><h2>${actionIcon} ${esc(actionDateLabel)}</h2><div class="holding-main-action">${main}</div><span>${esc(modelPrefix)}：${held}</span><span>${esc(reminder)}</span>${givebackAlert}${boxBanner}${dataCaution}<dl class="holding-quote-grid">${fields.map(([label,value]) => `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl>${holdingCloseWatchHtml(item, safeQuote)}</section>`;
       };
       const holdingRulesHtml = (item, quote = null, embedded = false) => {
         const { action, main, rulesTitle } = holdingDisplay(item, quote);
         const metrics = item.metrics || {};
         const hm = metrics.holding_management || {};
+        const box=holdingBoxState(item,quote);
         const ma20 = Number(metrics.ma20);
         const close = Number(metrics.close);
         const distance = hm.distance_to_ma20_pct == null ? (Number.isFinite(close) && ma20 > 0 ? (close / ma20 - 1) * 100 : null) : Number(hm.distance_to_ma20_pct);
@@ -5595,6 +5614,8 @@ h1 {
           : action.title.includes('盤中跌破') ? '盤中跌破昨日低點，尚待收盤確認'
           : '未觸發昨日低點有效跌破';
         const fields = [['趨勢狀態',trend], ['昨日低點',hm.prev_low == null ? '-' : num(hm.prev_low,2)], ['MA20',Number.isFinite(ma20) && ma20 > 0 ? num(ma20,2) : '-'], ['距 MA20 %（模型日）',distance == null || !Number.isFinite(distance) ? '-' : (distance >= 0 ? '+' : '') + num(distance,1) + '%'], ['量比（模型日）',ratio == null || !Number.isFinite(ratio) ? '-' : num(ratio,2) + 'x']];
+        if(box)fields.push(['固定箱頂',num(box.top,2)],['固定箱底',num(box.bottom,2)],
+          ['跌破箱底收盤天數',box.belowDays==null?'資料待更新':box.belowDays+' / 3']);
         const strongNote = action.title.includes('強警示') ? '<div class="holding-rule-line"><b>強警示：</b>長黑、爆量、MA20 下方且籌碼偏弱，優先檢查是否提早處理。</div>' : '';
         const risk = holdingRiskPlan(item, quote);
         const riskNote = risk
@@ -5604,7 +5625,8 @@ h1 {
         const profitNote = profitGuard
           ? '<div class="holding-rule-line"><b>獲利回吐保護（研究中）：</b>已觀察最高獲利 ' + (profitGuard.maxGain >= 0 ? '+' : '') + num(profitGuard.maxGain,1) + '%｜目前 ' + (profitGuard.currentGain >= 0 ? '+' : '') + num(profitGuard.currentGain,1) + '%｜自紀錄高點回落 ' + num(profitGuard.retreat,1) + '%。A：最高浮盈≥5%、回吐≥1.5%且短線轉弱，先警戒；B：最高浮盈≥8%、回吐≥2.5%、跌破前低且轉弱，收盤確認後可評估減碼約1/3。共用盤後收盤最高紀錄' + (profitGuard.serverDate ? '（起始觀察日 '+esc(profitGuard.serverDate)+'）' : '尚未建立') + '，加上本機已觀察有效價；買入前後未記錄的歷史高點不可倒填。MA20及20%分批停利不變。</div>'
           : '<div class="holding-rule-line"><b>獲利回吐保護（研究中）：</b>等待最新完整模型／有效報價建立觀察高點；盤後紀錄跨裝置同步，過去未記錄的高點不推測。</div>';
-        const ruleBody = `<div class="holding-analysis holding-rules-body"><dl class="holding-rule-grid">${fields.map(([label,value]) => `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl><div class="holding-rule-line"><b>短線判斷：</b>${esc(short)}。有效跌破採 0.4%；同時量比 ≥ 1.2x 升級放量警戒，隔日收復解除。</div><div class="holding-rule-line"><b>加碼條件：</b>兩條路：①回踩MA20守住＋量價轉強，量比約0.8～2x；②突破前高／突破位後續強，量比約1～2.2x、日K≤85。共同限制：MA10／20／60多頭、距MA20≤5%、成本損益0～未滿12%、日量至少1,000張、20日均量至少500張。盤中僅觀察、模型確認才評估；獲利時追加一筆不超過原先觀察持股約1/3，偵測加碼後停止重複提示。虧損持股另有「跌後攤平評估」，只有下一個完整日K確認回踩MA20守住、重新轉強、量能合適且虧損未達4%時才列為研究候選，單次參考上限約原持股1/4；盤中或風控轉弱都不加碼，不保證成功也非自動下單。</div><div class="holding-rule-line"><b>出場條件：</b>連續 3 個交易日收盤低於 MA20 且未收回，標示「出清股票」。</div>${strongNote}${riskNote}${profitNote}<div class="holding-rule-line"><b>核心規則：</b>昨日低點管短線節奏，MA20 管主要趨勢。</div></div>`;
+        const boxRule=box?'<div class="holding-rule-line"><b>山川箱型法：</b>突破箱頂先小量試單；完整日K回踩固定箱頂並守住，量價、籌碼及既有持股風控全數確認，才評估加碼。連續3個交易日收盤跌破固定箱底且未收復，標示出清；與原MA20三日出場規則並行，不是自動下單。</div>':'';
+        const ruleBody = `<div class="holding-analysis holding-rules-body"><dl class="holding-rule-grid">${fields.map(([label,value]) => `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl><div class="holding-rule-line"><b>短線判斷：</b>${esc(short)}。有效跌破採 0.4%；同時量比 ≥ 1.2x 升級放量警戒，隔日收復解除。</div><div class="holding-rule-line"><b>加碼條件：</b>兩條路：①回踩MA20守住＋量價轉強，量比約0.8～2x；②突破前高／突破位後續強，量比約1～2.2x、日K≤85。共同限制：MA10／20／60多頭、距MA20≤5%、成本損益0～未滿12%、日量至少1,000張、20日均量至少500張。盤中僅觀察、模型確認才評估；獲利時追加一筆不超過原先觀察持股約1/3，偵測加碼後停止重複提示。虧損持股另有「跌後攤平評估」，只有下一個完整日K確認回踩MA20守住、重新轉強、量能合適且虧損未達4%時才列為研究候選，單次參考上限約原持股1/4；盤中或風控轉弱都不加碼，不保證成功也非自動下單。</div><div class="holding-rule-line"><b>出場條件：</b>連續 3 個交易日收盤低於 MA20 且未收回，標示「出清股票」。</div>${boxRule}${strongNote}${riskNote}${profitNote}<div class="holding-rule-line"><b>核心規則：</b>昨日低點管短線節奏，MA20 管主要趨勢。</div></div>`;
         return embedded ? ruleBody : `<details class="card-details holding-rules-details"><summary>📋 ${rulesTitle}與持股規則</summary>${ruleBody}</details>`;
       };
 
@@ -6678,8 +6700,25 @@ h1 {
         const modelAction = stage === 'ENTRY' && model
           ? entrySnapshotState(model, simpleActionState(model, observedQuote), observedQuote)
           : null;
+        const observedBox=model?.metrics?.box_strategy||null;
+        const observedBoxTop=Number(observedBox?.anchor?.top||observedBox?.box_range?.top);
+        const observedBoxBottom=Number(observedBox?.anchor?.bottom||observedBox?.box_range?.bottom);
+        const liveBreakout=observedBox?.prepared===true&&observedQuote
+          &&Number(observedQuote.price)>observedBoxTop*1.003
+          &&Number(model?.metrics?.ma20)>0
+          &&Number(observedQuote.price)/Number(model.metrics.ma20)<=1.05;
+        const confirmedBox=observedBox?.breakout_today===true
+          &&observedBox?.anchor?.breakout_date===String(model?.as_of||'')
+          &&(!observedQuote||Number(observedQuote.price)>observedBoxTop*1.003);
+        const boxAnchor=model&&String(model.as_of||'')===expectedSignalDataDate()
+          &&observedBoxTop>observedBoxBottom&&observedBoxBottom>0
+          &&(liveBreakout||confirmedBox)
+          ?{top:observedBoxTop,bottom:observedBoxBottom,
+            breakout_date:liveBreakout?String(observedQuote.quote_date||'').slice(0,10)
+              :String(observedBox.anchor.breakout_date||'')} : null;
         const snapshot = {
           source:'manual_admin_input', broker_execution_verified:false,
+          observed_box_anchor:boxAnchor,
           ui_stage:stage, observed_model_day:String(model?.as_of || '') || null,
           observed_model_score:Number.isFinite(Number(model?.score)) ? Number(model.score) : null,
           observed_eod_close:Number(model?.metrics?.close) > 0 ? Number(model.metrics.close) : null,
