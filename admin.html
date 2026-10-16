@@ -3380,8 +3380,9 @@ h1 {
         return minute>=540&&minute<=market.totalMinutes&&market.totalMinutes-minute<=5;
       };
       const entrySnapshotState = (item, baseAction, quote = null) => {
-        const recovery=maPullbackReclaimWatchState(item);
-        const originalMa10Watch=ma10PullbackWatchState(item);
+        const modelFresh=String(item?.as_of||'')===expectedSignalDataDate();
+        const recovery=modelFresh?maPullbackReclaimWatchState(item):null;
+        const originalMa10Watch=modelFresh&&ma10PullbackWatchState(item);
         if(!baseAction&&!recovery&&!originalMa10Watch)return null;
         if(!baseAction)baseAction={key:'pullback_watch',rank:32,className:'scout',
           text:'🟡 回踩支撐觀察｜等盤中量價',detail:'最近完整日K模型待核對',
@@ -3706,9 +3707,9 @@ h1 {
           <small>模型日 ${esc(expectedSignalDataDate())}｜V5正式進場：${formalEntryValidation.enabled?'歷史驗證已通過':'暫停（'+esc(formalEntryValidation.reason)+'）'}｜🟠小量試單需5分鐘內有效成交與原風控通過；其他追蹤不是買點｜點股票展開未達條件${staleRows.length?'｜另有 '+staleRows.length+' 檔過期快照未列入':''}</small>
         </div>`;
         const outHtml = banner+
-          entryBucketHtml('reclaim','🟡 MA10／MA20 回踩後再轉強｜非買點','區分尚未收復與當日有效成交已收復；正式策略回測未通過前保持觀察，不允許用此分類直接下單',reclaimRows,{open:true,tone:'near',preview:6})+
           entryBucketHtml('formal','🟢 正式買點｜V5驗證與有效成交完成','必須同時符合原模型、歷史驗證及當日風控；不代表保證獲利',completedRows,{open:true,tone:'focus',preview:6})+
           entryBucketHtml('trial','🟠 可小量試單｜盤中有效成交確認','5分鐘內成交且既有起漲條件與風控通過；試單不等於V5正式買點',starterRows,{open:true,tone:'focus',preview:6})+
+          entryBucketHtml('reclaim','🟡 MA10／MA20 回踩後再轉強｜非買點','區分尚未收復與當日有效成交已收復；正式策略回測未通過前保持觀察，不允許用此分類直接下單',reclaimRows,{open:true,tone:'near',preview:6})+
           entryBucketHtml('focus','⭐ 優先查看','原模型條件相對成熟，仍須核對當日行情',focusRows,{open:true,tone:'focus',preview:6})+
           entryBucketHtml('signal','🟠 進場訊號｜先核對','已有模型追蹤或突破訊號，仍須確認今日量價與風險，並非直接買進指令',signalRows,{open:!focusRows.length,tone:'focus',preview:5})+
           entryBucketHtml('eod-tracking','📋 已起漲追蹤｜不是買點','已由最新完整日K標記為ACTIVE／ENTRY的追蹤股票，盤中仍須核對有效成交價與原本風控確認；不可當成🟠可小量試單或🟢正式買點',eodTrackRows,{open:true,tone:'near',preview:6})+
