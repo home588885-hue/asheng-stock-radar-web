@@ -6580,6 +6580,14 @@ h1 {
         }
         if (soldPrice === null && !confirm('確定不填成交價？這筆賣出將無法計入可核對的實際獲利。')) return;
         const existingHolding = holdings.get(String(stockId));
+        const salePoolModel = (liveBasePicks || []).find(row => String(row?.stock_id || '') === String(stockId)) || null;
+        const saleSearchModel = String(searchedStockModelForManualTrade?.stock_id || '') === String(stockId)
+          ? searchedStockModelForManualTrade : null;
+        const saleModel = salePoolModel && saleSearchModel
+          ? (String(saleSearchModel.as_of || '') >= String(salePoolModel.as_of || '') ? saleSearchModel : salePoolModel)
+          : (salePoolModel || saleSearchModel);
+        const saleObservedQuote = validTodayQuote(liveQuoteCache.get(String(stockId)))
+          ? liveQuoteCache.get(String(stockId)) : null;
         const response = await memberFetch(HOLDINGS_API, { method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -6587,6 +6595,11 @@ h1 {
             snapshot:{ source:'manual_admin_sell',broker_price_user_reported:soldPrice!==null,
               cost_basis_at_sale:Number(existingHolding?.avg_cost) > 0 ? Number(existingHolding.avg_cost) : null,
               quantity_at_sale:Number(existingHolding?.quantity) > 0 ? Number(existingHolding.quantity) : null,
+              observed_model_day:String(saleModel?.as_of || '') || null,
+              observed_eod_close:Number(saleModel?.metrics?.close) > 0 ? Number(saleModel.metrics.close) : null,
+              observed_ma20:Number(saleModel?.metrics?.ma20) > 0 ? Number(saleModel.metrics.ma20) : null,
+              observed_quote_time:saleObservedQuote?.quote_time || null,
+              observed_quote_date:saleObservedQuote?.quote_date || null,
               fees_excluded:true }
           })
         });
