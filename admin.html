@@ -4029,7 +4029,7 @@ h1 {
           .filter(w=>w.active===false&&w.state==='invalid'
             &&!holdings.has(String(w.stock_id||'')));
         if(!active.length&&!archived.length&&!pending.length)return '';
-        const trackCard=(w,invalid=false)=>{
+        const trackCard=(w,invalid=false,pending=false)=>{
           const id=String(w.stock_id||'');
           const item=pullbackWatchSnapshots.get(id)||null;
           const current=!!item&&unifiedRadarGeneration(item)
@@ -4037,7 +4037,8 @@ h1 {
           const first=String(w.first_as_of||'未記錄');
           const day=String(item?.as_of||'未取得');
           const name=String(item?.stock_name||'');
-          const title=invalid?'🔴 追蹤失效｜已移至歷史'
+          const title=pending?'⚪ 待新版日K補算｜目前非有效追蹤'
+            :invalid?'🔴 追蹤失效｜已移至歷史'
             :w.trial_last_as_of?'🟠 曾符合小量試單｜持續追蹤（目前非試單）'
             :w.state==='ready'?'🟡 回踩後轉強｜待當日驗證'
             :w.state==='pullback'?'🟡 回踩追蹤中'
@@ -4051,7 +4052,7 @@ h1 {
             ?new Date(w.first_seen_at).toLocaleDateString('zh-TW',{timeZone:'Asia/Taipei'}):first;
           return '<div class="entry-mini" data-tracking-symbol="'+esc(id)+'">'
             +'<div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap">'
-            +'<strong>'+esc(id+' '+name)+'</strong>'
+            + '<strong>'+esc(id+' '+(name||'名稱待補'))+'</strong>'
             +'<span>'+esc(title)+'</span></div>'
             +'<small style="display:block;margin-top:4px">首次追蹤 '+esc(since)
             +'｜最近模型日 '+esc(day)
@@ -4060,11 +4061,13 @@ h1 {
             +esc(lastTrial)+'</small>'
             +'<small style="display:block;margin-top:4px">'
             +esc(invalid?String(w.reason||'歷史結構已失效')
+              :pending?'尚未取得本交易日完整新版日K；不算淘汰，也不是今天買點'
               :current?'今天新版模型已核對，仍須新成交才能重新判定橘色試單'
                 :'⚪ 尚無最新完整新版模型；沿用追蹤紀錄，絕非今日有效買點')
             +'</small></div>';
         };
         const normal=active.slice(0,120).map(w=>trackCard(w)).join('');
+        const pendingCards=pending.slice(0,120).map(w=>trackCard(w,false,true)).join('');
         const archive=archived.slice(0,40).map(w=>trackCard(w,true)).join('');
         return '<section class="entry-bucket entry-bucket-persistent" data-stable-key="entry-crossday-watch">'
           +'<details class="entry-bucket-fold" data-entry-fold="persistent" open>'
@@ -4078,7 +4081,9 @@ h1 {
             +'<summary class="entry-bucket-head"><span class="entry-bucket-headline">'
             +'<b>⚪ 待新版補算 '+pending.length+' 檔（不佔有效追蹤）</b>'
             +'<small>尚無新日K不能假淘汰；補算符合才重回有效名單</small>'
-            +'</span></summary></details>':'')
+            +'</span></summary><div style="padding:10px">'+pendingCards
+            +(pending.length>120?'<small>另有 '+(pending.length-120)+' 檔待補，清單先顯示120檔</small>':'')
+            +'</div></details>':'')
           +(archived.length?'<details class="entry-bucket-fold" data-entry-fold="invalid-history">'
             +'<summary class="entry-bucket-head"><span class="entry-bucket-headline"><b>🔴 最近失效追蹤 '+archived.length+' 檔</b>'
             +'<small>保留原因供複盤，不會當成買進候選</small></span></summary>'
