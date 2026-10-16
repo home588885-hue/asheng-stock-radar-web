@@ -5054,8 +5054,17 @@ h1 {
         const date=String(holding?.box_breakout_date||'');
         if(!(top>bottom&&bottom>0&&date))return null;
         const model=item?.metrics?.box_strategy||{};
-        const modelFresh=String(item?.as_of||'')===expectedSignalDataDate();
         const closes=Array.isArray(model.recent_closes)?model.recent_closes:[];
+        const modelDate=String(item?.as_of||'');
+        const lastClose=closes.length?closes[closes.length-1]:null;
+        // An absent, partial or mismatched model must report UNKNOWN rather
+        // than fabricate 0 consecutive days below the recorded box support.
+        const completeBoxSource=model.version==='2026-10-16-20day-box-v1'
+          &&closes.length>=4&&Array.isArray(lastClose)
+          &&String(lastClose[0])===modelDate
+          &&closes.every(v=>Array.isArray(v)&&String(v[0])
+            &&Number.isFinite(Number(v[1]))&&Number(v[1])>0);
+        const modelFresh=completeBoxSource&&modelDate===expectedSignalDataDate();
         let days=0;
         if(modelFresh)for(let k=closes.length-1;k>=0;k--){
           const bar=closes[k],barDate=String(bar?.[0]||''),px=Number(bar?.[1]);
