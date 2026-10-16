@@ -3307,19 +3307,57 @@ h1 {
 
       // Entry radar is night-snapshot-only; the old intraday 12-minute gate is retired.
       // Never turn an EOD candidate into a live buy instruction based on a page timer.
+      // The S launch API owns the formal strategy approval; no approval = no green entry.
+      let formalEntryValidation={enabled:false,status:'unknown',reason:'尚未取得策略驗證結果'};
+      const syncFormalEntryValidation = data => {
+        const check=data?.entry_validation||{};
+        const status=String(check.status||'unknown');
+        formalEntryValidation={enabled:check.formal_entry_enabled===true && status==='pass',
+          status,reason:String(check.reason||'目前未開放正式進場')};
+      };
+      // A cached price from this morning is not fresh enough for an intraday trade.
+      const quoteFreshForTrial = quote => {
+        if(!marketBridgeReady()||!validTodayQuote(quote))return false;
+        const market=taipeiMarketState();
+        if(!market.open||market.totalMinutes<540||market.totalMinutes>=800)return false;
+        const m=String(quote.quote_time||'').match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+        if(!m)return false;
+        const minute=Number(m[1])*60+Number(m[2]);
+        return minute>=540&&minute<=market.totalMinutes&&market.totalMinutes-minute<=5;
+      };
       const entrySnapshotState = (item, baseAction, quote = null) => {
-        if (!baseAction) return null;
-        const quoteValid = marketBridgeReady() && validTodayQuote(quote);
-        const firstBreakoutNow = quoteValid && baseAction.intraday_early_launch === true;
-        const watchBreakoutNow = quoteValid && baseAction.intraday_early_watch === true;
-        const risk = newEntryRiskGate(item, quoteValid ? quote : null);
-        if(risk) return {...risk,live_quote_verified:quoteValid,phase:risk.kind==='hard'?'blocked':'observe',
-          buyable:false,trialable:false};
-        return {...baseAction, phase:firstBreakoutNow?'starter':watchBreakoutNow?'observe':'candidate', buyable:false, trialable:firstBreakoutNow,
+        if(!baseAction)return null;
+        const quoteValid=marketBridgeReady()&&validTodayQuote(quote),fresh=quoteFreshForTrial(quote);
+        const risk=newEntryRiskGate(item,quoteValid?quote:null);
+        if(risk)return {...risk,phase:risk.kind==='hard'?'blocked':'observe',
+          live_quote_verified:quoteValid,buyable:false,trialable:false};
+        const m=item?.metrics||{},price=Number(quote?.price),ma20=Number(m.ma20);
+        const maSet=[Number(m.ma10),ma20,Number(m.ma60)];
+        const masOkay=maSet.every(v=>Number.isFinite(v)&&v>0)&&price>=Math.max(...maSet);
+        const gap=price>0&&ma20>0?(price/ma20-1)*100:null;
+        const position=Number(m.position_1y_pct),lots=Number(quote?.volume_lots);
+        const eligible=fresh&&String(item?.as_of||'')===expectedSignalDataDate()
+          &&masOkay&&gap!=null&&gap<=5
+          &&Number.isFinite(position)&&position<85&&lots>=1000;
+        const formal=eligible&&formalEntryValidation.enabled&&m.v5?.entry_confirmed===true;
+        if(formal)return {...baseAction,phase:'confirmed',buyable:true,trialable:false,
+          live_quote_verified:true,text:'🟢 正式買點｜V5與有效成交確認',
+          detail:'歷史驗證已開放＋既有V5成立＋當日5分鐘內成交與均線／位置風控通過｜'
+          +String(baseAction.detail||'仍須自行控管部位')};
+        const trial=eligible&&baseAction.key==='breakout'&&baseAction.intraday_early_launch===true;
+        if(trial)return {...baseAction,phase:'trial',buyable:false,trialable:true,
+          live_quote_verified:true,className:'trial',text:'🟠 可小量試單｜盤中起漲確認',
+          detail:'當日5分鐘內成交＋原MA10／20／60、量價與風控通過；並非V5正式買點｜'
+            +String(baseAction.detail||'僅供小部位評估')};
+        const eodBreak=baseAction.key==='breakout';
+        return {...baseAction,phase:'candidate',buyable:false,trialable:false,
           live_quote_verified:quoteValid,
-          detail:(quoteValid ? 'Cloudflare 盤中成交價＋既有日K模型條件｜'
-            : '最近完整交易日日K候選，非盤中即時買點｜')
-            +String(baseAction.detail||'請先確認當下市場行情')};
+          text:eodBreak?'📋 盤後突破追蹤｜非即時買點':baseAction.text,
+          detail:(quoteValid
+            ? fresh?'有今日有效成交，但完整進場條件尚未全滿｜'
+              :'⚠️ 最後成交超過5分鐘或不在試單時間；禁止用舊成交提示買進｜'
+            :'僅有完整日K候選，尚無今日有效成交確認｜')
+            +String(baseAction.detail||'請等下一步量價')};
       };
 
       // Compact entry display only; this does not alter MA10/20/60 signals or eligibility.
@@ -3334,11 +3372,22 @@ h1 {
         const tradeContext=(row.action?.phase==='blocked'||bucketLabel.includes('避開'))?'風險警示':
            q ? '今日成交 '+String(q.quote_time||'')+'｜日K模型未重算' : '盤後模型觀察，非即時買點';
         const originalAction=row.action||{};
-        const safeDisplayAction={...originalAction,buyable:false,trialable:false,
+        const activeTrial=originalAction.phase==='trial'&&originalAction.trialable===true&&quoteFreshForTrial(q);
+        const activeFormal=originalAction.phase==='confirmed'&&originalAction.buyable===true
+          &&formalEntryValidation.enabled&&quoteFreshForTrial(q);
+        const v5=m.v5||{},missing=[];
+        if(v5.weekly_k_pass===false)missing.push('V5週K');
+        if(v5.monthly_k_pass===false)missing.push('V5月K');
+        if(v5.chip_pass===false)missing.push('V5籌碼');
+        if(v5.avg20_liquidity_pass===false)missing.push('20日均量');
+        if(m.entry_candle_guard?.main_bull===false)missing.push('MA10／20／60結構');
+        if(dist!=null&&dist>5)missing.push('距MA20超過5%');
+        const missingText=missing.length?'｜未達：'+missing.slice(0,4).join('、'):'';
+        const safeDisplayAction={...originalAction,buyable:activeFormal,trialable:activeTrial,
           text:bucketLabel.includes('避開')?(originalAction.text||'🔴 風險警戒'):originalAction.text||'🟡 模型候選',
-          detail:(originalAction.detail||'模型條件待核對') + (q
-            ? '｜已比對今日實際成交價與量；完整MA與KD模型仍以最近完整日K為準'
-            : '｜盤中尚無最新成交報價，下單前請核對實際行情')};
+          detail:(originalAction.detail||'模型條件待核對')+missingText + (q
+            ? '｜今日成交 '+String(q.quote_time||'-')+'；技術模型沿用完整日K'
+            : '｜尚無當日有效成交，非即時買進訊號')};
         const expanded=v5MonitorCard(item, q, safeDisplayAction);
         return `<details class="entry-mini" data-stock-key="${esc(id)}">
           <summary class="entry-mini-summary">
@@ -3346,7 +3395,7 @@ h1 {
             <span class="entry-mini-score">模型 ${Number.isFinite(score)?esc(num(score,0)):'-'} 分</span>
             <span class="entry-mini-expand">詳情 ▾</span>
             <span class="entry-mini-metrics">${q?'今日成交':'模型收盤'} <b>${close>0?esc(num(close,2)):'-'}</b>｜距MA20 ${dist==null?'-':(dist>=0?'+':'')+esc(num(dist,1))+'%'}｜成交量 ${Number.isFinite(vol)?esc(num(vol,0))+'張':'-'}</span>
-            <span class="entry-mini-date">S 模型 ${esc(item.as_of||'待更新')}｜${tradeContext}</span>
+            <span class="entry-mini-date">S 模型 ${esc(item.as_of||'待更新')}｜${tradeContext}${esc(missingText)}</span>
           </summary>
           <div class="entry-mini-full">${expanded}</div>
         </details>`;
@@ -5689,7 +5738,9 @@ h1 {
           if (!value?.response?.ok || !value?.data?.ok || !isLockedRulePayload(value.data)) return null;
           return value.data;
         };
-        return { v5Data:unwrap(settled[0]), launchData:unwrap(settled[1]) };
+        const v5Data=unwrap(settled[0]),launchData=unwrap(settled[1]);
+        syncFormalEntryValidation(launchData);
+        return {v5Data,launchData};
       };
 
       async function refreshV5MonitorPool() {
