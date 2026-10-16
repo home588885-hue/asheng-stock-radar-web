@@ -2693,6 +2693,27 @@ h1 {
     detail:'資料不足或尚無明確量價型態；只沿用原雷達買賣規則'};
 };
       const shanchuanState = (item, quote = null) => {
+        const model=item?.metrics?.shanchuan_v2;
+        // The model owns mother-child OHLCV computation. The client merely
+        // explains its latest completed EOD result, without further S/C calls.
+        const fresh=String(item?.as_of||'')===expectedSignalDataDate();
+        if(fresh&&model?.mother_child?.breakout_confirmed===true){
+          const conf=model.quality?.all_confirmed===true;
+          const chipLabel=model.quality?.chip_status==='unavailable'
+            ? '籌碼資料未齊':model.quality?.chip_confirmed===true?'籌碼支持':'籌碼未確認';
+          return {kind:'mother_child_breakout',priority:0,highRisk:false,
+            text:conf?'📚 母子K突破｜底部量價籌碼共振':'📚 母子K突破｜研究觀察',
+            detail:'母K高點 '+String(model.mother_child.mother_high??'-')
+              +'｜突破量比 '+String(model.mother_child.volume_ratio??'-')+'x｜'
+              +chipLabel+'｜尚無整體正期望回測，不是正式買進訊號'};
+        }
+        if(fresh&&model?.mother_child?.formed_today===true){
+          return {kind:'mother_child_watch',priority:0,highRisk:false,
+            text:'📚 母子K收斂｜等後續放量突破',
+            detail:'子K收在母K高低點內，K棒及量能收縮｜母K高點 '
+              +String(model.mother_child.mother_high??'-')
+              +'｜沒有突破前不提前當買點'};
+        }
         const live=validTodayQuote(quote);
         return shanchuanEvaluate(item,quote,{
           live,
@@ -3616,9 +3637,16 @@ h1 {
         const modelFresh=String(item?.as_of||'')===expectedSignalDataDate();
         const recovery=modelFresh?maPullbackReclaimWatchState(item):null;
         const originalMa10Watch=modelFresh&&ma10PullbackWatchState(item);
-        if(!baseAction&&!recovery&&!originalMa10Watch)return null;
+        const mcModel=item?.metrics?.shanchuan_v2;
+        const motherChildWatch=modelFresh
+          &&mcModel?.mother_child?.breakout_confirmed===true
+          &&mcModel?.quality?.bottom_structure===true
+          &&mcModel?.quality?.chip_confirmed===true
+          &&mcModel?.quality?.risk_pass===true;
+        if(!baseAction&&!recovery&&!originalMa10Watch&&!motherChildWatch)return null;
         if(!baseAction)baseAction={key:'pullback_watch',rank:32,className:'scout',
-          text:'🟡 回踩支撐觀察｜等盤中量價',detail:'最近完整日K模型待核對',
+          text:motherChildWatch?'🟡 母子K突破｜研究追蹤':'🟡 回踩支撐觀察｜等盤中量價',
+          detail:motherChildWatch?'母子K量價與籌碼條件齊，等待獨立獲利驗證':'最近完整日K模型待核對',
           keep_candidate:true};
         const quoteValid=marketBridgeReady()&&validTodayQuote(quote),fresh=quoteFreshForTrial(quote);
         const risk=newEntryRiskGate(item,quoteValid?quote:null);
@@ -3661,6 +3689,13 @@ h1 {
               +'；等待5分鐘內有效成交站回昨開／均線，未通過前不能買')
               +'｜盤後模型日 '+String(item?.as_of||'未知')};
         }
+        if(motherChildWatch)return {...baseAction,key:'mother_child_watch',
+          phase:'candidate',buyable:false,trialable:false,rank:Math.max(39,Number(baseAction.rank||0)),
+          className:'scout',live_quote_verified:quoteValid,
+          text:'🟡 母子K整理後突破｜等待績效驗證',
+          detail:'母K高點 '+String(mcModel.mother_child.mother_high??'-')
+            +'｜量比 '+String(mcModel.mother_child.volume_ratio??'-')
+            +'x｜底部、籌碼、原風控均符合研究條件；綠色正式買點維持關閉'};
         const eodBreak=baseAction.key==='breakout';
         return {...baseAction,phase:'candidate',buyable:false,trialable:false,
           live_quote_verified:quoteValid,
@@ -6073,7 +6108,8 @@ h1 {
         const rankItem = item => {
           // Fill only a passive C-price observation slot; all trade gates remain downstream.
           if (!isEntryRadarItem(item))
-            return (isNearMaTurnWatch(item)||maPullbackReclaimWatchState(item))?78:0;
+            return (item?.metrics?.shanchuan_v2?.quality?.all_confirmed===true
+              ?82:(isNearMaTurnWatch(item)||maPullbackReclaimWatchState(item))?78:0);
           if (item?.metrics?.bottom_start?.confirmed === true) return 130;
           const entryState=String(item?.metrics?.trade_lifecycle?.entry?.state||'');
           if (entryState==='formal_candidate') return 120;
