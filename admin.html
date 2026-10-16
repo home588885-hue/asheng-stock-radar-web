@@ -1817,6 +1817,7 @@ h1 {
       const ENTRY_POOL_REFRESH_MS = LOCKED_SETTINGS.entryPoolRefreshMs;
       let entryPoolRefreshing = false;
       let lastEntryPoolRefreshAt = 0;
+      let lastLaunchModelReadAt = 0;
       let lastEntryResumeAt = 0;
       let latestScanProgress = {};
       // 進場雷達僅保留最近完整日K快照，不建立盤中存活計時器。
@@ -4058,6 +4059,7 @@ h1 {
               writeLaunchDataCache(launchData);
             }
             applyGlobalHeaderSummary(launchData);
+            lastLaunchModelReadAt = Date.now();
             const launchPicks = launchData.picks || [];
             // These candidates are already quality-screened by the API before its response limit.
             // Display the true qualified count; never fill the page with lower-score names.
@@ -6334,6 +6336,19 @@ h1 {
         // naturally; switching apps does not rebuild model pools or clear cards.
         if (stage === 'HOLDING' && typeof holdingVisibilityControl === 'function') {
           holdingVisibilityControl();
+        }
+        // Existing overnight model snapshots can become outdated while a tab
+        // stays open. Recheck only after a foreground user action and a 6h gap.
+        // This does NOT start a new scheduled scan or increase the 3-min C ticker.
+        const refreshGap = 6*60*60*1000;
+        if (stage === 'ENTRY' && lastEntryPoolRefreshAt>0
+            && now-lastEntryPoolRefreshAt>=refreshGap && !entryPoolRefreshing) {
+          void refreshV5MonitorPool();
+        } else if (stage === 'LAUNCH' && lastLaunchModelReadAt>0
+            && now-lastLaunchModelReadAt>=refreshGap) {
+          // Set the clock before the request to prevent duplicate tab-focus calls.
+          lastLaunchModelReadAt=now;
+          void load();
         }
       };
       // iOS 切換 App／瀏覽器標籤：背景立即停用報價定時器；前景恢復由上方處理。
