@@ -4059,6 +4059,11 @@ h1 {
         const effective=String(m?.scan_intelligence?.effective_lifecycle||'');
         const rawDays=seq.days_since_first;
         const days=rawDays==null||rawDays===''?NaN:Number(rawDays);
+        // Shan-Chuan EOD box readiness is an ENTRY watch lifecycle, not a
+        // formal V5/green signal. Transport once, do not duplicate in LAUNCH.
+        if(String(item?.as_of||'')===expectedSignalDataDate()
+          &&(m.box_strategy?.prepared===true||m.box_strategy?.breakout_today===true))
+          return 'ENTRY';
         if(m?.v5?.entry_confirmed===true||effective==='ENTRY'||entry==='formal_candidate')return 'ENTRY';
         if(effective==='ACTIVE'||entry==='starter'||m.first_breakout20===true||
           mc.breakout_detected_raw===true||mc.breakout_first_bar===true||
@@ -4100,6 +4105,12 @@ h1 {
         if (['highwin','v5buy'].includes(tradeSignal(item).className))
           return {keep:false,rank:0,className:'promoted',label:'🎯 進場雷達'};
         if(preRisk?.kind==='hard') return {keep:false,rank:0,className:'blocked',label:'🔴 結構風險｜暫不新買'};
+        // Route a verified fresh box watch exclusively into ENTRY tracking,
+        // keeping the original MA/V5 formal-buy gates unchanged.
+        if(modelLaunchPhase(item)==='ENTRY'
+          &&(m.box_strategy?.prepared===true||m.box_strategy?.breakout_today===true))
+          return {keep:false,rank:0,className:'box-promoted',
+            label:'📦 箱型已進進場雷達｜待盤中量價'};
         // ACTIVE has already launched. Remove it from the LAUNCH display ONLY
         // because the same verified S row is eligible for ENTRY tracking.
         // This must precede passive early-turn flags. Not a new buy signal.
