@@ -497,6 +497,8 @@ h1 {
 .entry-list-overview small { color:#9eafc9; font-size:12px; line-height:1.5; }
 .entry-bucket { border:1px solid #37465f; border-radius:14px; background:#111c31; margin:10px 0; overflow:hidden; }
 .entry-bucket-focus { border-color:#4ade8088; }
+.entry-bucket-trial { border-color:#fb923c; }
+.entry-bucket-formal { border-color:#4ade80; }
 .entry-bucket-avoid { border-color:#fb718555; }
 .entry-bucket-fold > summary, .entry-mini > summary, .entry-extra > summary { cursor:pointer; list-style:none; }
 .entry-bucket-fold > summary::-webkit-details-marker, .entry-mini > summary::-webkit-details-marker, .entry-extra > summary::-webkit-details-marker { display:none; }
@@ -3431,8 +3433,9 @@ h1 {
           const item = row?.item || {}, action = row?.action || {};
           const id = String(item.stock_id || ''), day = String(item.as_of || '');
           if (!id || !/^20\d{2}-\d{2}-\d{2}$/.test(day) || day !== expectedSignalDataDate() || holdings.has(id)) continue;
-          const level = action.key === 'breakout' && action.className === 'first' ? 2
-            : action.key === 'pre' && action.className === 'scout' ? 1 : 0;
+          const level = action.phase==='confirmed'&&action.buyable===true
+            &&formalEntryValidation.enabled&&quoteFreshForTrial(row.quote)?2
+            : action.phase==='trial'&&action.trialable===true&&quoteFreshForTrial(row.quote)?1:0;
           if (!level) continue;
           // 同步沿用進場雷達「優先查看」的保守量價／均線／位置過濾，
           // 在發動前分頁也能提醒，不額外查詢進場雷達 API。
@@ -3457,10 +3460,10 @@ h1 {
         try { localStorage.setItem(BUY_NOTICE_KEY, JSON.stringify(buyNoticeState)); } catch (error) {}
         if (!changes.length) return;
         notice.hidden = false;
-        notice.innerHTML = '<b>🔔 新的盤後模型買點候選｜'+changes.length+' 檔</b>'
-          + '<div class="risk-note">僅依最近完整日 K 的既有選股快照變化提醒，不是盤中即時成交或下單指令。</div>'
+        notice.innerHTML = '<b>🔔 盤中有效訊號更新｜'+changes.length+' 檔</b>'
+          + '<div class="risk-note">只核對既有模型與當日有效成交；需自行評估部位及實際券商行情，不代表保證獲利或自動下單。</div>'
           + changes.slice(0,8).map(x => '<div class="risk-note">'
-            + (x.level === 2 ? '🟢 突破確認候選' : '🟠 小量試單候選')
+            + (x.level === 2 ? '🟢 V5正式確認' : '🟠 盤中小量試單條件已到')
             + '｜<b>'+esc(x.id)+' '+esc(x.name)+'</b>｜模型日 '+esc(x.day)
             + '｜下單前須核對今日股價、量能與風險</div>').join('')
           + (changes.length>8?'<div class="risk-note">其餘 '+(changes.length-8)+' 檔請查看進場雷達。</div>':'');
@@ -3598,25 +3601,33 @@ h1 {
         const allSignal=[...b.focus,...b.signal];
         const earlyRows=byRank(allSignal.filter(row=>
           row.action?.intraday_early_launch===true||row.action?.intraday_early_watch===true));
-        const starterRows=byRank(allSignal.filter(row=>
-          row.action?.phase==='starter'||row.action?.phase==='trial'));
-        const completedRows=byRank(allSignal.filter(row=>row.action?.phase==='confirmed'));
+        const starterRows=byRank(allSignal.filter(row=>row.action?.phase==='trial'
+          &&row.action?.trialable===true&&quoteFreshForTrial(row.quote)));
+        const completedRows=byRank(allSignal.filter(row=>row.action?.phase==='confirmed'
+          &&row.action?.buyable===true&&formalEntryValidation.enabled&&quoteFreshForTrial(row.quote)));
+        // One stock appears in exactly ONE category; the actionable lists get top priority.
+        const actionableIds=new Set([...starterRows,...completedRows].map(row=>rowId(row)));
+        const passiveFocus=byRank(b.focus.filter(row=>!actionableIds.has(rowId(row))));
+        const passiveSignal=byRank(b.signal.filter(row=>!actionableIds.has(rowId(row))));
         const nearRows=byRank(b.wait);
-        const focusRows=byRank(b.focus).slice(0,8);
-        const signalRows=byRank([...byRank(b.focus).slice(8),...b.signal]);
+        const focusRows=passiveFocus.slice(0,8);
+        const signalRows=byRank([...passiveFocus.slice(8),...passiveSignal]);
         const eodTrackRows=byRank(b.eod);
         const queuedDisplayRows=queuedRows,recalcDisplayRows=recalcRows;
         const waitRows=nearRows,pullbackRows=highRows;
         const avoidRows=byRank([...blockedRows,...weakeningRows]);
-        const displayedTotal=focusRows.length+signalRows.length+eodTrackRows.length
+        const displayedTotal=starterRows.length+completedRows.length
+          +focusRows.length+signalRows.length+eodTrackRows.length
           +queuedDisplayRows.length+recalcDisplayRows.length+waitRows.length
           +pullbackRows.length+avoidRows.length;
         const banner=`<div class="entry-list-overview" data-stable-key="entry-overview">
           <strong>🎯 進場雷達｜${displayedTotal} 檔追蹤</strong>
-          <span>🟢 V5候選且通過分類風控 ${[...focusRows,...signalRows].filter(row=>row.item?.metrics?.v5?.entry_confirmed===true).length}　⭐ 優先 ${focusRows.length}　📋 已起漲追蹤 ${eodTrackRows.length}　🟠 進場待核對 ${signalRows.length}　🌱 等發動 ${queuedDisplayRows.length}　🟡 條件未齊 ${waitRows.length}　⚡ 待補算 ${recalcDisplayRows.length}　🔵 等回踩 ${pullbackRows.length}　🔴 風險避開 ${avoidRows.length}</span>
-          <small>基準交易日 ${esc(expectedSignalDataDate())}｜舊模型僅觀察、不列新買點｜非盤中即時買進指令｜點股票名稱展開資料${staleRows.length?'｜另有 '+staleRows.length+' 檔過期快照未列入':''}</small>
+          <span>🟠 有效盤中試單 ${starterRows.length}　🟢 驗證通過正式買點 ${completedRows.length}　⭐ 優先觀察 ${focusRows.length}　📋 已起漲追蹤 ${eodTrackRows.length}　🟠 待核對 ${signalRows.length}　🌱 等發動 ${queuedDisplayRows.length}　🟡 條件未齊 ${waitRows.length}　⚡ 待補算 ${recalcDisplayRows.length}　🔵 等回踩 ${pullbackRows.length}　🔴 風險避開 ${avoidRows.length}</span>
+          <small>模型日 ${esc(expectedSignalDataDate())}｜V5正式進場：${formalEntryValidation.enabled?'歷史驗證已通過':'暫停（'+esc(formalEntryValidation.reason)+'）'}｜🟠小量試單需5分鐘內有效成交與原風控通過；其他追蹤不是買點｜點股票展開未達條件${staleRows.length?'｜另有 '+staleRows.length+' 檔過期快照未列入':''}</small>
         </div>`;
         const outHtml = banner+
+          entryBucketHtml('formal','🟢 正式買點｜V5驗證與有效成交完成','必須同時符合原模型、歷史驗證及當日風控；不代表保證獲利',completedRows,{open:true,tone:'focus',preview:6})+
+          entryBucketHtml('trial','🟠 可小量試單｜盤中有效成交確認','5分鐘內成交且既有起漲條件與風控通過；試單不等於V5正式買點',starterRows,{open:true,tone:'focus',preview:6})+
           entryBucketHtml('focus','⭐ 優先查看','原模型條件相對成熟，仍須核對當日行情',focusRows,{open:true,tone:'focus',preview:6})+
           entryBucketHtml('signal','🟠 進場訊號｜先核對','已有模型追蹤或突破訊號，仍須確認今日量價與風險，並非直接買進指令',signalRows,{open:!focusRows.length,tone:'focus',preview:5})+
           entryBucketHtml('eod-tracking','📋 已起漲追蹤｜不是買點','已由最新完整日K標記為ACTIVE／ENTRY的追蹤股票，盤中仍須核對有效成交價與原本風控確認；不可當成🟠可小量試單或🟢正式買點',eodTrackRows,{open:true,tone:'near',preview:6})+
@@ -3625,7 +3636,7 @@ h1 {
           entryBucketHtml('recalc','⚡ 收盤資料待補算','資料尚未齊全，不列進場候選或一般等確認',recalcDisplayRows,{open:false,tone:'near',preview:5})+
           entryBucketHtml('pullback','🔵 位置偏高｜等回踩','避免追高，觀察支撐與短均線',pullbackRows,{open:!focusRows.length&&!signalRows.length&&!queuedDisplayRows.length&&!waitRows.length,tone:'high',preview:5})+
           entryBucketHtml('avoid','🔴 風險警戒｜先避開','已觸發風險或轉弱條件，不列買進候選',avoidRows,{open:!focusRows.length&&!signalRows.length&&!queuedDisplayRows.length&&!waitRows.length&&!pullbackRows.length,tone:'blocked',preview:5});
-        updateBuySignalNotice(focusRows);
+        updateBuySignalNotice([...completedRows,...starterRows]);
         stableListRender(outHtml,{quoteUpdate});
         return { earlyRows, starterRows, completedRows, recalcRows, blockedRows, highRows,
           weakeningRows, queuedRows, nearRows, trackingRows, staleRows,
@@ -5669,7 +5680,7 @@ h1 {
             const finalWait = rows.filter(row => row.action.phase === 'final_wait').length;
             $('#note').textContent = finalQuoteWindow
               ? `🎯 盤後整理｜📌明日優先 ${groups.completedRows.length}｜⚡日K補算 ${groups.recalcRows.length}｜🔵等回踩 ${groups.pullbackRows.length}｜🟠轉弱 ${groups.avoidRows.length}｜過期排除 ${groups.staleRows.length}｜資料完成後自動更新。${scanProgressSuffix()}`
-              : `🎯 進場雷達｜🚀盤中起漲 ${groups.earlyRows.length}｜🔵小量試單 ${groups.starterRows.length}｜🟡等確認 ${groups.waitRows.length}｜🔵等回踩 ${groups.pullbackRows.length}｜🟠轉弱 ${groups.avoidRows.length}${quoteCoverage}｜盤中起漲優先看最上方。${scanProgressSuffix()}`;
+              : `🎯 進場雷達｜🚀起漲追蹤 ${groups.earlyRows.length}｜🟠有當日成交之小量試單 ${groups.starterRows.length}｜🟢驗證正式買點 ${groups.completedRows.length}｜🟡等確認 ${groups.waitRows.length}｜🔵等回踩 ${groups.pullbackRows.length}｜🟠轉弱 ${groups.avoidRows.length}${quoteCoverage}｜有效試單優先看最上方。${scanProgressSuffix()}`;
             return;
           }
           const ranked = liveBasePicks.map(item => ({ item, quote: quoteMap.get(String(item.stock_id)) })).filter(row => row.quote).sort((a, b) => {
