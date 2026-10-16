@@ -6314,8 +6314,8 @@ h1 {
         }
         if (!liveBasePicks.length) {
           if (stage === 'ENTRY') {
-            $('#list').innerHTML = '<div class="box empty">目前進場雷達沒有新的追蹤候選。</div>';
-            $('#note').textContent = '目前無新候選；下次交易日晚上9點起分批更新。';
+            $('#list').innerHTML = '<div class="box empty">新版山川模型尚在分批補算，或沒有符合條件的新版候選；不回填舊版。</div>';
+            $('#note').textContent = '只顯示新版山川候選；待原夜間掃描陸續補算，不能把尚未重算當成零訊號。';
             setCandidateSummary('bCount', 0, '最近完整日K追蹤名單');
           }
           return;
@@ -6791,8 +6791,8 @@ h1 {
         const freshHoldingCount = items.filter(item => String(item.as_of||'') === expectedSignalDataDate()
           &&unifiedRadarGeneration(item)).length;
         $('#note').textContent = items.length
-          ? '📌 已買進 '+symbols.length+' 檔｜已載入 '+items.length+' 檔盤後模型（最近有效日K '
-            +expectedSignalDataDate()+'：'+freshHoldingCount+' 檔）｜今日成交價待 C 開盤後確認。'
+          ? '📌 已買進 '+symbols.length+' 檔｜新版山川已驗證 '+freshHoldingCount+'/'+symbols.length
+            +' 檔｜其他待既有夜間掃描補算；持股成本與股數仍保留。'
           : '⚠️ 已買進 '+symbols.length+' 檔｜持股資料仍保留，但完整模型快照未取得；請勿依暫存卡下單。';
         let lastHoldingQuoteRequestAt = 0;
         const render = async () => {
@@ -6800,7 +6800,8 @@ h1 {
           if (!items.length || typeof window.getLiveQuotes !== 'function') {
             stableListRender(holdingOverviewHtml(symbols.length,items.filter(unifiedRadarGeneration).length,items.filter(unifiedRadarGeneration))
               + items.map(item => holdingMiniHtml(item)).join('') + fallbackHtml);
-            const freshCount = items.filter(item => String(item.as_of || '') === expectedSignalDataDate()).length;
+            const freshCount = items.filter(item => String(item.as_of || '') === expectedSignalDataDate()
+              &&unifiedRadarGeneration(item)).length;
             $('#note').textContent = `📌 已買進 ${symbols.length} 檔｜持股優先更新中｜模型 ${freshCount}/${items.length} 檔已到 ${expectedSignalDataDate()}。`;
             return;
           }
@@ -6818,7 +6819,8 @@ h1 {
               if (quote) recordHoldingCloseWatch(item, quote);
               return holdingMiniHtml(item, quote);
             }).join('') + fallbackHtml,{quoteUpdate:true});
-            const freshCount = items.filter(item => String(item.as_of || '') === expectedSignalDataDate()).length;
+            const freshCount = items.filter(item => String(item.as_of || '') === expectedSignalDataDate()
+              &&unifiedRadarGeneration(item)).length;
             const absent=items.filter(item=>!quoteMap.has(String(item.stock_id))).map(item=>String(item.stock_id)).slice(0,9);
             const feedState=marketBridgeReady()
               ? (quoteMap.size>0
