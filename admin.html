@@ -569,6 +569,10 @@ h1 {
   border:1px solid #50627c; border-radius:9px; padding:7px 10px;
   background:#17253c; color:#d8e7f9; line-height:1.35;
 }
+.entry-survival-status { display:block; grid-column:1/-1; font-size:12px; font-weight:700;
+  padding:5px 9px; border-radius:7px; border:1px solid #415a77; background:#112138; color:#cbd5e1; }
+.entry-survival-status.passed { background:#103124; border-color:#166534; color:#bbf7d0; }
+.entry-survival-status.failed { background:#321b21; border-color:#991b1b; color:#fecaca; }
 .holding-survival-summary strong { font-size:14px; font-weight:800; }
 .holding-survival-summary small { font-size:12px; color:#b9cee4; }
 .holding-survival-summary.passed { border-color:#3c7660; background:#132c29; color:#bbf7d0; }
@@ -3379,6 +3383,91 @@ h1 {
         const minute=Number(m[1])*60+Number(m[2]);
         return minute>=540&&minute<=market.totalMinutes&&market.totalMinutes-minute<=5;
       };
+      // ENTRY 12-minute quote-sampling audit (UI only). Reuse existing C polls;
+      // never create/upgrade buy decisions or call C/S an extra time.
+      const ENTRY_SURVIVAL_PREFIX='asheng-entry-survival-v1-'+portfolioId+'-';
+      let entrySurvivalDay='',entrySurvivalRecords=new Map();
+      const entrySurvivalMap=()=>{
+        const day=todayQuoteDate();
+        if(entrySurvivalDay===day)return entrySurvivalRecords;
+        entrySurvivalDay=day;entrySurvivalRecords=new Map();
+        try{
+          const rows=JSON.parse(localStorage.getItem(ENTRY_SURVIVAL_PREFIX+day)||'[]');
+          if(Array.isArray(rows))for(const x of rows){
+            if(Array.isArray(x)&&x.length===2&&/^[0-9A-Za-z-]{1,16}$/.test(String(x[0])))
+              entrySurvivalRecords.set(String(x[0]),x[1]);
+          }
+        }catch(error){}
+        return entrySurvivalRecords;
+      };
+      const persistEntrySurvival=()=>{
+        try{localStorage.setItem(ENTRY_SURVIVAL_PREFIX+todayQuoteDate(),
+          JSON.stringify([...entrySurvivalMap().entries()].slice(-160)))}catch(error){}
+      };
+      const entrySurvivalPhase=()=>{
+        const m=taipeiMarketState();
+        return !m.weekday?'closed':m.totalMinutes<770?'before':m.totalMinutes<800?'active':'after';
+      };
+      const entrySurvivalLabel=(item,action)=>{
+        const id=String(item?.stock_id||''),row=entrySurvivalMap().get(id)||null;
+        const phase=entrySurvivalPhase();
+        if(!row){
+          if(phase==='before')return {tone:'pending',text:'⏱ 12分鐘存活｜12:50 開始取樣'};
+          if(phase==='closed')return {tone:'pending',text:'⏱ 12分鐘存活｜休市，不取樣'};
+          if(action?.phase!=='trial')return {tone:'pending',text:phase==='active'
+            ?'⏱ 12分鐘存活｜尚未達到橘色試單，不取樣'
+            :'⏱ 12分鐘存活｜13:20 已截止，本次未觸發'};
+          return {tone:'pending',text:phase==='active'
+            ?'⏱ 12分鐘存活｜等待首筆有效報價（0/12 分）'
+            :'⏱ 12分鐘存活｜13:20 截止前無有效取樣'};
+        }
+        const elapsed=Math.max(0,Math.min(12,Number(row.lastMinute)-Number(row.firstMinute)));
+        const evidence='｜有效成交 '+Number(row.samples||0)+' 筆｜'+
+          String(row.firstMinute==null?'-':Math.floor(row.firstMinute/60)+':'+String(row.firstMinute%60).padStart(2,'0'))
+          +'～'+String(row.lastMinute==null?'-':Math.floor(row.lastMinute/60)+':'+String(row.lastMinute%60).padStart(2,'0'));
+        if(row.status==='failed')return {tone:'failed',text:'⚠️ 12分鐘存活｜期間試單訊號失守，未通過'+evidence};
+        if(row.status==='interrupted')return {tone:'failed',text:'⚠️ 12分鐘存活｜有效報價中斷超過6分，無法確認'+evidence};
+        if(row.status==='passed')return {tone:'passed',text:
+          '✅ 12分鐘存活取樣通過（非逐筆）'+(phase==='after'?'｜已截止':'｜持續監看至13:20')+evidence};
+        return {tone:'pending',text:phase==='after'
+          ?'⚪ 12分鐘存活｜13:20 已截止，取樣不足（'+elapsed+'/12 分）'+evidence
+          :'⏱ 12分鐘存活｜取樣 '+elapsed+'/12 分'+evidence};
+      };
+      const recordEntrySurvival=row=>{
+        if(stage!=='ENTRY'||document.hidden||entrySurvivalPhase()!=='active')return;
+        const item=row?.item||{},id=String(item.stock_id||''),q=row?.quote;
+        if(!id||String(item.as_of||'')!==expectedSignalDataDate()
+          ||!quoteFreshForTrial(q))return;
+        const match=String(q.quote_time||'').match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+        if(!match)return;
+        const minute=Number(match[1])*60+Number(match[2]);
+        if(minute<770||minute>=800)return;
+        const active=row.action?.phase==='trial'&&row.action?.trialable===true;
+        const map=entrySurvivalMap(),old=map.get(id)||null;
+        if(!old&&!active)return;
+        if(old&&minute<=Number(old.lastMinute))return; // same/older C quote: NEVER count twice
+        if(old&&['failed','interrupted'].includes(old.status))return;
+        const gap=old?minute-Number(old.lastMinute):0;
+        const next=!old?{firstMinute:minute,lastMinute:minute,samples:1,status:'collecting'}
+          :!active?{...old,lastMinute:minute,status:'failed'}
+          :gap>6?{...old,lastMinute:minute,status:'interrupted'}
+          :{...old,lastMinute:minute,samples:Math.min(30,Number(old.samples||0)+1)};
+        if(next.status==='collecting'&&next.lastMinute-next.firstMinute>=12&&next.samples>=4)
+          next.status='passed';
+        map.set(id,next);persistEntrySurvival();
+      };
+      const refreshEntrySurvivalDisplay=()=>{
+        if(stage!=='ENTRY'||document.hidden)return;
+        document.querySelectorAll('[data-entry-survival-id]').forEach(el=>{
+          const stockId=String(el.getAttribute('data-entry-survival-id')||'');
+          const info=entrySurvivalLabel({stock_id:stockId},
+            {phase:el.getAttribute('data-entry-survival-trial')==='1'?'trial':'candidate'});
+          el.textContent=info.text;
+          el.classList.toggle('passed',info.tone==='passed');
+          el.classList.toggle('failed',info.tone==='failed');
+          el.classList.toggle('pending',info.tone==='pending');
+        });
+      };
       const entrySnapshotState = (item, baseAction, quote = null) => {
         const modelFresh=String(item?.as_of||'')===expectedSignalDataDate();
         const recovery=modelFresh?maPullbackReclaimWatchState(item):null;
@@ -3468,6 +3557,7 @@ h1 {
             ? '｜今日成交 '+String(q.quote_time||'-')+'；技術模型沿用完整日K'
             : '｜尚無當日有效成交，非即時買進訊號')};
         const expanded=v5MonitorCard(item, q, safeDisplayAction);
+        const survival=entrySurvivalLabel(item,originalAction);
         return `<details class="entry-mini" data-stock-key="${esc(id)}">
           <summary class="entry-mini-summary">
             <span class="entry-mini-name"><strong>${esc(id)} ${esc(item.stock_name||'')}</strong><small>${esc(actionText)}</small></span>
@@ -3475,6 +3565,7 @@ h1 {
             <span class="entry-mini-expand">詳情 ▾</span>
             <span class="entry-mini-metrics">${q?'今日成交':'模型收盤'} <b>${close>0?esc(num(close,2)):'-'}</b>｜距MA20 ${dist==null?'-':(dist>=0?'+':'')+esc(num(dist,1))+'%'}｜成交量 ${Number.isFinite(vol)?esc(num(vol,0))+'張':'-'}</span>
             <span class="entry-mini-date">S 模型 ${esc(item.as_of||'待更新')}｜${tradeContext}${esc(missingText)}</span>
+            <span class="entry-survival-status ${survival.tone}" data-entry-survival-id="${esc(id)}" data-entry-survival-trial="${activeTrial?'1':'0'}">${esc(survival.text)}</span>
           </summary>
           <div class="entry-mini-full">${expanded}</div>
         </details>`;
@@ -3562,6 +3653,9 @@ h1 {
           return !stale;
         });
 
+        // Existing C snapshots update ENTRY observation samples, once per unique
+        // quote minute. No new C polls, no model/buy-status changes.
+        rows.forEach(recordEntrySurvival);
         // Shared, mutually-exclusive radar display policy. Scan/analyzer/holdings untouched.
         // Every candidate receives exactly one bucket, with current-day risk before EOD labels.
         const rowId = row => String(row?.item?.stock_id||'');
@@ -3704,7 +3798,7 @@ h1 {
         const banner=`<div class="entry-list-overview" data-stable-key="entry-overview">
           <strong>🎯 進場雷達｜${displayedTotal} 檔追蹤</strong>
           <span>🟠 有效盤中試單 ${starterRows.length}　🟢 驗證通過正式買點 ${completedRows.length}　⭐ 優先觀察 ${focusRows.length}　📋 已起漲追蹤 ${eodTrackRows.length}　🟡 MA10／20回踩確認 ${reclaimRows.length}　🟠 待核對 ${signalRows.length}　🌱 等發動 ${queuedDisplayRows.length}　🟡 條件未齊 ${waitRows.length}　⚡ 待補算 ${recalcDisplayRows.length}　🔵 等回踩 ${pullbackRows.length}　🔴 風險避開 ${avoidRows.length}</span>
-          <small>模型日 ${esc(expectedSignalDataDate())}｜V5正式進場：${formalEntryValidation.enabled?'歷史驗證已通過':'暫停（'+esc(formalEntryValidation.reason)+'）'}｜🟠小量試單需5分鐘內有效成交與原風控通過；其他追蹤不是買點｜點股票展開未達條件${staleRows.length?'｜另有 '+staleRows.length+' 檔過期快照未列入':''}</small>
+          <small>模型日 ${esc(expectedSignalDataDate())}｜V5正式進場：${formalEntryValidation.enabled?'歷史驗證已通過':'暫停（'+esc(formalEntryValidation.reason)+'）'}｜⏱12分鐘存活僅於12:50～13:20、進場雷達在前景且有橘色試單時沿用C報價取樣；非逐筆、不能補算，通過也不會升級正式買點｜點股票展開未達條件${staleRows.length?'｜另有 '+staleRows.length+' 檔過期快照未列入':''}</small>
         </div>`;
         const outHtml = banner+
           entryBucketHtml('formal','🟢 正式買點｜V5驗證與有效成交完成','必須同時符合原模型、歷史驗證及當日風控；不代表保證獲利',completedRows,{open:true,tone:'focus',preview:6})+
@@ -6382,7 +6476,7 @@ h1 {
       });
       updateEntryPhase();
       // One existing DOM-only timer: no additional quote, S or C usage.
-      setInterval(() => {updateEntryPhase(); refreshHoldingSurvivalDisplay();}, 30000);
+      setInterval(() => {updateEntryPhase(); refreshHoldingSurvivalDisplay(); refreshEntrySurvivalDisplay();}, 30000);
       let lastSeenExternalCommitAt = '';
       const pageOpenedAt = Date.now();
       let lastCommitProbeAt = 0;
@@ -6454,10 +6548,12 @@ h1 {
         }
       });
       document.addEventListener('visibilitychange', () => {
-        if (!document.hidden) refreshHoldingSurvivalDisplay();
+        if (!document.hidden) {refreshHoldingSurvivalDisplay();refreshEntrySurvivalDisplay();}
       });
       window.addEventListener('focus', refreshHoldingSurvivalDisplay);
       window.addEventListener('pageshow', refreshHoldingSurvivalDisplay);
+      window.addEventListener('focus', refreshEntrySurvivalDisplay);
+      window.addEventListener('pageshow', refreshEntrySurvivalDisplay);
       document.addEventListener('visibilitychange', refreshEntryOnResume);
       window.addEventListener('focus', refreshEntryOnResume);
       // No forced reload on pageshow (including iOS bfcache) or when a new
