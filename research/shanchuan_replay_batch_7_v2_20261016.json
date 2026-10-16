@@ -1,0 +1,522 @@
+{
+  "version": "2026-10-16-shanchuan-protect-pilot-v2",
+  "ids": [
+    "2385",
+    "2338",
+    "2548",
+    "2597"
+  ],
+  "source": "voidful/tw_stocker",
+  "coverage": [
+    {
+      "id": "2385",
+      "days": 516,
+      "from": "2024-02-15",
+      "to": "2026-04-01"
+    },
+    {
+      "id": "2338",
+      "days": 516,
+      "from": "2024-02-15",
+      "to": "2026-04-01"
+    },
+    {
+      "id": "2548",
+      "days": 516,
+      "from": "2024-02-15",
+      "to": "2026-04-01"
+    },
+    {
+      "id": "2597",
+      "days": 516,
+      "from": "2024-02-15",
+      "to": "2026-04-01"
+    }
+  ],
+  "events": 8,
+  "accepted": 6,
+  "skipReasons": {
+    "entry_open_mismatch": 1,
+    "overlap_cooldown": 1
+  },
+  "audit": [
+    {
+      "id": "2385",
+      "signal": "2025-03-06",
+      "entry": "2025-03-07"
+    },
+    {
+      "id": "2385",
+      "signal": "2025-09-18",
+      "entry": "2025-09-19"
+    },
+    {
+      "id": "2338",
+      "signal": "2024-07-11",
+      "entry": "2024-07-12"
+    },
+    {
+      "id": "2338",
+      "signal": "2025-07-17",
+      "entry": "2025-07-18"
+    },
+    {
+      "id": "2548",
+      "signal": "2025-12-18",
+      "entry": "2025-12-19"
+    },
+    {
+      "id": "2597",
+      "signal": "2024-06-14",
+      "entry": "2024-06-17"
+    }
+  ],
+  "trades": [
+    {
+      "id": "2385",
+      "signal": "2025-03-06",
+      "year": "2025",
+      "horizon": 20,
+      "baseline": {
+        "net": -16.7737,
+        "drawdown": -13.9601,
+        "held": 20,
+        "added": true,
+        "taken": false,
+        "protectedPart": false,
+        "triggerDay": null,
+        "exit": "horizon_open"
+      },
+      "guard_A": {
+        "net": -16.7737,
+        "drawdown": -13.9601,
+        "held": 20,
+        "added": true,
+        "taken": false,
+        "protectedPart": false,
+        "triggerDay": null,
+        "exit": "horizon_open"
+      },
+      "guard_B": {
+        "net": -16.7737,
+        "drawdown": -13.9601,
+        "held": 20,
+        "added": true,
+        "taken": false,
+        "protectedPart": false,
+        "triggerDay": null,
+        "exit": "horizon_open"
+      }
+    },
+    {
+      "id": "2385",
+      "signal": "2025-03-06",
+      "year": "2025",
+      "horizon": 30,
+      "baseline": {
+        "net": -20.2903,
+        "drawdown": -19.0883,
+        "held": 21,
+        "added": true,
+        "taken": false,
+        "protectedPart": false,
+        "triggerDay": null,
+        "exit": "three_ma20_closes"
+      },
+      "guard_A": {
+        "net": -20.2903,
+        "drawdown": -19.0883,
+        "held": 21,
+        "added": true,
+        "taken": false,
+        "protectedPart": false,
+        "triggerDay": null,
+        "exit": "three_ma20_closes"
+      },
+      "guard_B": {
+        "net": -20.2903,
+        "drawdown": -19.0883,
+        "held": 21,
+        "added": true,
+        "taken": false,
+        "protectedPart": false,
+        "triggerDay": null,
+        "exit": "three_ma20_closes"
+      }
+    },
+    {
+      "id": "2385",
+      "signal": "2025-09-18",
+      "year": "2025",
+      "horizon": 20,
+      "baseline": {
+        "net": -4.7701,
+        "drawdown": -5.8166,
+        "held": 8,
+        "added": false,
+        "taken": false,
+        "protectedPart": false,
+        "triggerDay": null,
+        "exit": "three_ma20_closes"
+      },
+      "guard_A": {
+        "net": -4.7701,
+        "drawdown": -5.8166,
+        "held": 8,
+        "added": false,
+        "taken": false,
+        "protectedPart": false,
+        "triggerDay": null,
+        "exit": "three_ma20_closes"
+      },
+      "guard_B": {
+        "net": -4.7701,
+        "drawdown": -5.8166,
+        "held": 8,
+        "added": false,
+        "taken": false,
+        "protectedPart": false,
+        "triggerDay": null,
+        "exit": "three_ma20_closes"
+      }
+    },
+    {
+      "id": "2385",
+      "signal": "2025-09-18",
+      "year": "2025",
+      "horizon": 30,
+      "baseline": {
+        "net": -4.7701,
+        "drawdown": -5.8166,
+        "held": 8,
+        "added": false,
+        "taken": false,
+        "protectedPart": false,
+        "triggerDay": null,
+        "exit": "three_ma20_closes"
+      },
+      "guard_A": {
+        "net": -4.7701,
+        "drawdown": -5.8166,
+        "held": 8,
+        "added": false,
+        "taken": false,
+        "protectedPart": false,
+        "triggerDay": null,
+        "exit": "three_ma20_closes"
+      },
+      "guard_B": {
+        "net": -4.7701,
+        "drawdown": -5.8166,
+        "held": 8,
+        "added": false,
+        "taken": false,
+        "protectedPart": false,
+        "triggerDay": null,
+        "exit": "three_ma20_closes"
+      }
+    },
+    {
+      "id": "2338",
+      "signal": "2024-07-11",
+      "year": "2024",
+      "horizon": 20,
+      "baseline": {
+        "net": -16.3256,
+        "drawdown": -11.6302,
+        "held": 8,
+        "added": true,
+        "taken": false,
+        "protectedPart": false,
+        "triggerDay": null,
+        "exit": "three_ma20_closes"
+      },
+      "guard_A": {
+        "net": -16.3256,
+        "drawdown": -11.6302,
+        "held": 8,
+        "added": true,
+        "taken": false,
+        "protectedPart": false,
+        "triggerDay": null,
+        "exit": "three_ma20_closes"
+      },
+      "guard_B": {
+        "net": -16.3256,
+        "drawdown": -11.6302,
+        "held": 8,
+        "added": true,
+        "taken": false,
+        "protectedPart": false,
+        "triggerDay": null,
+        "exit": "three_ma20_closes"
+      }
+    },
+    {
+      "id": "2338",
+      "signal": "2024-07-11",
+      "year": "2024",
+      "horizon": 30,
+      "baseline": {
+        "net": -16.3256,
+        "drawdown": -11.6302,
+        "held": 8,
+        "added": true,
+        "taken": false,
+        "protectedPart": false,
+        "triggerDay": null,
+        "exit": "three_ma20_closes"
+      },
+      "guard_A": {
+        "net": -16.3256,
+        "drawdown": -11.6302,
+        "held": 8,
+        "added": true,
+        "taken": false,
+        "protectedPart": false,
+        "triggerDay": null,
+        "exit": "three_ma20_closes"
+      },
+      "guard_B": {
+        "net": -16.3256,
+        "drawdown": -11.6302,
+        "held": 8,
+        "added": true,
+        "taken": false,
+        "protectedPart": false,
+        "triggerDay": null,
+        "exit": "three_ma20_closes"
+      }
+    },
+    {
+      "id": "2338",
+      "signal": "2025-07-17",
+      "year": "2025",
+      "horizon": 20,
+      "baseline": {
+        "net": 18.1009,
+        "drawdown": -11.1391,
+        "held": 20,
+        "added": false,
+        "taken": false,
+        "protectedPart": false,
+        "triggerDay": null,
+        "exit": "horizon_open"
+      },
+      "guard_A": {
+        "net": 18.1009,
+        "drawdown": -11.1391,
+        "held": 20,
+        "added": false,
+        "taken": false,
+        "protectedPart": false,
+        "triggerDay": null,
+        "exit": "horizon_open"
+      },
+      "guard_B": {
+        "net": 18.1009,
+        "drawdown": -11.1391,
+        "held": 20,
+        "added": false,
+        "taken": false,
+        "protectedPart": false,
+        "triggerDay": null,
+        "exit": "horizon_open"
+      }
+    },
+    {
+      "id": "2338",
+      "signal": "2025-07-17",
+      "year": "2025",
+      "horizon": 30,
+      "baseline": {
+        "net": 20.9536,
+        "drawdown": -11.1391,
+        "held": 30,
+        "added": false,
+        "taken": true,
+        "protectedPart": false,
+        "triggerDay": null,
+        "exit": "horizon_open"
+      },
+      "guard_A": {
+        "net": 18.3861,
+        "drawdown": -11.1391,
+        "held": 30,
+        "added": false,
+        "taken": true,
+        "protectedPart": true,
+        "triggerDay": "2025-08-18",
+        "exit": "horizon_open"
+      },
+      "guard_B": {
+        "net": 18.3861,
+        "drawdown": -11.1391,
+        "held": 30,
+        "added": false,
+        "taken": true,
+        "protectedPart": true,
+        "triggerDay": "2025-08-18",
+        "exit": "horizon_open"
+      }
+    },
+    {
+      "id": "2548",
+      "signal": "2025-12-18",
+      "year": "2025",
+      "horizon": 20,
+      "baseline": {
+        "net": -3.259,
+        "drawdown": -10.3734,
+        "held": 19,
+        "added": false,
+        "taken": false,
+        "protectedPart": false,
+        "triggerDay": null,
+        "exit": "three_ma20_closes"
+      },
+      "guard_A": {
+        "net": -0.4356,
+        "drawdown": -7.6072,
+        "held": 19,
+        "added": false,
+        "taken": false,
+        "protectedPart": true,
+        "triggerDay": "2025-12-29",
+        "exit": "three_ma20_closes"
+      },
+      "guard_B": {
+        "net": -0.4356,
+        "drawdown": -7.6072,
+        "held": 19,
+        "added": false,
+        "taken": false,
+        "protectedPart": true,
+        "triggerDay": "2025-12-29",
+        "exit": "three_ma20_closes"
+      }
+    },
+    {
+      "id": "2548",
+      "signal": "2025-12-18",
+      "year": "2025",
+      "horizon": 30,
+      "baseline": {
+        "net": -3.259,
+        "drawdown": -10.3734,
+        "held": 19,
+        "added": false,
+        "taken": false,
+        "protectedPart": false,
+        "triggerDay": null,
+        "exit": "three_ma20_closes"
+      },
+      "guard_A": {
+        "net": -0.4356,
+        "drawdown": -7.6072,
+        "held": 19,
+        "added": false,
+        "taken": false,
+        "protectedPart": true,
+        "triggerDay": "2025-12-29",
+        "exit": "three_ma20_closes"
+      },
+      "guard_B": {
+        "net": -0.4356,
+        "drawdown": -7.6072,
+        "held": 19,
+        "added": false,
+        "taken": false,
+        "protectedPart": true,
+        "triggerDay": "2025-12-29",
+        "exit": "three_ma20_closes"
+      }
+    },
+    {
+      "id": "2597",
+      "signal": "2024-06-14",
+      "year": "2024",
+      "horizon": 20,
+      "baseline": {
+        "net": -6.4774,
+        "drawdown": -7.7585,
+        "held": 7,
+        "added": false,
+        "taken": false,
+        "protectedPart": false,
+        "triggerDay": null,
+        "exit": "three_ma20_closes"
+      },
+      "guard_A": {
+        "net": -6.4774,
+        "drawdown": -7.7585,
+        "held": 7,
+        "added": false,
+        "taken": false,
+        "protectedPart": false,
+        "triggerDay": null,
+        "exit": "three_ma20_closes"
+      },
+      "guard_B": {
+        "net": -6.4774,
+        "drawdown": -7.7585,
+        "held": 7,
+        "added": false,
+        "taken": false,
+        "protectedPart": false,
+        "triggerDay": null,
+        "exit": "three_ma20_closes"
+      }
+    },
+    {
+      "id": "2597",
+      "signal": "2024-06-14",
+      "year": "2024",
+      "horizon": 30,
+      "baseline": {
+        "net": -6.4774,
+        "drawdown": -7.7585,
+        "held": 7,
+        "added": false,
+        "taken": false,
+        "protectedPart": false,
+        "triggerDay": null,
+        "exit": "three_ma20_closes"
+      },
+      "guard_A": {
+        "net": -6.4774,
+        "drawdown": -7.7585,
+        "held": 7,
+        "added": false,
+        "taken": false,
+        "protectedPart": false,
+        "triggerDay": null,
+        "exit": "three_ma20_closes"
+      },
+      "guard_B": {
+        "net": -6.4774,
+        "drawdown": -7.7585,
+        "held": 7,
+        "added": false,
+        "taken": false,
+        "protectedPart": false,
+        "triggerDay": null,
+        "exit": "three_ma20_closes"
+      }
+    }
+  ],
+  "assumptions": {
+    "feeBuy": 0.001425,
+    "feeSell": 0.004425,
+    "signal": "archived MA10/20/60 FIRST_BREAKOUT, not production intraday",
+    "entry": "next open",
+    "add": "once near MA10/20 on day-close and next open 1/3 initial capital",
+    "profit": "at +20% from weighted average gross buy cost, next-open sell 1/3 current shares",
+    "exit": "third consecutive close below MA20, next open exit, at 20/30 sessions otherwise",
+    "protect_A": "peak high +5% then giveback >=1.5%, close below previous low OR below MA5 with two bearish daily candles, sell 1/3 next open",
+    "protect_B": "peak high +8% then giveback >=2.5%, close below prev low with vol>=1.2*prior20d or 2 bearish daily candles, sell 1/3 next open",
+    "capital": "no margin, no position limit; fees 0.1425% buy, 0.4425% sell incl tax; no slippage",
+    "maxDrawdown": "trade equity close-to-close after sale fee",
+    "validation": "exclude stale historical 5-minute CSV bars with signal/entry mismatch >2% or archived r20 mismatch >3%; holdout not untouched; research only"
+  }
+}
