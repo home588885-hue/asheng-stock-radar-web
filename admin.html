@@ -1820,13 +1820,15 @@ h1 {
           const cached = JSON.parse(localStorage.getItem(ENTRY_POOL_CACHE_KEY) || 'null');
           if (!cached || !Array.isArray(cached.items) || !cached.items.length) return [];
           if (!cached.saved_at || Date.now() - Number(cached.saved_at) > 15 * 60 * 1000) return [];
-          return cached.items.filter(item=>String(item?.as_of||'')===expectedSignalDataDate());
+          return cached.items.filter(item=>String(item?.as_of||'')===expectedSignalDataDate()
+                &&unifiedRadarGeneration(item));
         } catch (error) { return []; }
       };
       const writeEntryPoolCache = items => {
         try {
           if (Array.isArray(items) && items.length) {
-            const fresh=items.filter(item=>String(item?.as_of||'')===expectedSignalDataDate());
+            const fresh=items.filter(item=>String(item?.as_of||'')===expectedSignalDataDate()
+                &&unifiedRadarGeneration(item));
             if(fresh.length)localStorage.setItem(ENTRY_POOL_CACHE_KEY, JSON.stringify({ saved_at:Date.now(), items:fresh }));
           }
         } catch (error) {}
@@ -3752,8 +3754,8 @@ h1 {
         const originalMa10Watch=modelFresh&&ma10PullbackWatchState(item);
         const mcModel=item?.metrics?.shanchuan_v2;
         const boxModel=item?.metrics?.box_strategy;
-        const boxSetup=modelFresh&&boxModel
-          &&(boxModel.prepared===true||boxModel.breakout_today===true);
+        const boxSetup=modelFresh&&unifiedRadarGeneration(item)&&boxModel
+          &&(boxModel.discovery?.ready_watch===true||boxModel.discovery?.first_bar_today===true);
         const motherChildWatch=modelFresh
           &&mcModel?.mother_child?.breakout_confirmed===true
           &&mcModel?.quality?.bottom_structure===true
@@ -4253,6 +4255,9 @@ h1 {
           return {keep:false,rank:0,className:'box-promoted',label:'📦 山川第一根已轉進場雷達'};
         const gap20=Number(m.ma20)>0?(Number(m.close)/Number(m.ma20)-1)*100:null;
         if(d.ready_watch===true&&gap20!=null&&gap20<=5
+          &&m.v5?.entry_confirmed!==true
+          &&String(m.scan_intelligence?.effective_lifecycle||'')!=='ENTRY'
+          &&String(m.trade_lifecycle?.entry?.state||'')!=='formal_candidate'
           &&m.entry_candle_guard?.weak_after_breakout!==true
           &&m.holding_management?.strong_breakdown!==true)
           return {keep:true,rank:145,className:'box-near-top',
@@ -5868,6 +5873,7 @@ h1 {
       // Presentation priority ONLY: model-confirmed MA20 exits first.
       // Do not reorder by C intraday quotes: cards must not jump every three minutes.
       const holdingUrgencyRank = item => {
+        if(!unifiedRadarGeneration(item))return 4;
         const status = holdingMa20DayState(item);
         if(status.tone==='exit'||holdingBoxState(item)?.exitReady===true)return 0;
         const hm = item?.metrics?.holding_management || {};
@@ -6303,7 +6309,8 @@ h1 {
         if (stage === 'ENTRY' && !liveBasePicks.length) {
           const cachedPool = readEntryPoolCache();
           if (cachedPool.length) liveBasePicks = applyEntryEodCache(cachedPool)
-          .filter(item=>String(item?.as_of||'')===expectedSignalDataDate());
+          .filter(item=>String(item?.as_of||'')===expectedSignalDataDate()
+                &&unifiedRadarGeneration(item));
         }
         if (!liveBasePicks.length) {
           if (stage === 'ENTRY') {
@@ -6516,7 +6523,8 @@ h1 {
           }
           if (launchData) applyGlobalHeaderSummary(launchData);
           const nextPool = applyEntryEodCache(await mergePullbackWatchItems(buildEntryPool(v5Data?.picks || [], launchData?.picks || [])))
-              .filter(item=>String(item?.as_of||'')===expectedSignalDataDate());
+              .filter(item=>String(item?.as_of||'')===expectedSignalDataDate()
+                &&unifiedRadarGeneration(item));
           liveBasePicks = nextPool;
           if (nextPool.length) writeEntryPoolCache(nextPool);
           else localStorage.removeItem(ENTRY_POOL_CACHE_KEY);
@@ -6539,7 +6547,8 @@ h1 {
             const cachedPool = readEntryPoolCache();
             if (cachedPool.length && !liveBasePicks.length) {
               liveBasePicks = applyEntryEodCache(await mergePullbackWatchItems(cachedPool))
-                .filter(item=>String(item?.as_of||'')===expectedSignalDataDate());
+                .filter(item=>String(item?.as_of||'')===expectedSignalDataDate()
+                &&unifiedRadarGeneration(item));
               await refreshLiveQuotes();
             }
             const { v5Data, launchData } = await loadEntrySourcePair();
@@ -6556,7 +6565,8 @@ h1 {
               throw new Error('進場資料來源暫時無法讀取');
             }
             const nextPool = applyEntryEodCache(await mergePullbackWatchItems(buildEntryPool(v5Data?.picks || [], launchData?.picks || [])))
-              .filter(item=>String(item?.as_of||'')===expectedSignalDataDate());
+              .filter(item=>String(item?.as_of||'')===expectedSignalDataDate()
+                &&unifiedRadarGeneration(item));
             liveBasePicks = nextPool;
             if (nextPool.length) writeEntryPoolCache(nextPool);
             else localStorage.removeItem(ENTRY_POOL_CACHE_KEY);
