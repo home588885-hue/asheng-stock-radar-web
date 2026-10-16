@@ -2696,6 +2696,54 @@ h1 {
           fraction:live?marketFraction(quote.quote_time):null
         });
       };
+
+      // Four-way confluence from existing S candle/volume/chip/base fields and C quotes.
+      // DISPLAY/PRIORITY ONLY. Never unlock official entry or alter holdings, scans or cron.
+      const shanchuanConfluenceState = (item, quote = null) => {
+        const m=item?.metrics||{}, mc=m.ma_cluster||{}, base=m.bottom_start||{};
+        const chip=m.chip||{}, institutional=chip.institutional||{};
+        const live=validTodayQuote(quote), fresh=live&&quoteFreshForTrial(quote);
+        const numIf=v=>v==null||v===''?null:(Number.isFinite(Number(v))?Number(v):null);
+        const price=live?numIf(quote.price):numIf(m.close);
+        const ma20=numIf(m.ma20), pos=numIf(m.position_1y_pct), daily=numIf(live?quote.volume_lots:m.current_volume_lots);
+        const avg20=numIf(m.avg_volume_20_lots),chipScore=numIf(chip.score);
+        const ratio=avg20>0&&daily!=null
+          ? (live?daily/(avg20*marketFraction(quote.quote_time)):daily/avg20):null;
+        const structure=mc.all_rising===true&&mc.above_all_mas===true
+          &&price>0&&ma20>0&&price>=ma20&&price/ma20<=1.05
+          &&pos!=null&&pos<=45&&m.entry_candle_guard?.weak_after_breakout!==true;
+        const liquidity=daily!=null&&daily>=1000&&avg20!=null&&avg20>=500
+          &&ratio!=null&&ratio>=1.2;
+        const chipPass=chipScore!=null&&chipScore>=65&&(
+          Number(institutional.net_5d||0)>0
+          ||Number(institutional.positive_days_5d||0)>=3
+        );
+        const baseRecent=Number(base.recent_base_days);
+        const basePass=base.confirmed===true||base.current_base===true
+          ||(base.recent_base_date && Number.isFinite(baseRecent)
+             &&baseRecent>=0&&baseRecent<=10
+             &&(mc.watch_ready===true||mc.breakout_first_bar===true));
+        const freshModel=String(item?.as_of||'')===expectedSignalDataDate();
+        const risk=shanchuanState(item,quote);
+        const freshAllowed=!live||fresh;
+        const passed=!!(structure&&liquidity&&chipPass&&basePass
+          &&freshModel&&freshAllowed&&!risk.highRisk);
+        const marks=[structure,liquidity,chipPass,!!basePass];
+        const count=marks.filter(Boolean).length;
+        const details=[
+          (structure?'✅':'⚪')+'均線轉強／底部位置',
+          (liquidity?'✅':'⚪')+'量能≥1000張／量速≥1.2',
+          (chipPass?'✅':'⚪')+'籌碼≥65／法人支持',
+          (basePass?'✅':'⚪')+'底部型態'
+        ];
+        const label=passed?'✨ 四重共振已齊｜待原進場確認'
+          : '📚 四重共振 '+count+'/4｜缺項不追';
+        return {passed,count,details,kind:passed?'confluence':'observing',
+          text:label,detail:details.join('｜')+'｜'+
+            (freshModel?(live&&!fresh?'成交不新鮮，不採盤中確認':'模型 '+String(item?.as_of||''))
+              :'模型非最新日，不得當買點')+
+            '｜共振只供排序與判讀，不是獨立買進訊號'};
+      };
       const newEntryRiskGate = (item, quote = null) => {
         const m=item?.metrics||{}, g=m.entry_candle_guard||{}, hm=m.holding_management||{};
         const intraday=liveSelloffRisk(item,quote);
@@ -3661,6 +3709,7 @@ h1 {
             <span class="entry-mini-metrics">${q?'今日成交':'模型收盤'} <b>${close>0?esc(num(close,2)):'-'}</b>｜距MA20 ${dist==null?'-':(dist>=0?'+':'')+esc(num(dist,1))+'%'}｜成交量 ${Number.isFinite(vol)?esc(num(vol,0))+'張':'-'}</span>
             <span class="entry-mini-date">S 模型 ${esc(item.as_of||'待更新')}｜${tradeContext}${esc(missingText)}</span>
             <span class="entry-mini-date">📚 山川量價｜${esc(shanchuanState(item,q).text)}</span>
+            <span class="entry-mini-date">${esc(shanchuanConfluenceState(item,q).text)}</span>
             <span class="entry-survival-status ${survival.tone}" data-entry-survival-id="${esc(id)}" data-entry-survival-trial="${activeTrial?'1':'0'}">${esc(survival.text)}</span>
           </summary>
           <div class="entry-mini-full">${expanded}</div>
@@ -4262,6 +4311,11 @@ h1 {
         const deviationWarningHtml = deviation20 != null && deviation20 > 12 ? `<div class="risk-summary">⚠️ 20日線乖離過大 +${num(deviation20)}%｜避免追價</div>` : '';
         const riskSummary = cautionList.length ? `<div class="risk-summary">⚠️ ${esc(cautionList[0])}${cautionList.length > 1 ? ` ＋${cautionList.length - 1}項` : ''}</div>` : '';
         const sc=shanchuanState(item, displayQuote);
+        const scConfluence=shanchuanConfluenceState(item,displayQuote);
+        const scConfluenceHtml=['LAUNCH','ENTRY','HOLDING'].includes(stage)
+          ? '<div class="signal-note"><b>'+esc(scConfluence.text)+'</b>'
+            +'<small style="display:block;margin-top:3px">'+esc(scConfluence.detail)+'</small></div>'
+          : '';
         const shanchuanHtml=['LAUNCH','ENTRY','HOLDING'].includes(stage)
           ? '<div class="signal-note" data-shanchuan-state="'+esc(sc.kind)+'">'
             +'<b>📚 山川量價｜'+esc(sc.text)+'</b><small style="display:block;margin-top:3px">'
@@ -4274,7 +4328,7 @@ h1 {
         const detailBody = `<div class="detail-body">${hiddenModelHtml}${v5Html}${chipHtml}${holding ? '' : liquidityHtml}${playbookHtml}<div class="metrics"><span class="pill">3年位階 ${num(metrics.position_3y_pct)}%</span><span class="pill">週K ${num(metrics.weekly_k)}｜${gradeText(weeklyKGrade(metrics.weekly_k))}</span><span class="pill">月K ${num(metrics.monthly_k)}｜${gradeText(monthlyKGrade(metrics.monthly_k))}</span><span class="pill">${backtestSignal(item)}</span>${metrics.backtest ? `<span class="pill">5日 ${num(metrics.backtest.win_rate_5d_pct)}%</span><span class="pill">20日 ${num(metrics.backtest.win_rate_20d_pct)}%</span>` : ''}</div><div class="why">${reasons}</div>${cautions ? `<div class="warn">${cautions}</div>` : ''}</div>`;
         const detailHtml = options.compactHolding && holding ? detailBody : `<details class="card-details"><summary>完整判斷與數據</summary>${detailBody}</details>`;
         const actionHtml = options.hideSignal ? '' : `<div class="trade-signal ${signal.className}">${esc(memberFacingText(signal.text))}<small style="display:block;margin-top:4px;font-weight:500">${esc(memberFacingText(signal.detail || ''))}</small></div>`;
-        return `<article class="card" data-stock-id="${esc(item.stock_id)}"><div class="top"><div><div class="name">${esc(item.stock_id)} ${esc(item.stock_name)}</div><div class="meta">${esc(item.market)}${item.industry ? '・' + esc(item.industry) : ''}${timeInfoStages() ? '' : '｜資料日 ' + esc(item.as_of || '-')}</div></div><div class="badge ${esc(item.stage)}">模型 ${Number(item.score || 0)}分</div></div>${companyProfileHtml(item)}${activeLaunchVisibleHtml}${volumePriceHtml(item, displayQuote)}${shanchuanHtml}${pullbackWatchHtml(item, displayQuote)}${holding ? (options.compactHolding ? '' : holdingTodayHtml + holdingDipHtml) : actionHtml + quickHtml + deviationWarningHtml + riskSummary}${holdingHtml}${options.compactHolding && holding ? `<details class="card-details holding-combined"><summary>完整判斷與技術數據</summary>${holdingStatusHtml}${detailHtml}</details>` : holdingStatusHtml+detailHtml}${timeInfoStages() ? timeInfoHtml(item, displayQuote) : '<div class="time">背景模型掃描：' + updated + '</div>'}</article>`;
+        return `<article class="card" data-stock-id="${esc(item.stock_id)}"><div class="top"><div><div class="name">${esc(item.stock_id)} ${esc(item.stock_name)}</div><div class="meta">${esc(item.market)}${item.industry ? '・' + esc(item.industry) : ''}${timeInfoStages() ? '' : '｜資料日 ' + esc(item.as_of || '-')}</div></div><div class="badge ${esc(item.stage)}">模型 ${Number(item.score || 0)}分</div></div>${companyProfileHtml(item)}${activeLaunchVisibleHtml}${volumePriceHtml(item, displayQuote)}${shanchuanHtml}${scConfluenceHtml}${pullbackWatchHtml(item, displayQuote)}${holding ? (options.compactHolding ? '' : holdingTodayHtml + holdingDipHtml) : actionHtml + quickHtml + deviationWarningHtml + riskSummary}${holdingHtml}${options.compactHolding && holding ? `<details class="card-details holding-combined"><summary>完整判斷與技術數據</summary>${holdingStatusHtml}${detailHtml}</details>` : holdingStatusHtml+detailHtml}${timeInfoStages() ? timeInfoHtml(item, displayQuote) : '<div class="time">背景模型掃描：' + updated + '</div>'}</article>`;
       }
 
       // Explain an empty launch list using *the actual API result and this
@@ -6036,7 +6090,7 @@ h1 {
         };
         return [...merged.values()]
           .filter(item => rankItem(item) > 0 && !launchShownIds.has(String(item.stock_id || '')))
-          .sort((a,b) => rankItem(b) - rankItem(a) || shanchuanState(b).priority - shanchuanState(a).priority || companyProfileState(b).rank - companyProfileState(a).rank)
+          .sort((a,b) => rankItem(b) - rankItem(a) || Number(shanchuanConfluenceState(b).passed) - Number(shanchuanConfluenceState(a).passed) || shanchuanState(b).priority - shanchuanState(a).priority || companyProfileState(b).rank - companyProfileState(a).rank)
           .slice(0, 60);
       };
 
