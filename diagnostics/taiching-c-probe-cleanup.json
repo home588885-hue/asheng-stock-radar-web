@@ -1,0 +1,14 @@
+{
+  "checked_utc": "2026-10-17T06:17:46.711818+00:00",
+  "target": "asheng-taiching-photo-probe-20261017",
+  "stock_worker_touched": false,
+  "deleted": true,
+  "method": "direct Cloudflare Workers scripts API",
+  "http_status": 404,
+  "errors": [
+    {
+      "code": 10007,
+      "message": "This Worker does not exist on your account."
+    }
+  ]
+}
