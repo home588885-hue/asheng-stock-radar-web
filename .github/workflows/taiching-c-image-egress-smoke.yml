@@ -1,0 +1,123 @@
+name: Taiching Image Cloudflare C Egress (One-Time Isolated Test)
+
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/taiching-c-image-egress-smoke.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 13
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      WORKER_NAME: asheng-taiching-photo-probe-20261017
+      WORKER_URL: https://asheng-taiching-photo-probe-20261017.home588885.workers.dev
+      WRANGLER_CONFIG: cloudflare-taiching-photo-probe/wrangler.toml
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check configured Cloudflare deployment credentials and preflight
+        shell: bash
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::CLOUDFLARE_API_TOKEN missing"; exit 1; }
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::CLOUDFLARE_ACCOUNT_ID missing"; exit 1; }
+          node --check cloudflare-taiching-photo-probe/src/index.js
+          echo "Cloudflare photo source isolated from both stock C Workers"
+      - name: Create one-time diagnostic key without printing it
+        shell: bash
+        run: |
+          TOKEN="$(openssl rand -hex 32)"
+          echo "::add-mask::$TOKEN"
+          printf 'PROBE_TOKEN=%s\n' "$TOKEN" >> "$GITHUB_ENV"
+      - name: Deploy independent test Worker only
+        shell: bash
+        run: npx --yes wrangler@4 deploy --config "$WRANGLER_CONFIG"
+      - name: Install temporary secret for the isolated Worker
+        shell: bash
+        run: printf "%s" "$PROBE_TOKEN" | npx --yes wrangler@4 secret put PROBE_TOKEN --config "$WRANGLER_CONFIG"
+      - name: Fetch genuine official photos through C and record JPEG signatures
+        shell: bash
+        run: |
+          python - <<'PY'
+          import urllib.request,urllib.parse,urllib.error,json,datetime,os,time
+          from pathlib import Path
+          report={
+              'checked_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),
+              'test':'Cloudflare C outbound Taiching image download',
+              'isolated_worker':'asheng-taiching-photo-probe-20261017',
+              'stock_quote_worker_modified':False,
+              'stock_model_worker_modified':False,
+              'supabase_photo_relay_invocations':0,
+              'read_only':True,'photo_results':[],
+              'result':'not-yet-tested'
+          }
+          url='https://shop.taiching.com.tw/api/v1/CaseList'
+          q={'purposeName':'0','pinSearchType':'0','caseTypeName':'0','isDownRatio':'false',
+             'isTsagingUrl':'false','isNewCase':'false','order':'0','page':'1','pageSize':'30',
+             'ShopIndex':'073870666','channel':'Tc'}
+          opener=urllib.request.build_opener()
+          try:
+            req=urllib.request.Request(url+'?'+urllib.parse.urlencode(q),headers={'accept':'application/json'})
+            with opener.open(req,timeout=25) as rr:
+              items=json.loads(rr.read(400000)).get('data',{}).get('list',[])
+            photos=[{'case_sid':str(item.get('caseSID') or ''),'url':str(item.get('cover') or '')} for item in items if item.get('cover')][:4]
+            report['source_count']=len(photos)
+            if len(photos)<2:raise RuntimeError('Official list returned too few image covers')
+            endpoint=os.environ['WORKER_URL']
+            for sample in photos:
+              payload=json.dumps({'url':sample['url']},separators=(',',':')).encode()
+              headers={'x-probe-token':os.environ['PROBE_TOKEN'],'content-type':'application/json'}
+              record={'case_sid':sample['case_sid']}
+              for attempt in range(1,5):
+                try:
+                  req=urllib.request.Request(endpoint,data=payload,headers=headers,method='POST')
+                  with opener.open(req,timeout=30) as rr: record.update(json.loads(rr.read(2000)))
+                  break
+                except urllib.error.HTTPError as ex:
+                  record['worker_http_status']=ex.code
+                  if attempt<4 and ex.code in (401,404,503,522):
+                    time.sleep(4);continue
+                  record['worker_error']='http-error';break
+                except Exception as ex:
+                  record['worker_error_type']=type(ex).__name__
+                  if attempt<4:time.sleep(4);continue
+              report['photo_results'].append(record)
+            report['valid_image_count']=sum(bool(r.get('image_verified')) for r in report['photo_results'])
+            report['result']='passed' if report['valid_image_count']>=2 else 'failed'
+          except Exception as exc:
+            report['result']='probe-failed'
+            report['error_type']=type(exc).__name__
+          Path('diagnostics').mkdir(exist_ok=True)
+          Path('diagnostics/taiching-cloudflare-c-photo-egress.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
+          print(json.dumps(report,ensure_ascii=False,indent=2))
+          if report['result']!='passed':raise SystemExit('Cloudflare photo download not verified')
+          PY
+      - name: Delete isolated disposable Worker to prevent quota usage after test
+        if: always()
+        shell: bash
+        run: |
+          if [ -n "${CLOUDFLARE_API_TOKEN:-}" ] && [ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
+            npx --yes wrangler@4 delete --config "$WRANGLER_CONFIG" --force || echo "::warning::Please inspect orphaned isolated test Worker"
+          fi
+      - name: Persist Cloudflare result for review
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs=require('fs'),path='diagnostics/taiching-cloudflare-c-photo-egress.json';
+            if(!fs.existsSync(path)){core.warning('No successful photo probe report: review workflow deployment logs');return;}
+            const owner=context.repo.owner,repo=context.repo.repo,content=fs.readFileSync(path).toString('base64');
+            for(let attempt=0;attempt<4;attempt++){
+              let sha;
+              try{const old=await github.rest.repos.getContent({owner,repo,path});if(!Array.isArray(old.data))sha=old.data.sha;}
+              catch(e){if(e.status!==404)throw e;}
+              try{await github.rest.repos.createOrUpdateFileContents({
+                owner,repo,path,sha,content,branch:context.ref.replace('refs/heads/',''),
+                message:'Record isolated C media egress validation [skip ci]'
+              });break;}catch(e){if(attempt===3||![409,422].includes(e.status))throw e;}
+            }
