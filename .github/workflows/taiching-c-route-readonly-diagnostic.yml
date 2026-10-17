@@ -1,0 +1,99 @@
+name: Taiching Cloudflare C Route & Access Check (Read Only)
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/taiching-c-route-readonly-diagnostic.yml
+permissions:
+  contents: write
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Check public C health and Cloudflare account settings, no writes
+        shell: bash
+        run: |
+          python - <<'PY'
+          import urllib.request,urllib.error,json,os,datetime
+          from pathlib import Path
+          api="https://api.cloudflare.com/client/v4"
+          token=os.getenv('CLOUDFLARE_API_TOKEN','')
+          account=os.getenv('CLOUDFLARE_ACCOUNT_ID','')
+          o={'checked_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),
+              'read_only':True,'stock_worker_touched':False,
+              'old_probe_worker_touched':False,
+              'public_get_results':[],'api_read_results':[]}
+          for url,name in [
+              ('https://asheng-market-bridge.home588885.workers.dev/health','stock_health'),
+              ('https://asheng-model-engine.home588885.workers.dev/health','stock_model_health'),
+              ('https://asheng-taiching-photo-probe-20261017.home588885.workers.dev','deleted_photo_probe')]:
+            record={'name':name}
+            try:
+              req=urllib.request.Request(url,method='GET',headers={'User-Agent':'cloudflare-readonly-route-diagnostic/1.0'})
+              with urllib.request.urlopen(req,timeout=10) as r:
+                record['status']=r.status
+                record['content_type']=(r.headers.get('content-type') or '')[:65]
+                record['server']=(r.headers.get('server') or '')[:40]
+                record['location_hostname']=(urllib.parse.urlsplit(r.url).hostname or '') if False else None
+            except urllib.error.HTTPError as e:
+              record['status']=e.code
+              record['content_type']=(e.headers.get('content-type') or '')[:65]
+              record['server']=(e.headers.get('server') or '')[:40]
+              record['cloudflare_access_header']=bool(e.headers.get('cf-access-authenticated-user-email') or e.headers.get('cf-access-jwt-assertion'))
+              try:
+                body=e.read(1200).decode('utf-8','ignore').lower()
+                record['error_page_signature']=[s for s in ('cloudflare access','access denied','error 1003','forbidden','challenge','worker does not exist','sorry, you have been blocked','permission') if s in body]
+              except Exception:pass
+            except Exception as e:record['error_type']=type(e).__name__
+            o['public_get_results'].append(record)
+          if token and account:
+            for name,endpoint in [
+              ('workers_subdomain',f'/accounts/{account}/workers/subdomain'),
+              ('old_probe_script',f'/accounts/{account}/workers/scripts/asheng-taiching-photo-probe-20261017'),
+              ('access_apps',f'/accounts/{account}/access/apps?per_page=10')]:
+              rec={'name':name}
+              try:
+                req=urllib.request.Request(api+endpoint,headers={'Authorization':'Bearer '+token,'Accept':'application/json'})
+                with urllib.request.urlopen(req,timeout=12) as r:
+                  body=json.loads(r.read(60000))
+                  rec['status']=r.status
+                  rec['api_success']=body.get('success')
+                  if name=='workers_subdomain':
+                    rec['subdomain_configured']=bool((body.get('result') or {}).get('subdomain'))
+                  if name=='access_apps':
+                    apps=body.get('result') or []
+                    rec['app_count_returned']=len(apps) if isinstance(apps,list) else 0
+                    rec['access_app_types']=sorted(set(str(x.get('type')) for x in apps if isinstance(x,dict))) if isinstance(apps,list) else []
+              except urllib.error.HTTPError as e:
+                rec['status']=e.code
+                try:
+                  j=json.loads(e.read(1200))
+                  rec['api_error_codes']=[v.get('code') for v in j.get('errors',[])]
+                except Exception:pass
+              except Exception as e:rec['error_type']=type(e).__name__
+              o['api_read_results'].append(rec)
+          path=Path('diagnostics/taiching-c-route-readonly.json')
+          path.parent.mkdir(exist_ok=True)
+          path.write_text(json.dumps(o,ensure_ascii=False,indent=2)+'\n')
+          print(json.dumps(o,ensure_ascii=False,indent=2))
+          PY
+      - name: Save sanitized read-only report
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs=require('fs'),path='diagnostics/taiching-c-route-readonly.json';
+            if(!fs.existsSync(path)){core.setFailed('Missing route report');return;}
+            const owner=context.repo.owner,repo=context.repo.repo,content=fs.readFileSync(path).toString('base64');
+            for(let i=0;i<4;i++){
+              let sha;
+              try{const old=await github.rest.repos.getContent({owner,repo,path});if(!Array.isArray(old.data))sha=old.data.sha}
+              catch(e){if(e.status!==404)throw e}
+              try{await github.rest.repos.createOrUpdateFileContents({owner,repo,path,sha,content,branch:context.ref.replace('refs/heads/',''),message:'Record C route and account access read-only diagnostics [skip ci]'});break}
+              catch(e){if(i===3||![409,422].includes(e.status))throw e}
+            }
