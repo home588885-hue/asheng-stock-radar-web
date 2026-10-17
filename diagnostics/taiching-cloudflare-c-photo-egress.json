@@ -1,0 +1,34 @@
+{
+  "checked_utc": "2026-10-17T06:16:43.334680+00:00",
+  "test": "Cloudflare C outbound Taiching image download",
+  "isolated_worker": "asheng-taiching-photo-probe-20261017",
+  "stock_quote_worker_modified": false,
+  "stock_model_worker_modified": false,
+  "supabase_photo_relay_invocations": 0,
+  "read_only": true,
+  "photo_results": [
+    {
+      "case_sid": "7252669",
+      "worker_http_status": 403,
+      "worker_error": "http-error"
+    },
+    {
+      "case_sid": "7156037",
+      "worker_http_status": 403,
+      "worker_error": "http-error"
+    },
+    {
+      "case_sid": "6789241",
+      "worker_http_status": 403,
+      "worker_error": "http-error"
+    },
+    {
+      "case_sid": "7543420",
+      "worker_http_status": 403,
+      "worker_error": "http-error"
+    }
+  ],
+  "result": "failed",
+  "source_count": 4,
+  "valid_image_count": 0
+}
