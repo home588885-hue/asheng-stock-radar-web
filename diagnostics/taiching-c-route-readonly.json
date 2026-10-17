@@ -1,0 +1,52 @@
+{
+  "checked_utc": "2026-10-17T06:19:57.420378+00:00",
+  "read_only": true,
+  "stock_worker_touched": false,
+  "old_probe_worker_touched": false,
+  "public_get_results": [
+    {
+      "name": "stock_health",
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "server": "cloudflare",
+      "location_hostname": null
+    },
+    {
+      "name": "stock_model_health",
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "server": "cloudflare",
+      "location_hostname": null
+    },
+    {
+      "name": "deleted_photo_probe",
+      "status": 404,
+      "content_type": "text/plain; charset=UTF-8",
+      "server": "cloudflare",
+      "cloudflare_access_header": false,
+      "error_page_signature": []
+    }
+  ],
+  "api_read_results": [
+    {
+      "name": "workers_subdomain",
+      "status": 200,
+      "api_success": true,
+      "subdomain_configured": true
+    },
+    {
+      "name": "old_probe_script",
+      "status": 404,
+      "api_error_codes": [
+        10007
+      ]
+    },
+    {
+      "name": "access_apps",
+      "status": 403,
+      "api_error_codes": [
+        9999
+      ]
+    }
+  ]
+}
