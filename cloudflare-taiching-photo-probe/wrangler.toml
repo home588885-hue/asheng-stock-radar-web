@@ -1,0 +1,6 @@
+name = "asheng-taiching-photo-probe-20261017"
+main = "src/index.js"
+compatibility_date = "2026-10-10"
+workers_dev = true
+
+# Isolated one-time network diagnostic; no cron, bindings, or connection to stock Workers.
