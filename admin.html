@@ -2665,7 +2665,7 @@ h1 {
   if(actualRisk)return {kind:'distribution',priority:0,highRisk:true,
     text:'🚨 高檔放量回落｜疑似出貨風險',
     detail:'1年位階 '+pos.toFixed(1)+'%｜當日量速 '+vLabel
-      +'｜跌離當日高點至少2.5%且落至開盤與昨收以下；只作風控警示，不等於確定主力賣出'};
+      +'｜跌離當日高點至少2.5%且落至開盤與昨收以下；只作量價風控警示，不推定賣壓來源'};
   if(behindAnchor&&ctx.live)return {kind:'lost_anchor',priority:0,highRisk:false,
     text:'⚠️ 突破防守參考價失守',
     detail:'突破參考 '+formatPrice(anchor)+'｜'+view+' '+formatPrice(p)
@@ -2685,7 +2685,7 @@ h1 {
     return {kind:'rest',priority:4,highRisk:false,
       text:'🟡 山川縮量休息｜守線等二攻',
       detail:'5日／20日均量 '+v520.toFixed(2)+'x｜MA10 '+formatPrice(ma10)
-        +'｜縮量不代表一定有主力承接，必須等再放量突破'};
+        +'｜縮量不代表一定有買盤承接，必須等再放量突破'};
   if(low&&v520!=null&&v520<=.85&&avg>=500&&ma20>0&&p!=null&&p>=ma20*.98)
     return {kind:'base',priority:3,highRisk:false,
       text:'🌱 山川低檔蓄勢｜待量價確認',
@@ -2695,7 +2695,7 @@ h1 {
     return {kind:'high_volume',priority:0,highRisk:false,
       text:'🟠 高位爆量｜需辨別換手或派發',
       detail:view+'｜相對20日均量 '+vLabel+'｜1年位階 '+pos.toFixed(1)
-        +'%｜僅有高量不足以認定主力出貨'};
+        +'%｜僅有高量不足以認定出貨'};
   if(stage==='WATCH'||stage==='A'||stage==='B'||stage==='C'){
     if(anchor>0&&p!=null&&p<anchor&&p>=anchor*.96&&avg>=500)
       return {kind:'near',priority:1,highRisk:false,
@@ -2720,9 +2720,9 @@ h1 {
             +'｜形成 '+String(pat.child_date||'-')
             +'｜距今 '+String(pat.age_days??'-')+' 個交易日';
           const chipStatus=model?.quality?.chip_status==='unavailable'
-            ?'｜法人資料不足，不能視為主力確認'
+            ?'｜法人資料不足，籌碼未確認'
             :model?.quality?.chip_confirmed===true
-              ?'｜法人籌碼支持（不等於主力分點）':'｜法人籌碼未確認';
+              ?'｜法人籌碼支持':'｜法人籌碼未確認';
           const common={priority:0,highRisk:false};
           if(pat.state==='mother_low_broken')return {...common,kind:'mother_k_invalid',highRisk:true,
             text:'🔴 母子K失效｜收盤跌破母K低點',
@@ -2868,14 +2868,10 @@ h1 {
           (volume?'✅':'⚪')+'突破量價確認',
           (chip?'✅':'⚪')+'法人籌碼佐證'
         ];
-        const branch=m.chip?.advanced?.broker_branch===true
-          ?'｜券商分點資料已提供，仍須獨立判定'
-          :'｜未接入主力券商分點，不能稱主力確認';
         return {visible,passed,count,details,
           text:passed?'📚 山川型態四項符合｜獲利優勢待驗證'
             :'📚 山川型態 '+count+'/4'+(failure?'｜支撐跌破警戒':'｜觀察'),
-          detail:details.join('｜')+branch
-            +'｜僅研究型態，不解鎖🟢正式買點或自動下單'};
+          detail:details.join('｜')+'｜只參考現有法人籌碼；不解鎖🟢正式買點或自動下單'};
       };
       const newEntryRiskGate = (item, quote = null) => {
         const m=item?.metrics||{}, g=m.entry_candle_guard||{}, hm=m.holding_management||{};
@@ -3929,6 +3925,9 @@ h1 {
         const expanded=v5MonitorCard(item, q, safeDisplayAction);
         const survival=entrySurvivalLabel(item,originalAction);
         const patternChecklist=shanchuanPatternChecklistState(item);
+        const scSummary=shanchuanState(item,q);
+        const scHeadline=scSummary.highRisk?scSummary.text
+          :patternChecklist.visible?patternChecklist.text:'';
         return `<details class="entry-mini" data-stock-key="${esc(id)}">
           <summary class="entry-mini-summary">
             <span class="entry-mini-name"><strong>${esc(id)} ${esc(item.stock_name||'')}</strong><small>${esc(actionText)}</small></span>
@@ -3936,9 +3935,7 @@ h1 {
             <span class="entry-mini-expand">詳情 ▾</span>
             <span class="entry-mini-metrics">${q?'今日成交':'模型收盤'} <b>${close>0?esc(num(close,2)):'-'}</b>｜距MA20 ${dist==null?'-':(dist>=0?'+':'')+esc(num(dist,1))+'%'}｜成交量 ${Number.isFinite(vol)?esc(num(vol,0))+'張':'-'}</span>
             <span class="entry-mini-date">S 模型 ${esc(item.as_of||'待更新')}｜${tradeContext}${esc(missingText)}</span>
-            ${shanchuanState(item,q).kind!=='neutral'?'<span class="entry-mini-date">📚 山川量價｜'+esc(shanchuanState(item,q).text)+'</span>':''}
-            ${shanchuanConfluenceState(item,q).count>=2?'<span class="entry-mini-date">'+esc(shanchuanConfluenceState(item,q).text)+'</span>':''}
-            ${patternChecklist.visible?'<span class="entry-mini-date">'+esc(patternChecklist.text)+'</span>':''}
+            ${scHeadline?'<span class="entry-mini-date">'+esc(scHeadline)+'</span>':''}
             <span class="entry-survival-status ${survival.tone}" data-entry-survival-id="${esc(id)}" data-entry-survival-trial="${activeTrial?'1':'0'}">${esc(survival.text)}</span>
           </summary>
           <div class="entry-mini-full">${expanded}</div>
@@ -4766,6 +4763,16 @@ h1 {
           +(fixedBox?'｜收盤跌破已鎖定箱底 '+(fixedBox.belowDays==null?'待更新':fixedBox.belowDays)+'/3天':'')
           +'｜'+(fixedBox?'持股固定價位，不跟著新區間上移':'箱型依最近完整日K，未帶量突破不等於買點')
           +'｜原MA20出場規則並行</small></div>':'';
+        // 三區共用同一組山川量價／箱型／母子K計算，折疊研究細節不修改訊號。
+        // 持股固定箱底及 MA20 出場風險仍在持股主卡片。
+        const shanchuanParts=shanchuanHtml+boxInfo+scPatternHtml+scConfluenceHtml;
+        const researchHeadline=sc.highRisk?sc.text
+          :scPattern.visible?scPattern.text
+          :boxImportant?'20日箱型與母子K觀察':sc.text;
+        const researchPanel=shanchuanParts
+          ? '<details class="card-details shanchuan-compact" data-shanchuan-research="1"><summary>📚 山川戰法｜'
+            +esc(researchHeadline)+'｜展開研究細節</summary>'+shanchuanParts+'</details>'
+          : '';
         const quoteUi = quoteDisplayState(displayQuote, item);
         const priceLabel = displayQuote ? quoteUi.label : todayOnly ? quoteUi.label : '模型收盤';
         const priceValue = Number.isFinite(quoteUi.value) ? num(quoteUi.value, 2) : (todayOnly ? quoteUi.text : (Number.isFinite(displayClose) ? num(displayClose,2) : '-'));
@@ -4774,7 +4781,7 @@ h1 {
         const detailBody = `<div class="detail-body">${hiddenModelHtml}${v5Html}${chipHtml}${holding ? '' : liquidityHtml}${playbookHtml}<div class="metrics"><span class="pill">3年位階 ${num(metrics.position_3y_pct)}%</span><span class="pill">週K ${num(metrics.weekly_k)}｜${gradeText(weeklyKGrade(metrics.weekly_k))}</span><span class="pill">月K ${num(metrics.monthly_k)}｜${gradeText(monthlyKGrade(metrics.monthly_k))}</span><span class="pill">${backtestSignal(item)}</span>${metrics.backtest ? `<span class="pill">5日 ${num(metrics.backtest.win_rate_5d_pct)}%</span><span class="pill">20日 ${num(metrics.backtest.win_rate_20d_pct)}%</span>` : ''}</div><div class="why">${reasons}</div>${cautions ? `<div class="warn">${cautions}</div>` : ''}</div>`;
         const detailHtml = options.compactHolding && holding ? detailBody : `<details class="card-details"><summary>完整判斷與數據</summary>${detailBody}</details>`;
         const actionHtml = options.hideSignal ? '' : `<div class="trade-signal ${signal.className}">${esc(memberFacingText(signal.text))}<small style="display:block;margin-top:4px;font-weight:500">${esc(memberFacingText(signal.detail || ''))}</small></div>`;
-        return `<article class="card" data-stock-id="${esc(item.stock_id)}"><div class="top"><div><div class="name">${esc(item.stock_id)} ${esc(item.stock_name)}</div><div class="meta">${esc(item.market)}${item.industry ? '・' + esc(item.industry) : ''}${timeInfoStages() ? '' : '｜資料日 ' + esc(item.as_of || '-')}</div></div><div class="badge ${esc(item.stage)}">模型 ${Number(item.score || 0)}分</div></div>${companyProfileHtml(item)}${activeLaunchVisibleHtml}${volumePriceHtml(item, displayQuote)}${shanchuanHtml}${boxInfo}${scPatternHtml}${scConfluenceHtml}${pullbackWatchHtml(item, displayQuote)}${holding ? (options.compactHolding ? '' : holdingTodayHtml + holdingDipHtml) : actionHtml + quickHtml + deviationWarningHtml + riskSummary}${holdingHtml}${options.compactHolding && holding ? `<details class="card-details holding-combined"><summary>完整判斷與技術數據</summary>${holdingStatusHtml}${detailHtml}</details>` : holdingStatusHtml+detailHtml}${timeInfoStages() ? timeInfoHtml(item, displayQuote) : '<div class="time">背景模型掃描：' + updated + '</div>'}</article>`;
+        return `<article class="card" data-stock-id="${esc(item.stock_id)}"><div class="top"><div><div class="name">${esc(item.stock_id)} ${esc(item.stock_name)}</div><div class="meta">${esc(item.market)}${item.industry ? '・' + esc(item.industry) : ''}${timeInfoStages() ? '' : '｜資料日 ' + esc(item.as_of || '-')}</div></div><div class="badge ${esc(item.stage)}">模型 ${Number(item.score || 0)}分</div></div>${companyProfileHtml(item)}${activeLaunchVisibleHtml}${volumePriceHtml(item, displayQuote)}${researchPanel}${pullbackWatchHtml(item, displayQuote)}${holding ? (options.compactHolding ? '' : holdingTodayHtml + holdingDipHtml) : actionHtml + quickHtml + deviationWarningHtml + riskSummary}${holdingHtml}${options.compactHolding && holding ? `<details class="card-details holding-combined"><summary>完整判斷與技術數據</summary>${holdingStatusHtml}${detailHtml}</details>` : holdingStatusHtml+detailHtml}${timeInfoStages() ? timeInfoHtml(item, displayQuote) : '<div class="time">背景模型掃描：' + updated + '</div>'}</article>`;
       }
 
       // Explain an empty launch list using *the actual API result and this
@@ -4834,9 +4841,14 @@ h1 {
             } else {
               writeLaunchDataCache(launchData);
             }
+            // 發動前候選不接受非新版資料，舊日K／舊版型態不得當新買點。
+            if(launchData.candidate_generation!=='shanchuan-independent-v2'
+              ||launchData.quality_screen!=='2026-10-16-unified-shanchuan-generation-v3')
+              throw new Error('發動前來源不是最新山川模型，拒絕混入舊版');
             applyGlobalHeaderSummary(launchData);
             lastLaunchModelReadAt = Date.now();
-            const launchPicks = launchData.picks || [];
+            const launchPicks = (launchData.picks || []).filter(item=>
+              String(item?.as_of||'')===expectedSignalDataDate()&&unifiedRadarGeneration(item));
             // These candidates are already quality-screened by the API before its response limit.
             // Display the true qualified count; never fill the page with lower-score names.
             const qualifiedTotal = Number(launchData.quality_total ?? launchPicks.length);
