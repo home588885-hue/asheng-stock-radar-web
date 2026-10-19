@@ -97,6 +97,19 @@ test('Cross-day pending follows database, stays expanded, does not fake buy',()=
   assert.match(html,/pending\?'⚪ 追蹤紀錄保留/);
   assert.match(html,/不算風控淘汰/);
 });
+test('New-generation ENTRY keeps the authenticated cross-day shelf on both source outages and exceptions',()=>{
+  const block=section('      async function loadLiveMonitor() {','      async function searchStock() {');
+  assert.match(block,/if \(!v5Data && !launchData\)\s*\{[\s\S]*?await loadPullbackWatchItems\(\)/);
+  assert.match(block,/const savedTracking = entryPersistedTrackingHtml\(\)/);
+  assert.match(block,/stableListRender\(savedTracking/);
+  assert.match(block,/if \(stage === 'ENTRY'\) \{[\s\S]*?await loadPullbackWatchItems\(\)/);
+  assert.match(html,/const portfolioId = memberSession\.user\.id|let portfolioId = memberSession\.user\.id/);
+  assert.match(html,/const unifiedRadarGeneration=item=>/);
+  assert.match(html,/return b\.model_generation==='shanchuan-independent-v2'/);
+  assert.match(html,/data-entry-fold="watch-pending" open/);
+  assert.match(html,/const readEntryPoolCache = \(\) =>/);
+  assert.doesNotMatch(block,/spring-swallow-scan-batch/);
+});
 test('All three zones use Cloudflare C, 3-minute ticker, no old HTML cache',()=>{
   assert.match(html,/const fetchLiveQuoteChunk = async symbols/);
   assert.match(html,/const quoteRecentForDisplay = quote =>/);
