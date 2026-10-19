@@ -1,0 +1,18 @@
+name: Radar V2 Cross-day Read-only QA
+on:
+  push:
+    paths:
+      - ".github/workflows/qa-radar-v2-crossday-20261019.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  radar-v2-crossday:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Regression-gate validation (zero S/C network calls)
+        run: node diagnostics/radar-regression-gates.js
