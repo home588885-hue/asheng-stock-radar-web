@@ -1809,8 +1809,7 @@ h1 {
           if (!cached?.saved_at || !cached?.data || Date.now() - Number(cached.saved_at) > 20 * 60 * 1000) return null;
           if (!isLockedRulePayload(cached.data) || !Array.isArray(cached.data.picks) || !cached.data.picks.length) return null;
           if(cached.data.quality_screen!=='2026-10-16-unified-shanchuan-generation-v3' || cached.data.candidate_generation!=='shanchuan-independent-v2'
-            ||String(cached.data.progress?.latest_as_of||'')!==expectedSignalDataDate()
-            ||cached.data.picks.some(item=>String(item?.as_of||'')!==expectedSignalDataDate()))return null;
+            ||cached.data.picks.some(item=>!recentModelForDisplay(item)))return null;
           return cached.data;
         } catch (error) { return null; }
       };
@@ -1818,8 +1817,7 @@ h1 {
         try {
           if (!data?.ok || !isLockedRulePayload(data) || !Array.isArray(data.picks) || !data.picks.length) return;
           if(data.quality_screen!=='2026-10-16-unified-shanchuan-generation-v3' || data.candidate_generation!=='shanchuan-independent-v2'
-            ||String(data.progress?.latest_as_of||'')!==expectedSignalDataDate()
-            ||data.picks.some(item=>String(item?.as_of||'')!==expectedSignalDataDate()))return;
+            ||data.picks.some(item=>!recentModelForDisplay(item)))return;
           const compact = {
             ok:true,
             rule_version:data.rule_version,
@@ -1842,15 +1840,13 @@ h1 {
           const cached = JSON.parse(localStorage.getItem(ENTRY_POOL_CACHE_KEY) || 'null');
           if (!cached || !Array.isArray(cached.items) || !cached.items.length) return [];
           if (!cached.saved_at || Date.now() - Number(cached.saved_at) > 15 * 60 * 1000) return [];
-          return cached.items.filter(item=>String(item?.as_of||'')===expectedSignalDataDate()
-                &&unifiedRadarGeneration(item));
+          return cached.items.filter(recentModelForDisplay);
         } catch (error) { return []; }
       };
       const writeEntryPoolCache = items => {
         try {
           if (Array.isArray(items) && items.length) {
-            const fresh=items.filter(item=>String(item?.as_of||'')===expectedSignalDataDate()
-                &&unifiedRadarGeneration(item));
+            const fresh=items.filter(recentModelForDisplay);
             if(fresh.length)localStorage.setItem(ENTRY_POOL_CACHE_KEY, JSON.stringify({ saved_at:Date.now(), items:fresh }));
           }
         } catch (error) {}
@@ -2327,6 +2323,18 @@ h1 {
         }
         return current.toISOString().slice(0, 10);
       };
+      // Display only: retain recent VERIFIED independent-Shan-Chuan EOD stocks for
+      // up to 5 calendar days across weekends and until next night's S update.
+      // NEVER use this for live trial, formal buy or the existing holdings rules.
+      const recentModelForDisplay=item=>{
+        if(!unifiedRadarGeneration(item))return false;
+        const asOf=String(item?.as_of||''),expected=expectedSignalDataDate();
+        if(!/^\d{4}-\d{2}-\d{2}$/.test(asOf))return false;
+        const days=(Date.parse(expected+'T00:00:00Z')-Date.parse(asOf+'T00:00:00Z'))/86400000;
+        return Number.isFinite(days)&&days>=0&&days<=5;
+      };
+      const displayModelWarning=item=>String(item?.as_of||'')===expectedSignalDataDate()
+        ?'':'📅 前次完整日K '+String(item?.as_of||'未知')+'｜盤後待補算（非買點）';
       // Shared status for LAUNCH / ENTRY / HOLDING. Uses the picks response,
       // so no extra quote request, scheduled job, or technical-model recomputation.
       const renderCoverageWarning = progress => {
@@ -4211,7 +4219,7 @@ h1 {
           ||Number(y.item?.metrics?.current_volume_lots||0)-Number(x.item?.metrics?.current_volume_lots||0)
           ||String(y.item?.scanned_at||'').localeCompare(String(x.item?.scanned_at||'')));
         const b={blocked:[],weak:[],high:[],focus:[],signal:[],eod:[],eodTrial:[],
-          queued:[],reclaim:[],wait:[],recalc:[]};
+          queued:[],reclaim:[],wait:[],recalc:[],retained:[]};
         const safeRow=(row,a)=>({...row,action:{...(row.action||{}),...a,buyable:false,trialable:false}});
         const visualReady=row=>{
           const m=row.item?.metrics||{},mc=m.ma_cluster||{},close=Number(m.close);
@@ -4236,8 +4244,9 @@ h1 {
             const old={key:'wait',phase:'observe',stale_model:true,className:'wait',
               text:'⚪ 舊模型｜僅供觀察',
               detail:'模型 '+(date||'日期不明')+'｜應為 '+expected+'；需補算，不得視為新買點'};
-            b[afterClose?'recalc':'wait'].push(safeRow(row,{
-              ...old,text:afterClose?'⚡ 舊模型待補算｜僅觀察':old.text}));
+            b.retained.push(safeRow(row,{...old,
+              text:'📋 前次新版模型｜'+(date||'日期未知')+' 完整日K（非買點）',
+              detail:'今日完整日K尚未更新，保留前次有效候選；絕不是今天的新試單訊號'}));
             return;
           }
           const risk=newEntryRiskGate(item,q),detail=String(a.text||'')+'｜'+String(a.detail||'');
@@ -4336,7 +4345,7 @@ h1 {
         };
         for(const row of rows)assign(row);
         const blockedRows=byRank(b.blocked),weakeningRows=byRank(b.weak);
-        const highRows=byRank(b.high),recalcRows=byRank(b.recalc);
+        const highRows=byRank(b.high),recalcRows=byRank(b.recalc),retainedRows=byRank(b.retained);
         const queuedRows=byRank(b.queued),trackingRows=[];
         const allSignal=[...b.focus,...b.signal];
         const earlyRows=byRank(allSignal.filter(row=>
@@ -4367,15 +4376,16 @@ h1 {
         const avoidRows=byRank([...blockedRows,...weakeningRows]);
         const displayedTotal=starterRows.length+completedRows.length+eodTrialRows.length+boxFirstRows.length
           +focusRows.length+signalRows.length+eodTrackRows.length+reclaimRows.length
-          +queuedDisplayRows.length+recalcDisplayRows.length+waitRows.length
+          +queuedDisplayRows.length+recalcDisplayRows.length+retainedRows.length+waitRows.length
           +pullbackRows.length+avoidRows.length;
         const banner=`<div class="entry-list-overview" data-stable-key="entry-overview">
           <strong>🎯 進場雷達｜${displayedTotal} 檔追蹤</strong>
-          <span>🟠 有效盤中試單 ${starterRows.length}　🟢 驗證通過正式買點 ${completedRows.length}　🟠 明日試單觀察 ${eodTrialRows.length}　📦 箱型第一根 ${boxFirstRows.length}　⭐ 優先觀察 ${focusRows.length}　📋 已起漲追蹤 ${eodTrackRows.length}　🟡 MA10／20回踩確認 ${reclaimRows.length}　🟠 待核對 ${signalRows.length}　🌱 等發動 ${queuedDisplayRows.length}　🟡 條件未齊 ${waitRows.length}　⚡ 待補算 ${recalcDisplayRows.length}　🔵 等回踩 ${pullbackRows.length}　🔴 風險避開 ${avoidRows.length}</span>
+          <span>📋 前次新版留存 ${retainedRows.length}　🟠 有效盤中試單 ${starterRows.length}　🟢 驗證通過正式買點 ${completedRows.length}　🟠 明日試單觀察 ${eodTrialRows.length}　📦 箱型第一根 ${boxFirstRows.length}　⭐ 優先觀察 ${focusRows.length}　📋 已起漲追蹤 ${eodTrackRows.length}　🟡 MA10／20回踩確認 ${reclaimRows.length}　🟠 待核對 ${signalRows.length}　🌱 等發動 ${queuedDisplayRows.length}　🟡 條件未齊 ${waitRows.length}　⚡ 待補算 ${recalcDisplayRows.length}　🔵 等回踩 ${pullbackRows.length}　🔴 風險避開 ${avoidRows.length}</span>
           <small>模型日 ${esc(expectedSignalDataDate())}｜V5正式進場：${formalEntryValidation.enabled?'歷史驗證已通過':'暫停（'+esc(formalEntryValidation.reason)+'）'}｜⏱12分鐘存活僅於12:50～13:20、進場雷達在前景且有橘色試單時沿用C報價取樣；非逐筆、不能補算，通過也不會升級正式買點｜點股票展開未達條件${staleRows.length?'｜另有 '+staleRows.length+' 檔過期快照未列入':''}</small>
         </div>`;
         const outHtml = banner+
           entryPersistedTrackingHtml()+
+          entryBucketHtml('retained','📋 盤後留存｜上次完整日K股票（非買點）','尚未取得今日新日K，之前看過的近期新版候選保留追蹤，但禁止試單／加碼，晚上S更新後再重新分類',retainedRows,{open:true,tone:'near',preview:30})+
           entryBucketHtml('formal','🟢 正式買點｜V5驗證與有效成交完成','必須同時符合原模型、歷史驗證及當日風控；不代表保證獲利',completedRows,{open:true,tone:'focus',preview:6})+
           entryBucketHtml('trial','🟠 可小量試單｜盤中有效成交確認','5分鐘內成交且既有起漲條件與風控通過；試單不等於V5正式買點',starterRows,{open:true,tone:'focus',preview:6})+
           entryBucketHtml('eod-trial','🟠 明日小量試單觀察｜盤後準備','只限最新完整日K符合原分數／量價／MA20 5%等風控；尚非買點，次交易日必須有有效成交再確認',eodTrialRows,{open:true,tone:'focus',preview:6})+
@@ -4393,7 +4403,7 @@ h1 {
         stableListRender(outHtml,{quoteUpdate});
         return { earlyRows, starterRows, completedRows, eodTrialRows, boxFirstRows, recalcRows, blockedRows, highRows,
           weakeningRows, queuedRows, nearRows, trackingRows, staleRows,
-          focusRows, signalRows, eodTrackRows, reclaimRows, queuedDisplayRows, recalcDisplayRows,
+          focusRows, signalRows, eodTrackRows, reclaimRows, queuedDisplayRows, recalcDisplayRows,retainedRows,
           waitRows, pullbackRows, avoidRows, displayedTotal };
       };
 
@@ -4442,8 +4452,8 @@ h1 {
         // Independent Shan-Chuan discovery: ready box at LAUNCH; first bar at ENTRY.
         // Original V5 buy and risk checks are unchanged.
         const d=unifiedRadarGeneration(item)?m.box_strategy.discovery:{};
-        if(String(item?.as_of||'')===expectedSignalDataDate()&&d.first_bar_today===true)return 'ENTRY';
-        if(String(item?.as_of||'')===expectedSignalDataDate()&&d.ready_watch===true
+        if(recentModelForDisplay(item)&&d.first_bar_today===true)return 'ENTRY';
+        if(recentModelForDisplay(item)&&d.ready_watch===true
           &&m.v5?.entry_confirmed!==true&&effective!=='ENTRY'&&effective!=='ACTIVE'
           &&entry!=='formal_candidate'&&entry!=='starter')
           return 'PRELAUNCH';
@@ -4469,8 +4479,8 @@ h1 {
         const expectedMs=expected ? Date.parse(expected+'T00:00:00Z') : NaN;
 
         // Previous-day PRELAUNCH history must not inflate today's list.
-        if(!expected||asOf!==expected)
-          return {keep:false,rank:0,className:'stale',label:'⚪ 舊模型｜不列今日發動前'};
+        if(!recentModelForDisplay(item))
+          return {keep:false,rank:0,className:'stale',label:'⚪ 過期資料｜不列發動前'};
         if(!unifiedRadarGeneration(item))
           return {keep:false,rank:0,className:'legacy',label:'⚪ 新版山川模型尚未重算'};
         const d=m.box_strategy.discovery||{};
@@ -4907,8 +4917,7 @@ h1 {
               throw new Error('發動前來源不是最新山川模型，拒絕混入舊版');
             applyGlobalHeaderSummary(launchData);
             lastLaunchModelReadAt = Date.now();
-            const launchPicks = (launchData.picks || []).filter(item=>
-              String(item?.as_of||'')===expectedSignalDataDate()&&unifiedRadarGeneration(item));
+            const launchPicks = (launchData.picks || []).filter(recentModelForDisplay);
             // These candidates are already quality-screened by the API before its response limit.
             // Display the true qualified count; never fill the page with lower-score names.
             const qualifiedTotal = Number(launchData.quality_total ?? launchPicks.length);
@@ -5030,7 +5039,8 @@ h1 {
           });
           const launchTally = stage === 'LAUNCH' ? launchCandidateExplanation(data, rankedPicks) : null;
           if (stage === 'LAUNCH') {
-            const actionRows = rankedPicks.map(item => ({item,action:simpleActionState(item)})).filter(row=>row.action);
+            const actionRows = rankedPicks.filter(item=>!displayModelWarning(item))
+            .map(item => ({item,action:simpleActionState(item)})).filter(row=>row.action);
             updateBuySignalNotice(actionRows);
             const activeCount = rankedPicks.filter(isActiveLaunchItem).length;
             const pre = actionRows.filter(row=>!isActiveLaunchItem(row.item)&&row.action.key==='pre').length;
@@ -6267,7 +6277,8 @@ h1 {
         const lowBase=lowBaseWatchState(item);
         const pullback=ma10PullbackWatchState(item);
         const trial=ma10PullbackTrialState(item,q);
-        const status=risk?.kind==='hard'?String(risk.text||'🔴 盤中風險｜暫不新買')
+        const status=displayModelWarning(item)?displayModelWarning(item)
+          :risk?.kind==='hard'?String(risk.text||'🔴 盤中風險｜暫不新買')
           :risk?.kind==='momentum'?String(risk.text||'🟡 短線轉弱｜等重新轉強')
           :risk?.kind==='position'?String(risk.text||'🔵 位置偏高｜等回踩')
           :early?'🌱 早期轉強｜優先追蹤，不可直接試單'
@@ -6280,7 +6291,8 @@ h1 {
         const quoteTime=q?'｜報價 '+String(q.quote_time||'時間待確認'):'｜非即時價';
         const greenMini=greenDipMiniHtml(item,q);
         const selected=launchExpandedIds.has(id)?' open':'';
-        const detailed=q?intradayCard(item,q):card(item);
+        const detailed=displayModelWarning(item)?card(item,{hideSignal:true,quote:q})
+          :q?intradayCard(item,q):card(item);
         return `<section class="launch-mini-wrap" data-stock-id="${esc(id)}">
           <details class="entry-mini" data-stock-key="${esc(id)}"${selected}>
             <summary class="entry-mini-summary" aria-label="${esc(id+' '+String(item?.stock_name||'')+' '+status)}">
@@ -6659,8 +6671,7 @@ h1 {
         if (stage === 'ENTRY' && !liveBasePicks.length) {
           const cachedPool = readEntryPoolCache();
           if (cachedPool.length) liveBasePicks = applyEntryEodCache(cachedPool)
-          .filter(item=>String(item?.as_of||'')===expectedSignalDataDate()
-                &&unifiedRadarGeneration(item));
+          .filter(recentModelForDisplay);
         }
         if (!liveBasePicks.length) {
           if (stage === 'ENTRY') {
@@ -6690,13 +6701,18 @@ h1 {
           return;
         }
         const market = taipeiMarketState();
-        const finalQuoteWindow = stage === 'ENTRY' && market.weekday && market.totalMinutes > 810;
+        // At/after 13:30 never request unavailable intraday C; display last
+        // successful S model plus any validated same-day C cache only.
+        const finalQuoteWindow = false;
         if (!market.open && !finalQuoteWindow) {
           if (stage === 'ENTRY') {
-            const quoteMap = new Map();
-            await syncPullbackWatchWithQuotes(liveBasePicks, quoteMap);
+            const quoteMap = new Map(liveBasePicks.map(item=>[
+              String(item.stock_id),bestTodayQuote(null,item.stock_id)
+            ]).filter(pair=>validTodayQuote(pair[1])));
+            await syncPullbackWatchWithQuotes(liveBasePicks, new Map());
             if (navigationSeq !== renderNavToken || stage !== renderStage) return;
-            const rows = liveBasePicks.map(item => ({ item, quote:null, action: simpleActionState(item) }))
+            const rows = liveBasePicks.map(item => ({ item,quote:quoteMap.get(String(item.stock_id))||null,
+              action:simpleActionState(item) }))
               .filter(row => row.action)
               .map(row => {
                 const isTracking = row.action?.persistent_watch === true || row.item?.__pullback_watch;
@@ -6827,8 +6843,7 @@ h1 {
           return 0;
         };
         return [...merged.values()]
-          .filter(item=>String(item?.as_of||'')===expectedSignalDataDate()
-            &&unifiedRadarGeneration(item)&&rankItem(item)>0&&!launchShownIds.has(String(item.stock_id||'')))
+          .filter(item=>recentModelForDisplay(item)&&rankItem(item)>0&&!launchShownIds.has(String(item.stock_id||'')))
           .sort((a,b) => rankItem(b) - rankItem(a) || companyProfileState(b).rank - companyProfileState(a).rank)
           .slice(0, 60);
       };
@@ -6864,8 +6879,7 @@ h1 {
           }
           if (launchData) applyGlobalHeaderSummary(launchData);
           const nextPool = applyEntryEodCache(await mergePullbackWatchItems(buildEntryPool(v5Data?.picks || [], launchData?.picks || [])))
-              .filter(item=>String(item?.as_of||'')===expectedSignalDataDate()
-                &&unifiedRadarGeneration(item));
+              .filter(recentModelForDisplay);
           liveBasePicks = nextPool;
           if (nextPool.length) writeEntryPoolCache(nextPool);
           else localStorage.removeItem(ENTRY_POOL_CACHE_KEY);
@@ -6888,8 +6902,7 @@ h1 {
             const cachedPool = readEntryPoolCache();
             if (cachedPool.length && !liveBasePicks.length) {
               liveBasePicks = applyEntryEodCache(await mergePullbackWatchItems(cachedPool))
-                .filter(item=>String(item?.as_of||'')===expectedSignalDataDate()
-                &&unifiedRadarGeneration(item));
+                .filter(recentModelForDisplay);
               await refreshLiveQuotes();
             }
             const { v5Data, launchData } = await loadEntrySourcePair();
@@ -6906,8 +6919,7 @@ h1 {
               throw new Error('進場資料來源暫時無法讀取');
             }
             const nextPool = applyEntryEodCache(await mergePullbackWatchItems(buildEntryPool(v5Data?.picks || [], launchData?.picks || [])))
-              .filter(item=>String(item?.as_of||'')===expectedSignalDataDate()
-                &&unifiedRadarGeneration(item));
+              .filter(recentModelForDisplay);
             liveBasePicks = nextPool;
             if (nextPool.length) writeEntryPoolCache(nextPool);
             else localStorage.removeItem(ENTRY_POOL_CACHE_KEY);
