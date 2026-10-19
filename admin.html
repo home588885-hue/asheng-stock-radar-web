@@ -1806,18 +1806,23 @@ h1 {
       const readLaunchDataCache = () => {
         try {
           const cached = JSON.parse(localStorage.getItem(LAUNCH_DATA_CACHE_KEY) || 'null');
-          if (!cached?.saved_at || !cached?.data || Date.now() - Number(cached.saved_at) > 20 * 60 * 1000) return null;
-          if (!isLockedRulePayload(cached.data) || !Array.isArray(cached.data.picks) || !cached.data.picks.length) return null;
-          if(cached.data.quality_screen!=='2026-10-16-unified-shanchuan-generation-v3' || cached.data.candidate_generation!=='shanchuan-independent-v2'
-            ||cached.data.picks.some(item=>!recentModelForDisplay(item)))return null;
-          return cached.data;
+          // Existing full model remains a read-only observation when a source
+          // temporarily times out. Calendar-date + signed-v2 controls still expire it.
+          if (!cached?.saved_at || !cached?.data || Date.now() - Number(cached.saved_at) > 5 * 86400000) return null;
+          if (!isLockedRulePayload(cached.data) || !Array.isArray(cached.data.picks)) return null;
+          if(cached.data.quality_screen!=='2026-10-16-unified-shanchuan-generation-v3'
+            ||cached.data.candidate_generation!=='shanchuan-independent-v2')return null;
+          const valid=cached.data.picks.filter(recentModelForDisplay);
+          return valid.length?{...cached.data,picks:valid}:null;
         } catch (error) { return null; }
       };
       const writeLaunchDataCache = data => {
         try {
-          if (!data?.ok || !isLockedRulePayload(data) || !Array.isArray(data.picks) || !data.picks.length) return;
-          if(data.quality_screen!=='2026-10-16-unified-shanchuan-generation-v3' || data.candidate_generation!=='shanchuan-independent-v2'
-            ||data.picks.some(item=>!recentModelForDisplay(item)))return;
+          if (!data?.ok || !isLockedRulePayload(data) || !Array.isArray(data.picks)) return;
+          if(data.quality_screen!=='2026-10-16-unified-shanchuan-generation-v3'
+            ||data.candidate_generation!=='shanchuan-independent-v2')return;
+          const safePicks=data.picks.filter(recentModelForDisplay);
+          if(!safePicks.length)return; // Never overwrite a verified cache with an empty/legacy response.
           const compact = {
             ok:true,
             rule_version:data.rule_version,
@@ -1829,7 +1834,7 @@ h1 {
             quality_screen:data.quality_screen || null,
             candidate_generation:data.candidate_generation||null,
             quality_total:data.quality_total ?? null,
-            picks:data.picks.slice(0,250)
+            picks:safePicks.slice(0,250)
           };
           localStorage.setItem(LAUNCH_DATA_CACHE_KEY, JSON.stringify({ saved_at:Date.now(), data:compact }));
         } catch (error) {}
@@ -1839,7 +1844,7 @@ h1 {
         try {
           const cached = JSON.parse(localStorage.getItem(ENTRY_POOL_CACHE_KEY) || 'null');
           if (!cached || !Array.isArray(cached.items) || !cached.items.length) return [];
-          if (!cached.saved_at || Date.now() - Number(cached.saved_at) > 15 * 60 * 1000) return [];
+          if (!cached.saved_at || Date.now() - Number(cached.saved_at) > 5 * 86400000) return [];
           return cached.items.filter(recentModelForDisplay);
         } catch (error) { return []; }
       };
@@ -4918,7 +4923,15 @@ h1 {
               throw new Error('發動前來源不是最新山川模型，拒絕混入舊版');
             applyGlobalHeaderSummary(launchData);
             lastLaunchModelReadAt = Date.now();
-            const launchPicks = (launchData.picks || []).filter(recentModelForDisplay);
+            let launchPicks = (launchData.picks || []).filter(recentModelForDisplay);
+          // A partial EOD model refresh/temporarily empty source cannot wipe
+          // the latest verified watch list. Retained rows remain observation only.
+          if(!launchPicks.length &&
+             (launchData.progress?.latest_complete!==true ||
+              String(launchData.progress?.latest_as_of||'')!==expectedSignalDataDate())){
+            const cachedPrevious=readLaunchDataCache();
+            if(cachedPrevious?.picks?.length)launchPicks=cachedPrevious.picks;
+          }
             // These candidates are already quality-screened by the API before its response limit.
             // Display the true qualified count; never fill the page with lower-score names.
             const qualifiedTotal = Number(launchData.quality_total ?? launchPicks.length);
@@ -6883,11 +6896,19 @@ h1 {
             return;
           }
           if (launchData) applyGlobalHeaderSummary(launchData);
-          const nextPool = applyEntryEodCache(await mergePullbackWatchItems(buildEntryPool(v5Data?.picks || [], launchData?.picks || [])))
+          let nextPool = applyEntryEodCache(await mergePullbackWatchItems(buildEntryPool(v5Data?.picks || [], launchData?.picks || [])))
               .filter(recentModelForDisplay);
+          // Source temporarily returns an empty/partial model before EOD commit:
+          // retain prior-date signed-v2 candidates for observation, never for buy.
+          if(!nextPool.length &&
+             (launchData?.progress?.latest_complete!==true ||
+              String(launchData?.progress?.latest_as_of||'')!==expectedSignalDataDate())){
+            nextPool=readEntryPoolCache().filter(item=>
+              String(item.as_of||'')<expectedSignalDataDate());
+          }
           liveBasePicks = nextPool;
           if (nextPool.length) writeEntryPoolCache(nextPool);
-          else localStorage.removeItem(ENTRY_POOL_CACHE_KEY);
+          // Do not destroy the last verified cache on a transient empty response.
           lastEntryPoolRefreshAt = Date.now();
           await refreshLiveQuotes();
         } catch (error) {
@@ -6923,11 +6944,17 @@ h1 {
               }
               throw new Error('進場資料來源暫時無法讀取');
             }
-            const nextPool = applyEntryEodCache(await mergePullbackWatchItems(buildEntryPool(v5Data?.picks || [], launchData?.picks || [])))
+            let nextPool = applyEntryEodCache(await mergePullbackWatchItems(buildEntryPool(v5Data?.picks || [], launchData?.picks || [])))
               .filter(recentModelForDisplay);
+            if(!nextPool.length &&
+               (launchData?.progress?.latest_complete!==true ||
+                String(launchData?.progress?.latest_as_of||'')!==expectedSignalDataDate())){
+              nextPool=readEntryPoolCache().filter(item=>
+                String(item.as_of||'')<expectedSignalDataDate());
+            }
             liveBasePicks = nextPool;
-            if (nextPool.length) writeEntryPoolCache(nextPool);
-            else localStorage.removeItem(ENTRY_POOL_CACHE_KEY);
+            if(nextPool.length)writeEntryPoolCache(nextPool);
+            // Never erase last signed-v2 cache merely because a query returns zero.
             if (launchData) {
               applyGlobalHeaderSummary(launchData);
               const progress = launchData.progress || {};
