@@ -3511,6 +3511,27 @@ h1 {
         rules:'prelaunch-entry-holding-with-internal-active-handoff',
       });
 
+      // The EOD orange shelf is a watch PREPARATION, never a verified
+      // intraday trial. Persist this independently so opening-day
+      // reclassification cannot silently erase last night's watch candidates.
+      const eodStarterWatchEligible = item => {
+        if(!item||holdings.has(String(item.stock_id||''))||!unifiedRadarGeneration(item)
+          ||String(item.as_of||'')!==expectedSignalDataDate())return false;
+        const m=item.metrics||{},mc=m.ma_cluster||{},g=m.entry_candle_guard||{};
+        const close=Number(m.close),ma10=Number(m.ma10),ma20=Number(m.ma20),ma60=Number(m.ma60);
+        const pos=Number(m.position_1y_pct),k=Number(m.daily_k);
+        const motherState=String(m.shanchuan_v2?.mother_child?.lifecycle?.state||'');
+        return String(m.trade_lifecycle?.entry?.state||'')==='starter'
+          &&Number(item.score)>=75
+          &&Number(m.current_volume_lots)>=1000&&Number(m.avg_volume_20_lots)>=500
+          &&mc.all_rising===true&&mc.above_all_mas===true
+          &&[close,ma10,ma20,ma60].every(n=>Number.isFinite(n)&&n>0)
+          &&close>=Math.max(ma10,ma20,ma60)&&(close/ma20-1)*100<=5
+          &&Number.isFinite(pos)&&pos<80&&Number.isFinite(k)&&k<=80
+          &&g.main_bull!==false&&g.weak_after_breakout!==true
+          &&!['mother_low_broken','child_low_broken','invalid','broken'].includes(motherState)
+          &&newEntryRiskGate(item,null)==null;
+      };
       const pullbackWatchState = (item, quote = null) => {
         const m=item?.metrics || {};
         const g=m.entry_candle_guard || {};
@@ -3550,6 +3571,9 @@ h1 {
           return {state:'tracking',active:true,reason:'本交易日曾可小量試單；翌日重新驗證'};
         if(firstBar)
           return {state:'tracking',active:true,reason:'本交易日箱型突破第一根，隔日待回踩或再轉強確認'};
+        if(eodStarterWatchEligible(item))
+          return {state:'tracking',active:true,
+            reason:'前完整交易日盤後小量試單觀察；今天仍須有效成交、量價和風控重新確認，非今日試單'};
         const base=baseSimpleActionState(item,quote);
 
         // ready 一律以今天有效成交價為準。沒有今日報價時，不得沿用舊模型價誤升級。
@@ -3593,15 +3617,20 @@ h1 {
           // Keep its persisted state instead of silently invalidating it.
           if(!modelUsable)continue;
           const firstBreak=item.metrics?.box_strategy?.discovery?.first_bar_today===true;
+          const eodCandidate=eodStarterWatchEligible(item);
           const activeOrigin=!current&&firstBreak
             &&!holdings.has(id)&&Number(item.metrics?.current_volume_lots)>=1000;
-          if(!current&&!isNewTrigger&&!activeOrigin)continue;
+          if(!current&&!isNewTrigger&&!activeOrigin&&!eodCandidate)continue;
           const state=pullbackWatchState(item);
           if(state.unverified===true)continue;
           if(!state.active&&!current)continue;
-          const reason=activeOrigin?'發動中已進追蹤，後續監看回踩與重新轉強；未重新驗證不得當作今日買點'
+          const reason=eodCandidate
+            ?'前完整交易日盤後小量試單觀察；今天需重新核對當日有效成交、量能、支撐與風控（非已確認試單）'
+            :activeOrigin?'發動中已進追蹤，後續監看回踩與重新轉強；未重新驗證不得當作今日買點'
             :isNewTrigger ? String(guard?.detail || baseWait?.detail || state.reason) : state.reason;
-          if (!current || current.state!==state.state || current.active!==state.active || isNewTrigger && !current) {
+          if (!current || current.state!==state.state || current.active!==state.active
+              ||(eodCandidate&&!String(current.reason||'').includes('盤後小量試單觀察'))) {
+            pullbackWatchSnapshots.set(id,item);
             rows.push({
               stock_id:id,
               state:state.state,
@@ -4050,6 +4079,8 @@ h1 {
           const title=pending?'⚪ 待新版日K補算｜目前非有效追蹤'
             :invalid?'🔴 追蹤失效｜已移至歷史'
             :w.trial_last_as_of?'🟠 曾符合小量試單｜持續追蹤（目前非試單）'
+            :String(w.reason||'').includes('盤後小量試單觀察')
+              ?'🟠 昨晚試單觀察｜跨日追蹤（今天非買點）'
             :w.state==='ready'?'🟡 回踩後轉強｜待當日驗證'
             :w.state==='pullback'?'🟡 回踩追蹤中'
             :'📋 發動中／突破後追蹤';
@@ -4168,24 +4199,8 @@ h1 {
         };
         // EOD starter is a preparation shelf, not an orange trade confirmation.
         // Same original MA/volume/position thresholds; never relax C quote or buy gates.
-        const eodTrialWatchReady=row=>{
-          const item=row.item||{},m=item.metrics||{},mc=m.ma_cluster||{},g=m.entry_candle_guard||{};
-          const close=Number(m.close),ma10=Number(m.ma10),ma20=Number(m.ma20),ma60=Number(m.ma60);
-          const pos=Number(m.position_1y_pct),k=Number(m.daily_k);
-          const motherState=String(m.shanchuan_v2?.mother_child?.lifecycle?.state||'');
-          return String(item.as_of||'')===expected
-            &&String(m.trade_lifecycle?.entry?.state||'')==='starter'
-            &&row.action?.stale_model!==true&&row.action?.candle_guard!==true
-            &&Number(item.score)>=75
-            &&Number(m.current_volume_lots)>=1000&&Number(m.avg_volume_20_lots)>=500
-            &&mc.all_rising===true&&mc.above_all_mas===true
-            &&[close,ma10,ma20,ma60].every(n=>Number.isFinite(n)&&n>0)
-            &&close>=Math.max(ma10,ma20,ma60)
-            &&(close/ma20-1)*100<=5
-            &&Number.isFinite(pos)&&pos<80&&Number.isFinite(k)&&k<=80
-            &&g.main_bull!==false&&g.weak_after_breakout!==true
-            &&!['mother_low_broken','child_low_broken','invalid','broken'].includes(motherState);
-        };
+        const eodTrialWatchReady=row=>eodStarterWatchEligible(row.item)
+          &&row.action?.stale_model!==true&&row.action?.candle_guard!==true;
         const assign=row=>{
           const item=row.item||{},m=item.metrics||{},a=row.action||{};
           const date=String(item.as_of||''),q=validTodayQuote(row.quote)?row.quote:null;
