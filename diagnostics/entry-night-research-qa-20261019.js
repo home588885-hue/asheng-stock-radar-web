@@ -65,4 +65,12 @@ assert.doesNotMatch(noModel.researchPreview,/2222/);
 assert.equal(research({focus:[safe],held:[['1111',{}]]}).topResearch.length,0,'Held stocks are not new buy ideas');
 assert.match(html,/const outHtml=banner\+researchPreview\+simplifiedEntryHtml/);
 assert.doesNotMatch(code,/fetch\(|savePullbackWatchRows\(|scanBatch|refreshLiveQuotes\(/);
+if(process.env.XC_EXPORT_RESEARCH_PREVIEW==='1'){
+ const css=(html.match(/<style>([\\s\\S]*?)<\\/style>/i)||[])[1]||'';
+ fs.writeFileSync('diagnostics/night-research-fixture-20261019.html',
+   '<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+   +'<style>'+css+'</style></head><body><main class="wrap">'
+   +r.researchPreview+none.researchPreview+'</main></body></html>');
+ console.log('PASS synthetic full-stock research fixture export');
+}
 console.log('PASS tonight research shortlist: signed latest V2, no chase/low volume/broken K, no holdings, explicit risk-only fallback');
