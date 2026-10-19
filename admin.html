@@ -6938,6 +6938,11 @@ h1 {
             const { v5Data, launchData } = await loadEntrySourcePair();
             if (navigationSeq !== navToken || stage !== requestedStage) return;
             if (!v5Data && !launchData) {
+              // The private cross-day watch list is independent of the public
+              // candidate APIs. Show SAVED watches even when both feeds time out,
+              // without promoting old daily-K snapshots to a new trading signal.
+              await loadPullbackWatchItems();
+              if (navigationSeq !== navToken || stage !== requestedStage) return;
               if (liveBasePicks.length) {
                 await refreshLiveQuotes();
                 liveTimer = setInterval(() => {
@@ -6946,7 +6951,16 @@ h1 {
                 livePoolTimer = null; // 候選快照由夜間掃描更新
                 return;
               }
-              throw new Error('進場資料來源暫時無法讀取');
+              const savedTracking = entryPersistedTrackingHtml();
+              stableListRender(savedTracking
+                + '<div class="box empty">⚪ 新版候選來源暫時無法讀取。'
+                + (savedTracking ? '已保存的跨日追蹤在上方，待本交易日新版模型補算；不算買點。'
+                  : '尚未取得此登入帳號的跨日追蹤清單，請重新整理再試。')
+                + '</div>');
+              $('#note').textContent = '🎯 進場雷達｜已保存的跨日追蹤獨立顯示；完整日K尚未更新，不能當今日試單。';
+              setCandidateSummary('bCount', null, '模型來源暫時無法讀取');
+              livePoolTimer = null;
+              return;
             }
             let nextPool = applyEntryEodCache(await mergePullbackWatchItems(buildEntryPool(v5Data?.picks || [], launchData?.picks || [])))
               .filter(recentModelForDisplay);
@@ -7013,7 +7027,20 @@ h1 {
           liveTimer = null; // 停止一般候選盤中報價
         } catch (error) {
           if (navigationSeq !== navToken || stage !== requestedStage) return;
-          $('#list').innerHTML = '<div class="box empty error">進場雷達讀取逾時或資料庫忙碌。<br><button class="refresh" onclick="location.reload()">重新載入</button></div>';
+          if (stage === 'ENTRY') {
+            // Preserve the authenticated account's tracking shelf on a
+            // transient model/API failure. Never fall back to a legacy model.
+            await loadPullbackWatchItems();
+            if (navigationSeq !== navToken || stage !== requestedStage) return;
+            const savedTracking = entryPersistedTrackingHtml();
+            stableListRender(savedTracking
+              + '<div class="box empty error">新版進場候選暫時讀取失敗。'
+              + (savedTracking ? '跨日追蹤仍在上方；尚未補算的股票不能試單。' : '私人追蹤資料也尚未確認，請稍後重新整理。')
+              + '</div>');
+            $('#note').textContent = '⚠️ 新版候選來源暫時異常｜已保留可讀取的跨日追蹤；不是舊版選股結果。';
+          } else {
+            $('#list').innerHTML = '<div class="box empty error">候選資料暫時讀取失敗，請重新整理。</div>';
+          }
         }
       }
 
