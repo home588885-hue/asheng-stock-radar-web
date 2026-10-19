@@ -11,10 +11,16 @@ permissions:
 jobs:
   radar-v2-crossday:
     runs-on: ubuntu-latest
-    timeout-minutes: 6
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
       - name: Regression-gate validation (zero S/C network calls)
         run: node diagnostics/radar-regression-gates.js
       - name: Mobile/desktop V2 group render and cross-day dedup (zero network calls)
-        run: node diagnostics/entry-simplified-qa-20261019.js
+        run: XC_EXPORT_PREVIEW=1 node diagnostics/entry-simplified-qa-20261019.js
+      - name: Install isolated test browser
+        run: |
+          pip install --disable-pip-version-check --no-input playwright
+          python -m playwright install --with-deps chromium
+      - name: Check mobile/desktop group overflow and expand-collapse
+        run: python diagnostics/entry-simplified-browser-qa-20261019.py
