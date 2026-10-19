@@ -75,4 +75,12 @@ const scriptBlock=html.slice(html.indexOf('const renderEntrySections ='),
   html.indexOf('const isEntryRadarItem ='));
 assert.doesNotMatch(scriptBlock,/entryBucketHtml\('/,
   'old multi-bucket presentation must not remain active');
+if(process.env.XC_EXPORT_PREVIEW==='1'){
+ const css=(html.match(/<style>([\s\S]*?)<\/style>/i)||[])[1]||'';
+ const target=path.join(__dirname,'entry-preview-20261019.html');
+ fs.writeFileSync(target,
+   '<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+   +'<style>'+css+'</style></head><body><main class="wrap" id="preview">'+groups+'</main></body></html>');
+ console.log('Rendered static UI test fixture: '+target);
+}
 console.log('PASS: ENTRY V2 grouped rendering, dedup, pending watches, risk, 40 archived, mobile CSS, 0 network calls');
