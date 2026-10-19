@@ -17,11 +17,14 @@ const make=(id,score,gap,opts={})=>({
 const research=(options={})=>{
  const variables=['eodTrialRows','boxFirstRows','reclaimRows','focusRows','signalRows',
    'eodTrackRows','queuedDisplayRows','waitRows','avoidRows','pullbackRows','holdings',
-   'expected','unifiedRadarGeneration','expectedSignalDataDate','esc','num','rows'];
+   'expected','unifiedRadarGeneration','expectedSignalDataDate','esc','num','rows','v5MonitorCard'];
  const values=[
   options.trials||[],[],[],options.focus||[],[],[],[],[],options.blocked||[],options.high||[],
   new Map(options.held||[]),'2026-10-19',x=>x.item?x.item.new_model!==false:x.new_model!==false,
-  ()=>'2026-10-19',escape,(x,n)=>Number(x).toFixed(n),options.rows||[]];
+  ()=>'2026-10-19',escape,(x,n)=>Number(x).toFixed(n),options.rows||[],
+  (item,quote,action)=>'<div class="card complete-stock-card" data-complete-stock="'+escape(item.stock_id)
+    +'" data-trialable="'+String(action.trialable===true)+'" data-buyable="'+String(action.buyable===true)
+    +'">新版完整卡片｜山川、MA、量價、風控</div>'];
  return new Function(...variables,code+'\nreturn {researchPreview,topResearch,riskStudy};')(...values);
 };
 const safe=make('1111',83,1.4),old=make('2222',97,0.2,{day:'2026-10-16'});
@@ -34,6 +37,12 @@ assert.match(r.researchPreview,/1111/);
 assert.doesNotMatch(r.researchPreview,/2222|3333|4444|5555/);
 assert.match(r.researchPreview,/非買點/);
 assert.match(r.researchPreview,/有效 C 成交/);
+assert.match(r.researchPreview,/<details class="entry-research-stock entry-research-details"/);
+assert.match(r.researchPreview,/data-research-kind="watch"/);
+assert.match(r.researchPreview,/data-complete-stock="1111"/);
+assert.match(r.researchPreview,/點開完整分析/);
+assert.match(r.researchPreview,/data-trialable="false"/);
+assert.match(r.researchPreview,/data-buyable="false"/);
 const none=research({blocked:[veto],high:[inflated],rows:[veto,inflated]});
 assert.equal(none.topResearch.length,0,'No risk example can be promoted to a trial');
 assert.match(none.researchPreview,/沒有可準備試單/);
@@ -42,6 +51,15 @@ assert.match(none.researchPreview,/4444/);
 assert.match(none.researchPreview,/3333/);
 assert.match(none.researchPreview,/暫不進場/);
 assert.match(none.researchPreview,/母子K低點跌破/);
+assert.match(none.researchPreview,/data-research-kind="blocked"/);
+assert.match(none.researchPreview,/data-complete-stock="4444"/);
+assert.match(none.researchPreview,/data-complete-stock="3333"/);
+assert.ok((none.researchPreview.match(/class="card complete-stock-card"/g)||[]).length===2);
+assert.ok(!none.researchPreview.includes('data-trialable="true"'));
+assert.ok(!none.researchPreview.includes('data-buyable="true"'));
+assert.match(html,/const expanded=v5MonitorCard\(item, q, safeDisplayAction\)/);
+assert.match(html,/v5MonitorCard\(item,null,studyAction\)/);
+assert.match(html,/\.entry-research-stock>\.entry-research-summary/);
 const noModel=research({blocked:[old]});
 assert.doesNotMatch(noModel.researchPreview,/2222/);
 assert.equal(research({focus:[safe],held:[['1111',{}]]}).topResearch.length,0,'Held stocks are not new buy ideas');
