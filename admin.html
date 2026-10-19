@@ -4879,6 +4879,10 @@ h1 {
         };
       };
       async function load() {
+        // Single active routes. Legacy inline ENTRY/LIVE/HOLDING branches below
+        // are no longer reachable; only the current shared snapshot/quote path runs.
+        if(stage==='ENTRY'||stage==='LIVE')return loadLiveMonitor();
+        if(stage==='HOLDING')return loadHoldingCards();
         const navToken = navigationSeq;
         const requestedStage = stage;
         const listEl = $('#list');
