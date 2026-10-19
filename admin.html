@@ -525,6 +525,16 @@ h1 {
 .entry-mini-full { padding:5px 8px 9px; border-top:1px solid #334155; }
 .entry-mini-full > .card { margin:0; }
 
+/* Read-only next-session research shortlist: not a trading qualification. */
+.entry-research-panel{border:1px solid #527088;background:#14253c;border-radius:18px;padding:16px;margin:15px 0;display:grid;gap:10px}
+.entry-research-panel>strong{font-size:18px;color:#eef5ff}
+.entry-research-hint,.entry-research-empty,.entry-research-meta{color:#bdcde1;line-height:1.6;font-size:13px}
+.entry-research-stock{padding:11px 12px;background:#1b304b;border:1px solid #435b78;border-radius:12px;display:grid;gap:5px;min-width:0}
+.entry-research-stock>div{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px}
+.entry-research-stock strong{font-size:17px;color:#f5f9ff}
+.entry-research-stock span{font-size:12px;color:#ffdb8d}
+.entry-research-stock small{font-size:12px;line-height:1.65;color:#c5d5e9;overflow-wrap:anywhere}
+@media(max-width:640px){.entry-research-panel{padding:12px;margin:10px 0;border-radius:14px}.entry-research-stock>div{align-items:flex-start;flex-direction:column}.entry-research-stock{padding:10px}}
 /* ENTRY unified decision groups. Layout-only, MA/V5 and quotes unchanged. */
 .entry-bucket-simple-today { border-color:#3e755c; }
 .entry-bucket-simple-tracking { border-color:#435a7d; }
@@ -4565,6 +4575,61 @@ h1 {
           +focusRows.length+signalRows.length+eodTrackRows.length+reclaimRows.length
           +queuedDisplayRows.length+recalcDisplayRows.length+retainedRows.length+waitRows.length
           +pullbackRows.length+avoidRows.length;
+        // A research shortlist, NOT an entry signal. It is generated only
+        // from the CURRENT signed Shan-Chuan v2 model already loaded in ENTRY.
+        // Reuses existing classified buckets; never expands scan or quote calls.
+        const researchGroups=[
+          {label:'盤後試單準備',weight:8,rows:eodTrialRows},
+          {label:'箱型第一根觀察',weight:7,rows:boxFirstRows},
+          {label:'回踩守穩觀察',weight:6,rows:reclaimRows},
+          {label:'轉強候選',weight:5,rows:focusRows},
+          {label:'量價待確認',weight:4,rows:signalRows},
+          {label:'已起漲後續觀察',weight:3,rows:eodTrackRows},
+          {label:'底部蓄勢',weight:2,rows:queuedDisplayRows},
+          {label:'條件待補',weight:1,rows:waitRows}
+        ];
+        const researchSeen=new Set();
+        const researchCandidates=[];
+        for(const group of researchGroups)for(const row of group.rows){
+          const item=row.item||{},m=item.metrics||{},id=String(item.stock_id||'');
+          const close=Number(m.close),ma20=Number(m.ma20),vol=Number(m.current_volume_lots);
+          const gap=close>0&&ma20>0?(close/ma20-1)*100:NaN;
+          const mother=String(m.shanchuan_v2?.mother_child?.lifecycle?.state||'');
+          const disqualified=['mother_low_broken','child_low_broken','invalid','broken'].includes(mother);
+          if(!id||researchSeen.has(id)||holdings.has(id)||!unifiedRadarGeneration(item)
+            ||String(item.as_of||'')!==expected
+            ||!Number.isFinite(gap)||gap>5||gap<(-3)
+            ||!Number.isFinite(vol)||vol<1000
+            ||Number(item.score)<62
+            ||disqualified
+            ||m.entry_candle_guard?.weak_after_breakout===true
+            ||m.holding_management?.strong_breakdown===true)continue;
+          researchSeen.add(id);
+          researchCandidates.push({item,gap,vol,weight:group.weight,label:group.label});
+        }
+        researchCandidates.sort((a,b)=>b.weight-a.weight||Number(b.item.score)-Number(a.item.score)
+          ||Math.abs(a.gap)-Math.abs(b.gap));
+        const topResearch=researchCandidates.slice(0,5);
+        const researchCard=info=>{
+          const item=info.item,id=String(item.stock_id),close=Number(item.metrics?.close);
+          return '<div class="entry-research-stock">'
+            +'<div><strong>'+esc(id+' '+String(item.stock_name||''))+'</strong>'
+            +'<span>🟡 '+esc(info.label)+'｜非買點</span></div>'
+            +'<small>模型 '+esc(String(item.as_of))+'｜分數 '+esc(String(item.score))
+              +'｜收盤 '+esc(num(close,2))+'｜距MA20 '+esc(num(info.gap,1))+'%｜成交 '+esc(String(info.vol))+' 張</small>'
+            +'<small>明日先確認：有效 C 成交、MA10／MA20 是否守穩、量價與山川風控；未通過不試單。</small>'
+            +'</div>';
+        };
+        const researchPreview='<section class="entry-research-panel" data-stable-key="entry-research">'
+          +'<strong>🌙 今晚先研究｜明日開盤觀察</strong>'
+          +'<div class="entry-research-hint">只從今天已完成的新版日K中選出，最多五檔。'
+          +'不是🟠可小量試單、也不是🟢正式買點；隔日必須重新驗證。</div>'
+          +(topResearch.length?topResearch.map(researchCard).join('')
+            :'<div class="entry-research-empty">⚪ 目前已掃到的新版股票，沒有同時通過基本量能、位置與結構的研究候選。'
+            +'不硬湊名單；尚未掃描的股票不能當作已淘汰，隔日開盤不必急買。</div>')
+          +'<small class="entry-research-meta">已核對新版候選 '+rows.length+' 檔；'+esc(expected)
+          +' 模型已驗證者才列入。全市場更新率以頁首掃描進度為準。</small>'
+          +'</section>';
         const actionableCount=starterRows.length+completedRows.length;
         const banner='<div class="entry-list-overview" data-stable-key="entry-overview">'
           +'<strong>🎯 進場雷達｜先看可行動，再看追蹤</strong>'
@@ -4572,7 +4637,7 @@ h1 {
           +'｜📋 前次新版留存 '+retainedRows.length+'｜應更新日 '+esc(expectedSignalDataDate())+'</span>'
           +'<small>只有當日有效成交與原風控全部通過才可試單／確認買點。未更新日K只供觀察；全部詳細判斷點開個股查看。'
           +(staleRows.length?'｜另有 '+staleRows.length+' 檔過期資料不列入':'')+'</small></div>';
-        const outHtml=banner+simplifiedEntryHtml({
+        const outHtml=banner+researchPreview+simplifiedEntryHtml({
           completedRows,starterRows,eodTrialRows,boxFirstRows,focusRows,signalRows,
           eodTrackRows,reclaimRows,queuedDisplayRows,recalcDisplayRows,
           retainedRows,avoidRows,pullbackRows,waitRows
