@@ -28,3 +28,4 @@ jobs:
           python -m playwright install --with-deps chromium
       - name: Check mobile/desktop group overflow and expand-collapse
         run: python diagnostics/entry-simplified-browser-qa-20261019.py
+# One-time rerun after adding the non-trading evening research panel.
