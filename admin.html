@@ -4381,7 +4381,7 @@ h1 {
         const banner=`<div class="entry-list-overview" data-stable-key="entry-overview">
           <strong>🎯 進場雷達｜${displayedTotal} 檔追蹤</strong>
           <span>📋 前次新版留存 ${retainedRows.length}　🟠 有效盤中試單 ${starterRows.length}　🟢 驗證通過正式買點 ${completedRows.length}　🟠 明日試單觀察 ${eodTrialRows.length}　📦 箱型第一根 ${boxFirstRows.length}　⭐ 優先觀察 ${focusRows.length}　📋 已起漲追蹤 ${eodTrackRows.length}　🟡 MA10／20回踩確認 ${reclaimRows.length}　🟠 待核對 ${signalRows.length}　🌱 等發動 ${queuedDisplayRows.length}　🟡 條件未齊 ${waitRows.length}　⚡ 待補算 ${recalcDisplayRows.length}　🔵 等回踩 ${pullbackRows.length}　🔴 風險避開 ${avoidRows.length}</span>
-          <small>模型日 ${esc(expectedSignalDataDate())}｜V5正式進場：${formalEntryValidation.enabled?'歷史驗證已通過':'暫停（'+esc(formalEntryValidation.reason)+'）'}｜⏱12分鐘存活僅於12:50～13:20、進場雷達在前景且有橘色試單時沿用C報價取樣；非逐筆、不能補算，通過也不會升級正式買點｜點股票展開未達條件${staleRows.length?'｜另有 '+staleRows.length+' 檔過期快照未列入':''}</small>
+          <small>應更新日 ${esc(expectedSignalDataDate())}｜前次模型留存 ${retainedRows.length} 檔須等今日新日K，非買點｜V5正式進場：${formalEntryValidation.enabled?'歷史驗證已通過':'暫停（'+esc(formalEntryValidation.reason)+'）'}｜⏱12分鐘存活僅於12:50～13:20、進場雷達在前景且有橘色試單時沿用C報價取樣；非逐筆、不能補算，通過也不會升級正式買點｜點股票展開未達條件${staleRows.length?'｜另有 '+staleRows.length+' 檔過期快照未列入':''}</small>
         </div>`;
         const outHtml = banner+
           entryPersistedTrackingHtml()+
@@ -6712,8 +6712,10 @@ h1 {
             await syncPullbackWatchWithQuotes(liveBasePicks, new Map());
             if (navigationSeq !== renderNavToken || stage !== renderStage) return;
             const rows = liveBasePicks.map(item => ({ item,quote:quoteMap.get(String(item.stock_id))||null,
-              action:simpleActionState(item) }))
-              .filter(row => row.action)
+              action:simpleActionState(item)||{
+                key:'retained_model',rank:1,phase:'observe',buyable:false,trialable:false,
+                text:'📋 最近完整日K候選（非買點）',detail:'尚未取得今日新版完整日K，原觀察股票保留'
+              } }))
               .map(row => {
                 const isTracking = row.action?.persistent_watch === true || row.item?.__pullback_watch;
                 const phase = isTracking ? 'candidate' : 'observe';
@@ -6722,7 +6724,7 @@ h1 {
               .sort((a,b)=>b.action.rank-a.action.rank);
             const groups = renderEntrySections(rows);
             // After-close starter watch is visible as a guarded preparation shelf.
-            $('#note').textContent = `🎯 進場雷達｜🚀盤中起漲：待開盤｜🟠明日試單觀察 ${groups.eodTrialRows.length} 檔（非買點）｜🔵小量試單：待開盤核對`
+            $('#note').textContent = `🎯 盤後候選保留 ${groups.retainedRows.length} 檔（模型待補算、非買點）｜🚀盤中起漲：待開盤｜🟠明日試單觀察 ${groups.eodTrialRows.length} 檔（非買點）｜🔵小量試單：待開盤核對`
               +`｜📋已起漲追蹤 ${groups.eodTrackRows.length}｜🟡等確認 ${groups.waitRows.length}｜🔵等回踩 ${groups.pullbackRows.length}｜🟠轉弱 ${groups.avoidRows.length}｜非交易時段不發出試單訊號。${scanProgressSuffix()}`;
             return;
           }
@@ -6744,7 +6746,10 @@ h1 {
             const rows = liveBasePicks
               .map(item => ({ item, quote: quoteMap.get(String(item.stock_id)) || null }))
               .map(row => {
-                const baseAction = simpleActionState(row.item,row.quote);
+                const baseAction = simpleActionState(row.item,row.quote)
+                  ||(recentModelForDisplay(row.item)
+                    ?{key:'retained_model',rank:1,phase:'observe',buyable:false,trialable:false,
+                      text:'📋 最近完整日K候選（非買點）',detail:'尚未取得目標交易日完整模型'}:null);
                 return { ...row, action: entrySnapshotState(row.item,baseAction,row.quote) };
               })
               .filter(row => row.action)
@@ -6821,8 +6826,7 @@ h1 {
           // A verified box first-bar ranks before follow-on/retest tracking.
           // A prepared box remains an observation target until an actual breakout.
           if(boxFirstBreakoutReady(item))return 160;
-          if(unifiedRadarGeneration(item)&&item?.metrics?.box_strategy?.discovery?.ready_watch===true
-            &&String(item?.as_of||'')===expectedSignalDataDate())return 112;
+          if(recentModelForDisplay(item)&&item?.metrics?.box_strategy?.discovery?.ready_watch===true)return 112;
           if (!isEntryRadarItem(item))
             return (item?.metrics?.box_strategy?.discovery?.first_bar_today===true
               ||item?.metrics?.shanchuan_v2?.quality?.all_confirmed===true)
