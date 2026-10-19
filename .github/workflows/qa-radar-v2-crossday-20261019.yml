@@ -32,3 +32,4 @@ jobs:
         run: python diagnostics/night-research-browser-qa-20261019.py
 # One-time rerun after adding the non-trading evening research panel.
 # Revalidate overnight shortlist reason labels and newest-v2-only controls.
+# Verify mobile/desktop expand-collapse after research card fixture fix.
