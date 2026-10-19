@@ -89,10 +89,17 @@ test('Latest trading K still required for orange trial and formal buy',()=>{
   assert.match(html,/const completedRows=byRank\(/);
   assert.match(html,/formalEntryValidation\.enabled&&quoteFreshForTrial\(row\.quote\)/);
   assert.match(html,/const recentModelForDisplay=item=>/);
-  assert.match(html,/entryBucketHtml\('retained'/);
+  assert.match(html,/const simplifiedEntryHtml = \(labels=\{\}\) =>/);
+  assert.match(html,/const groupedEntrySavedWatches = visibleIds =>/);
+  assert.match(html,/compactEntryGroupHtml\('today'/);
+  assert.match(html,/compactEntryGroupHtml\('tracking'/);
+  assert.match(html,/compactEntryGroupHtml\('risk'/);
+  assert.match(html,/compactEntryGroupHtml\('history'/);
+  assert.doesNotMatch(section('      const renderEntrySections =','      const isEntryRadarItem ='),/entryBucketHtml\('/);
 });
 test('Cross-day pending follows database, stays expanded, does not fake buy',()=>{
   assert.match(html,/data-entry-fold="watch-pending" open/);
+  assert.match(html,/entry-bucket-simple-history/);
   assert.match(html,/📌 跨日追蹤紀錄/);
   assert.match(html,/pending\?'⚪ 追蹤紀錄保留/);
   assert.match(html,/不算風控淘汰/);
@@ -100,8 +107,8 @@ test('Cross-day pending follows database, stays expanded, does not fake buy',()=
 test('New-generation ENTRY keeps the authenticated cross-day shelf on both source outages and exceptions',()=>{
   const block=section('      async function loadLiveMonitor() {','      async function searchStock() {');
   assert.match(block,/if \(!v5Data && !launchData\)\s*\{[\s\S]*?await loadPullbackWatchItems\(\)/);
-  assert.match(block,/const savedTracking = entryPersistedTrackingHtml\(\)/);
-  assert.match(block,/stableListRender\(savedTracking/);
+  assert.match(block,/simplifiedEntryHtml\(\)/);
+  assert.match(block,/groupedEntrySavedWatches\(new Set\(\)\)/);
   assert.match(block,/if \(stage === 'ENTRY'\) \{[\s\S]*?await loadPullbackWatchItems\(\)/);
   assert.match(html,/const portfolioId = memberSession\.user\.id|let portfolioId = memberSession\.user\.id/);
   assert.match(html,/const unifiedRadarGeneration=item=>/);
