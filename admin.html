@@ -4610,6 +4610,36 @@ h1 {
         researchCandidates.sort((a,b)=>b.weight-a.weight||Number(b.item.score)-Number(a.item.score)
           ||Math.abs(a.gap)-Math.abs(b.gap));
         const topResearch=researchCandidates.slice(0,5);
+        // Never fabricate a buy or a 'ready-to-trial' candidate when the
+        // real daily model excludes everything. Give a short RISK STUDY list
+        // instead, explicitly disqualified, so preparation happens tonight.
+        const riskStudy=[...avoidRows,...pullbackRows]
+          .filter(row=>row?.item&&unifiedRadarGeneration(row.item)
+            &&String(row.item.as_of||'')===expected
+            &&!holdings.has(String(row.item.stock_id||'')))
+          .sort((a,b)=>Number(b.item.score||0)-Number(a.item.score||0))
+          .slice(0,3);
+        const riskStudyHtml=!topResearch.length&&riskStudy.length
+          ?'<div class="entry-research-empty"><strong>📘 今晚可先研究的風控案例（全部不是買點）</strong>'
+            +riskStudy.map(row=>{
+              const item=row.item,m=item.metrics||{},close=Number(m.close),ma20=Number(m.ma20);
+              const gap=close>0&&ma20>0?(close/ma20-1)*100:null;
+              const reason=String(row.action?.detail||row.action?.text||'原進場風控尚未通過');
+              const why=gap!==null&&gap>5?'已超過MA20 +5%不追高'
+                :Number(m.current_volume_lots)<1000?'量能不足1000張'
+                :String(m.shanchuan_v2?.mother_child?.lifecycle?.state||'').includes('low_broken')
+                  ?'山川母子K低點跌破'
+                  :'結構或位置風控未通過';
+              return '<div class="entry-research-stock"><div><strong>'
+                +esc(String(item.stock_id||'')+' '+String(item.stock_name||''))
+                +'</strong><span>🔴 暫不進場</span></div>'
+                +'<small>模型 '+esc(expected)+'｜分數 '+esc(String(item.score||'-'))
+                +(gap!==null?'｜距MA20 '+esc(num(gap,1))+'%':'')
+                +'｜主要阻擋：'+esc(why)+'</small>'
+                +'<small>研究目的：確認哪個風險條件未解除；原分類：'
+                +esc(String(row.action?.text||'警戒'))+'。不可因隔日反彈就直接改判試單。</small></div>';
+            }).join('')+'</div>'
+          :'';
         const researchCard=info=>{
           const item=info.item,id=String(item.stock_id),close=Number(item.metrics?.close);
           return '<div class="entry-research-stock">'
@@ -4625,8 +4655,8 @@ h1 {
           +'<div class="entry-research-hint">只從今天已完成的新版日K中選出，最多五檔。'
           +'不是🟠可小量試單、也不是🟢正式買點；隔日必須重新驗證。</div>'
           +(topResearch.length?topResearch.map(researchCard).join('')
-            :'<div class="entry-research-empty">⚪ 目前已掃到的新版股票，沒有同時通過基本量能、位置與結構的研究候選。'
-            +'不硬湊名單；尚未掃描的股票不能當作已淘汰，隔日開盤不必急買。</div>')
+            :'<div class="entry-research-empty">⚪ 今晚沒有可準備試單的新版研究候選。以下只能研究失敗原因，'
+              +'不硬湊買點；尚未掃描的股票不能當作已淘汰。</div>'+riskStudyHtml)
           +'<small class="entry-research-meta">已核對新版候選 '+rows.length+' 檔；'+esc(expected)
           +' 模型已驗證者才列入。全市場更新率以頁首掃描進度為準。</small>'
           +'</section>';
