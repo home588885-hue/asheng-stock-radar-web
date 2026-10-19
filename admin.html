@@ -3573,7 +3573,10 @@ h1 {
           return {state:'tracking',active:true,reason:'本交易日曾可小量試單；翌日重新驗證'};
         if(firstBar)
           return {state:'tracking',active:true,reason:'本交易日箱型突破第一根，隔日待回踩或再轉強確認'};
-        if(eodStarterWatchEligible(item))
+        // The EOD preparation stays visible before a quote; once C has a
+        // fresh actual trade, let the existing ready/pullback/invalid gates
+        // classify that price instead of pinning last night's starter state.
+        if(eodStarterWatchEligible(item)&&!hasTodayQuote)
           return {state:'tracking',active:true,
             reason:'前完整交易日盤後小量試單觀察；今天仍須有效成交、量價和風控重新確認，非今日試單'};
         const base=baseSimpleActionState(item,quote);
