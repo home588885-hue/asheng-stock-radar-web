@@ -4097,7 +4097,8 @@ h1 {
         const pending=tracked.filter(w=>{
           const item=pullbackWatchSnapshots.get(String(w.stock_id||''));
           return !item||pullbackWatchState(item).unverified===true;
-        });
+        }).sort((a,b)=>String(b.first_seen_at||b.updated_at||'')
+          .localeCompare(String(a.first_seen_at||a.updated_at||'')));
         const archived=(pullbackWatchArchived||[])
           .filter(w=>w.active===false&&w.state==='invalid'
             &&!holdings.has(String(w.stock_id||'')));
@@ -4110,7 +4111,7 @@ h1 {
           const first=String(w.first_as_of||'未記錄');
           const day=String(item?.as_of||'未取得');
           const name=String(item?.stock_name||'');
-          const title=pending?'⚪ 待新版日K補算｜目前非有效追蹤'
+          const title=pending?'⚪ 追蹤紀錄保留｜今日新版待核對（非買點）'
             :invalid?'🔴 追蹤失效｜已移至歷史'
             :w.trial_last_as_of?'🟠 曾符合小量試單｜持續追蹤（目前非試單）'
             :String(w.reason||'').includes('盤後小量試單觀察')
@@ -4136,7 +4137,7 @@ h1 {
             +esc(lastTrial)+'</small>'
             +'<small style="display:block;margin-top:4px">'
             +esc(invalid?String(w.reason||'歷史結構已失效')
-              :pending?'尚未取得本交易日完整新版日K；不算淘汰，也不是今天買點'
+              :pending?'資料庫仍保留跨日追蹤；尚未取得本交易日完整新版日K，不算風控淘汰，也不是今天買點'
               :current?'今天新版模型已核對，仍須新成交才能重新判定橘色試單'
                 :'⚪ 尚無最新完整新版模型；沿用追蹤紀錄，絕非今日有效買點')
             +'</small></div>';
@@ -4147,15 +4148,15 @@ h1 {
         return '<section class="entry-bucket entry-bucket-persistent" data-stable-key="entry-crossday-watch">'
           +'<details class="entry-bucket-fold" data-entry-fold="persistent" open>'
           +'<summary class="entry-bucket-head"><span class="entry-bucket-headline">'
-          +'<b>📌 有效跨日追蹤 '+active.length+' 檔｜小量、回踩、再轉強</b>'
-          +'<small>每日新版完整日K重新確認，不符合便退出追蹤，不佔位置</small>'
+          +'<b>📌 跨日追蹤紀錄 '+tracked.length+' 檔｜今日已核對 '+active.length+'｜待新版補算 '+pending.length+'</b>'
+          +'<small>待補算仍保留資料庫追蹤，但暫不算今日有效，也不得試單；真正風控失效才進歷史</small>'
           +'</span></summary><div style="padding:10px">'+normal
           +(active.length>120?'<small>另有 '+(active.length-120)+' 檔符合，首屏限120檔</small>':'')
           +'</div></details>'
-          +(pending.length?'<details class="entry-bucket-fold" data-entry-fold="watch-pending">'
+          +(pending.length?'<details class="entry-bucket-fold" data-entry-fold="watch-pending" open>'
             +'<summary class="entry-bucket-head"><span class="entry-bucket-headline">'
             +'<b>⚪ 待新版補算 '+pending.length+' 檔（不佔有效追蹤）</b>'
-            +'<small>尚無新日K不能假淘汰；補算符合才重回有效名單</small>'
+            +'<small>已登錄追蹤不等於今日已驗證。資料按最近追蹤時間排序；新日K完成後再判斷是否合格</small>'
             +'</span></summary><div style="padding:10px">'+pendingCards
             +(pending.length>120?'<small>另有 '+(pending.length-120)+' 檔待補，清單先顯示120檔</small>':'')
             +'</div></details>':'')
