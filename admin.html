@@ -3883,6 +3883,19 @@ h1 {
           detail:'母K高點 '+String(mcModel.mother_child.mother_high??'-')
             +'｜量比 '+String(mcModel.mother_child.volume_ratio??'-')
             +'x｜底部、籌碼、原風控均符合研究條件；綠色正式買點維持關閉'};
+        // Prefer a safe on-green pullback watch to an uninformative generic candidate.
+        // Never promote this observation to a live orange trial or formal green buy.
+        const greenPullback=fresh&&quoteValid&&price>0
+          &&Number(m.close)>0&&price<Number(m.close)&&ma20>0
+          &&price>=ma20&&price<=ma20*1.03&&masOkay
+          &&Number(quote.volume_lots)>=1000
+          &&m.entry_candle_guard?.weak_after_breakout!==true;
+        if(greenPullback)return {...baseAction,phase:'candidate',
+          key:'green_pullback_watch',buyable:false,trialable:false,
+          live_quote_verified:true,className:'scout',rank:Math.max(40,Number(baseAction.rank||0)),
+          text:'🟡 綠盤回踩守住｜等止跌確認',
+          detail:'今日價低於前交易日收盤，但仍守MA10／20／60且距MA20≤3%；'
+            +'買綠需等量價轉強與原模型完整試單確認，不能只因下跌就進場'};
         const eodBreak=baseAction.key==='breakout';
         return {...baseAction,phase:'candidate',buyable:false,trialable:false,
           live_quote_verified:quoteValid,
@@ -4702,6 +4715,7 @@ h1 {
         const holdingStatusHtml = holding ? holdingRulesHtml(item, displayQuote, options.compactHolding === true) : '';
         const holdingTodayHtml = holding ? holdingActionHtml(item, displayQuote) : '';
         const holdingDipHtml = holding ? holdingDipReviewHtml(item,displayQuote) : '';
+        const holdingGreenHtml = holding ? holdingGreenDipWatchHtml(item,displayQuote) : '';
         const chip = metrics.chip;
         const chipHtml = chip ? `<div class="metrics"><span class="pill">🧩 籌碼 ${Number(chip.score)}｜${esc(chip.label || '')}</span><span class="pill">技術＋籌碼 ${Number(chip.combined_score ?? item.score ?? 0)}</span>${(chip.notes || []).map(note => `<span class="pill">${esc(memberFacingText(note))}</span>`).join('')}</div>` : ((item.stage === 'B' || item.stage === 'C') ? '<div class="meta">🧩 籌碼資料待下一次重掃更新</div>' : '');
         const liquidityKnown = metrics.current_volume_lots != null || metrics.avg_volume_20_lots != null;
@@ -4781,7 +4795,7 @@ h1 {
         const detailBody = `<div class="detail-body">${hiddenModelHtml}${v5Html}${chipHtml}${holding ? '' : liquidityHtml}${playbookHtml}<div class="metrics"><span class="pill">3年位階 ${num(metrics.position_3y_pct)}%</span><span class="pill">週K ${num(metrics.weekly_k)}｜${gradeText(weeklyKGrade(metrics.weekly_k))}</span><span class="pill">月K ${num(metrics.monthly_k)}｜${gradeText(monthlyKGrade(metrics.monthly_k))}</span><span class="pill">${backtestSignal(item)}</span>${metrics.backtest ? `<span class="pill">5日 ${num(metrics.backtest.win_rate_5d_pct)}%</span><span class="pill">20日 ${num(metrics.backtest.win_rate_20d_pct)}%</span>` : ''}</div><div class="why">${reasons}</div>${cautions ? `<div class="warn">${cautions}</div>` : ''}</div>`;
         const detailHtml = options.compactHolding && holding ? detailBody : `<details class="card-details"><summary>完整判斷與數據</summary>${detailBody}</details>`;
         const actionHtml = options.hideSignal ? '' : `<div class="trade-signal ${signal.className}">${esc(memberFacingText(signal.text))}<small style="display:block;margin-top:4px;font-weight:500">${esc(memberFacingText(signal.detail || ''))}</small></div>`;
-        return `<article class="card" data-stock-id="${esc(item.stock_id)}"><div class="top"><div><div class="name">${esc(item.stock_id)} ${esc(item.stock_name)}</div><div class="meta">${esc(item.market)}${item.industry ? '・' + esc(item.industry) : ''}${timeInfoStages() ? '' : '｜資料日 ' + esc(item.as_of || '-')}</div></div><div class="badge ${esc(item.stage)}">模型 ${Number(item.score || 0)}分</div></div>${companyProfileHtml(item)}${activeLaunchVisibleHtml}${volumePriceHtml(item, displayQuote)}${researchPanel}${pullbackWatchHtml(item, displayQuote)}${holding ? (options.compactHolding ? '' : holdingTodayHtml + holdingDipHtml) : actionHtml + quickHtml + deviationWarningHtml + riskSummary}${holdingHtml}${options.compactHolding && holding ? `<details class="card-details holding-combined"><summary>完整判斷與技術數據</summary>${holdingStatusHtml}${detailHtml}</details>` : holdingStatusHtml+detailHtml}${timeInfoStages() ? timeInfoHtml(item, displayQuote) : '<div class="time">背景模型掃描：' + updated + '</div>'}</article>`;
+        return `<article class="card" data-stock-id="${esc(item.stock_id)}"><div class="top"><div><div class="name">${esc(item.stock_id)} ${esc(item.stock_name)}</div><div class="meta">${esc(item.market)}${item.industry ? '・' + esc(item.industry) : ''}${timeInfoStages() ? '' : '｜資料日 ' + esc(item.as_of || '-')}</div></div><div class="badge ${esc(item.stage)}">模型 ${Number(item.score || 0)}分</div></div>${companyProfileHtml(item)}${activeLaunchVisibleHtml}${volumePriceHtml(item, displayQuote)}${researchPanel}${pullbackWatchHtml(item, displayQuote)}${holding ? (options.compactHolding ? '' : holdingTodayHtml + holdingGreenHtml + holdingDipHtml) : actionHtml + quickHtml + deviationWarningHtml + riskSummary}${holdingHtml}${options.compactHolding && holding ? `<details class="card-details holding-combined"><summary>完整判斷與技術數據</summary>${holdingStatusHtml}${detailHtml}</details>` : holdingStatusHtml+detailHtml}${timeInfoStages() ? timeInfoHtml(item, displayQuote) : '<div class="time">背景模型掃描：' + updated + '</div>'}</article>`;
       }
 
       // Explain an empty launch list using *the actual API result and this
@@ -5369,6 +5383,40 @@ h1 {
         return {state:'candidate',label:'🟡 回踩止穩｜可評估極小量加碼',
           reason:'成本下方但MA20守住、MA10附近止穩、收復前收與開盤、KD與量能符合；僅為收盤研究候選，不保證反彈',
           live:false,pnl,price,cost,ratio,gap,suggestedQty:cap,modelDay};
+      };
+      // Buy-on-red-market preference in Taiwan: green price means a decline.
+      // Informational only. No change to the original buy / add / MA20 exit rules.
+      // Reuse the existing fresh C quote and prior complete S K-bar, never refetch.
+      const holdingGreenDipWatchHtml=(item,quote=null)=>{
+        if(!validTodayQuote(quote)||!quoteFreshForTrial(quote))return '';
+        const m=item?.metrics||{},hm=m.holding_management||{};
+        const price=Number(quote.price),prev=Number(quote.prev_close||m.close);
+        if(!(price>0&&prev>0&&price<prev))return '';
+        const ma10=Number(m.ma10),ma20=Number(m.ma20),ma60=Number(m.ma60);
+        const gap=ma20>0?(price/ma20-1)*100:null;
+        const volume=Number(quote.volume_lots),avg=Number(m.avg_volume_20_lots);
+        const ratio=avg>0&&volume>=0?volume/Math.max(1,avg*marketFraction(quote.quote_time)):null;
+        const structureBroken=!(ma20>0&&price>=ma20)
+          ||hm.exit_ready===true||hm.strong_breakdown===true
+          ||hm.effective_prev_low_break===true||Number(hm.below_ma20_days||0)>0;
+        const versionReady=unifiedRadarGeneration(item)&&String(item.as_of||'')===expectedSignalDataDate();
+        const nearSupport=ma10>0&&ma60>0&&ma10>=ma20*.995&&ma20>=ma60
+          &&gap!=null&&gap>=0&&gap<=3&&price>=ma10*.995;
+        const liquidity=volume>=1000&&avg>=500&&ratio!=null&&ratio>=.8&&ratio<=1.8;
+        const title=structureBroken?'🔴 跌破支撐｜不攤平'
+          :!versionReady?'⚪ 山川新版待補算｜暫不加碼'
+          :nearSupport&&liquidity?'🟡 綠盤回踩守住｜觀察止跌'
+          :'🟡 綠盤量價／均線未齊｜先等待';
+        const explanation=structureBroken?'盤中跌破MA20或既有持股風控亮燈，先管理風險'
+          :!versionReady?'今天雖有有效成交，仍缺同資料日完整新版山川計算，不准拿舊模型升級買點'
+          :nearSupport&&liquidity?'位置與量能可研究，但還要確認止跌、回收昨低／均線與完整日K；不是橘色試單或加碼指令'
+          :'靠近MA20還不夠，須守住均線、量價改善且符合原買進風控';
+        return '<section class="holding-dip-review '+(structureBroken?'avoid':'observe')+'" aria-label="綠盤回踩觀察">'
+          +'<strong>📉 買綠觀察｜'+esc(title)+'</strong>'
+          +'<span>今天 '+esc(num((price/prev-1)*100,2))+'%｜有效成交 '+esc(String(quote.quote_time||'-'))
+          +'｜MA20 '+(ma20>0?esc(num(ma20,2)):'待更新')
+          +'｜距MA20 '+(gap==null?'-':(gap>=0?'+':'')+esc(num(gap,1))+'%')+'</span>'
+          +'<small>'+esc(explanation)+'；依原持股MA20風控，不自動下單</small></section>';
       };
       const holdingDipReviewHtml=(item,quote=null)=>{
         const result=holdingDipAddReview(item,quote);
