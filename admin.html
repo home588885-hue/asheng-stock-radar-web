@@ -4039,6 +4039,110 @@ h1 {
         </section>`;
       };
 
+
+      // One current-generation ENTRY presentation: three decision groups and a
+      // collapsed history. No model/scanner/source or trading-rule changes.
+      const compactEntryGroupHtml = (key,title,note,entries,{open=false,extraHtml='',extraCount=0,alwaysShow=false}={}) => {
+        const total=entries.length+extraCount;
+        if(!total&&!alwaysShow)return '';
+        const preview=entries.slice(0,10),extra=entries.slice(10);
+        const cards=arr=>arr.map(e=>entryCompactStock(e.row,e.label)).join('');
+        const body=cards(preview)+(extra.length
+          ?'<details class="entry-extra"><summary>展開其餘 '+extra.length+' 檔</summary>'+cards(extra)+'</details>':'')
+          +extraHtml;
+        return '<section class="entry-bucket entry-bucket-simple-'+key+'" data-stable-key="entry-simple-'+key+'">'
+          +'<details class="entry-bucket-fold" data-entry-fold="simple-'+key+'"'+(open?' open':'')+'>'
+          +'<summary class="entry-bucket-head"><span class="entry-bucket-headline"><b>'+esc(title)+'</b>'
+          +'<small>'+esc(note)+'</small></span><span class="entry-bucket-count">'+total+' 檔</span></summary>'
+          +'<div class="entry-bucket-body">'+(body||'<div class="entry-simple-empty">目前沒有符合的股票</div>')+'</div></details></section>';
+      };
+      const groupedEntrySavedWatches = visibleIds => {
+        const seen=new Set(visibleIds||[]);
+        const watches=[...pullbackWatch.values()].filter(w=>
+          w.active===true&&!holdings.has(String(w.stock_id||''))&&!seen.has(String(w.stock_id||'')));
+        const saved=[],risky=[];
+        const card=(w,label,note) => {
+          const id=String(w.stock_id||''),item=pullbackWatchSnapshots.get(id);
+          const name=String(item?.stock_name||'名稱待補');
+          const day=String(item?.as_of||w.first_as_of||'待補算');
+          const close=Number(item?.metrics?.close),ma20=Number(item?.metrics?.ma20);
+          const first=String(w.first_as_of||'未記錄');
+          return '<div class="entry-mini entry-saved-mini" data-tracking-symbol="'+esc(id)+'">'
+            +'<div class="entry-saved-name"><strong>'+esc(id+' '+name)+'</strong><span>'+esc(label)+'</span></div>'
+            +'<small>首次追蹤 '+esc(first)+'｜模型 '+esc(day)
+            +(Number.isFinite(close)&&close>0?'｜收盤 '+esc(num(close,2)):'')
+            +(Number.isFinite(ma20)&&ma20>0?'｜距MA20 '+esc(num((close/ma20-1)*100,1))+'%':'')+'</small>'
+            +'<small>'+esc(note)+'</small></div>';
+        };
+        let pendingCount=0;
+        watches.forEach(w=>{
+          const item=pullbackWatchSnapshots.get(String(w.stock_id||''));
+          const verified=!!item&&unifiedRadarGeneration(item)
+            &&String(item.as_of||'')===expectedSignalDataDate();
+          const checked=verified?pullbackWatchState(item):null;
+          if(verified&&checked?.active===false&&!checked?.unverified) {
+            risky.push(card(w,'🔴 新版風控待複核｜暫不進場',
+              checked.reason||'當日模型判定暫不適合進場；保留資料庫紀錄，不當新買點'));
+            return;
+          }
+          const pending=!verified||checked?.unverified===true;
+          if(pending)pendingCount++;
+          const wasTrial=!!w.trial_last_as_of;
+          const label=pending?'⚪ 待新版補算｜已保留':
+            wasTrial?'🟠 曾符合試單｜今日需重驗':
+            checked?.state==='pullback'?'🟡 回踩追蹤｜非買點':
+            '📌 跨日追蹤｜非買點';
+          const note=pending?'尚未取得本交易日完整新版日K；不算有效買點，也不算風控淘汰':
+            wasTrial?'曾符合小量試單不等於今天仍可試單，須核對今日有效成交與原風控':
+            String(checked?.reason||w.reason||'已保留追蹤，等待新的日K與量價確認');
+          saved.push(card(w,label,note));
+        });
+        const archived=(pullbackWatchArchived||[]).filter(w=>
+          w.active===false&&w.state==='invalid'&&!holdings.has(String(w.stock_id||''))).slice(0,40);
+        const archivedHtml=archived.map(w=>card(w,'🔴 已失效｜僅供複盤',
+          String(w.reason||'歷史風險條件失效，不能當作進場候選'))).join('');
+        return {savedCount:saved.length,pendingCount,riskyCount:risky.length,
+          savedHtml:saved.join(''),riskyHtml:risky.join(''),
+          archivedCount:archived.length,archivedHtml};
+      };
+      const simplifiedEntryHtml = (labels={}) => {
+        const add=(rows,label)=>(rows||[]).map(row=>({row,label}));
+        const today=[
+          ...add(labels.completedRows,'🟢 正式買點｜當日已驗證'),
+          ...add(labels.starterRows,'🟠 可小量試單｜當日已驗證'),
+          ...add(labels.eodTrialRows,'🟠 明日試單觀察｜目前非買點')];
+        const watch=[
+          ...add(labels.boxFirstRows,'📦 箱型突破第一根｜等確認'),
+          ...add(labels.focusRows,'⭐ 優先觀察｜非買點'),
+          ...add(labels.signalRows,'🟠 訊號待核對｜非買點'),
+          ...add(labels.eodTrackRows,'📌 已起漲追蹤｜非買點'),
+          ...add(labels.reclaimRows,'🟡 MA10／MA20回踩｜非買點'),
+          ...add(labels.queuedDisplayRows,'🌱 底部已成形｜等發動'),
+          ...add(labels.recalcDisplayRows,'⚪ 模型待補算｜非買點'),
+          ...add(labels.retainedRows,'📋 前次新版留存｜非買點')];
+        const risk=[
+          ...add(labels.avoidRows,'🔴 風險警戒｜先避開'),
+          ...add(labels.pullbackRows,'🔵 位置偏高｜等回踩'),
+          ...add(labels.waitRows,'🟡 條件未齊｜先觀察')];
+        const shown=new Set([...today,...watch,...risk].map(e=>String(e.row?.item?.stock_id||'')).filter(Boolean));
+        const persistent=groupedEntrySavedWatches(shown);
+        const groups=[
+          compactEntryGroupHtml('today','🎯 今日進場機會',
+            '綠色／盤中橘色須當日確認；明日觀察不代表買點',today,{open:true,alwaysShow:true}),
+          compactEntryGroupHtml('tracking','📌 持續追蹤與等待回踩',
+            '包含前次新版留存 '+(labels.retainedRows||[]).length+' 檔、跨日保留 '+persistent.savedCount+' 檔（待補算 '+persistent.pendingCount+'）',
+            watch,{open:true,extraHtml:persistent.savedHtml,extraCount:persistent.savedCount,alwaysShow:true}),
+          compactEntryGroupHtml('risk','⚠️ 暫不適合進場',
+            '位置偏高、條件未齊與風控警戒；不列可買訊號',
+            risk,{open:false,extraHtml:persistent.riskyHtml,extraCount:persistent.riskyCount,alwaysShow:true})
+        ];
+        if(persistent.archivedCount)groups.push(
+          compactEntryGroupHtml('history','🗂️ 最近失效追蹤',
+            '已失效紀錄只供複盤，不與待補算混在一起',
+            [],{open:false,extraHtml:persistent.archivedHtml,extraCount:persistent.archivedCount}));
+        return groups.join('');
+      };
+
       // Only compare existing EOD radar snapshots; no new quote calls, market scans, or jobs.
       const BUY_NOTICE_KEY = 'asheng-buy-alert-v1-' + portfolioId;
       let buyNoticeState;
@@ -4384,27 +4488,18 @@ h1 {
           +focusRows.length+signalRows.length+eodTrackRows.length+reclaimRows.length
           +queuedDisplayRows.length+recalcDisplayRows.length+retainedRows.length+waitRows.length
           +pullbackRows.length+avoidRows.length;
-        const banner=`<div class="entry-list-overview" data-stable-key="entry-overview">
-          <strong>🎯 進場雷達｜${displayedTotal} 檔追蹤</strong>
-          <span>📋 前次新版留存 ${retainedRows.length}　🟠 有效盤中試單 ${starterRows.length}　🟢 驗證通過正式買點 ${completedRows.length}　🟠 明日試單觀察 ${eodTrialRows.length}　📦 箱型第一根 ${boxFirstRows.length}　⭐ 優先觀察 ${focusRows.length}　📋 已起漲追蹤 ${eodTrackRows.length}　🟡 MA10／20回踩確認 ${reclaimRows.length}　🟠 待核對 ${signalRows.length}　🌱 等發動 ${queuedDisplayRows.length}　🟡 條件未齊 ${waitRows.length}　⚡ 待補算 ${recalcDisplayRows.length}　🔵 等回踩 ${pullbackRows.length}　🔴 風險避開 ${avoidRows.length}</span>
-          <small>應更新日 ${esc(expectedSignalDataDate())}｜前次模型留存 ${retainedRows.length} 檔須等今日新日K，非買點｜V5正式進場：${formalEntryValidation.enabled?'歷史驗證已通過':'暫停（'+esc(formalEntryValidation.reason)+'）'}｜⏱12分鐘存活僅於12:50～13:20、進場雷達在前景且有橘色試單時沿用C報價取樣；非逐筆、不能補算，通過也不會升級正式買點｜點股票展開未達條件${staleRows.length?'｜另有 '+staleRows.length+' 檔過期快照未列入':''}</small>
-        </div>`;
-        const outHtml = banner+
-          entryPersistedTrackingHtml()+
-          entryBucketHtml('retained','📋 盤後留存｜上次完整日K股票（非買點）','尚未取得今日新日K，之前看過的近期新版候選保留追蹤，但禁止試單／加碼，晚上S更新後再重新分類',retainedRows,{open:true,tone:'near',preview:30})+
-          entryBucketHtml('formal','🟢 正式買點｜V5驗證與有效成交完成','必須同時符合原模型、歷史驗證及當日風控；不代表保證獲利',completedRows,{open:true,tone:'focus',preview:6})+
-          entryBucketHtml('trial','🟠 可小量試單｜盤中有效成交確認','5分鐘內成交且既有起漲條件與風控通過；試單不等於V5正式買點',starterRows,{open:true,tone:'focus',preview:6})+
-          entryBucketHtml('eod-trial','🟠 明日小量試單觀察｜盤後準備','只限最新完整日K符合原分數／量價／MA20 5%等風控；尚非買點，次交易日必須有有效成交再確認',eodTrialRows,{open:true,tone:'focus',preview:6})+
-          entryBucketHtml('box-first','📦 山川20日箱型突破第一根｜優先追蹤','模型日第一根已突破且量價、法人籌碼及原風控符合；仍是盤後追蹤，須核對新交易日報價，非🟢正式買點',boxFirstRows,{open:true,tone:'focus',preview:6})+
-          entryBucketHtml('reclaim','🟡 MA10／MA20 回踩後再轉強｜非買點','區分尚未收復與當日有效成交已收復；正式策略回測未通過前保持觀察，不允許用此分類直接下單',reclaimRows,{open:true,tone:'near',preview:6})+
-          entryBucketHtml('focus','⭐ 優先查看','原模型條件相對成熟，仍須核對當日行情',focusRows,{open:true,tone:'focus',preview:6})+
-          entryBucketHtml('signal','🟠 進場訊號｜先核對','已有模型追蹤或突破訊號，仍須確認今日量價與風險，並非直接買進指令',signalRows,{open:!focusRows.length,tone:'focus',preview:5})+
-          entryBucketHtml('eod-tracking','📋 已起漲追蹤｜不是買點','已由最新完整日K標記為ACTIVE／ENTRY的追蹤股票，盤中仍須核對有效成交價與原本風控確認；不可當成🟠可小量試單或🟢正式買點',eodTrackRows,{open:true,tone:'near',preview:6})+
-          entryBucketHtml('queued','🌱 底部已成形｜等發動','底部型態已確認，但尚未出現符合條件的起漲訊號，持續觀察量價與均線',queuedDisplayRows,{open:!focusRows.length&&!signalRows.length&&!eodTrackRows.length,tone:'near',preview:5})+
-          entryBucketHtml('wait','🟡 條件未齊｜先觀察','量價、位置或其他進場條件尚未到位，等待補齊，不列可買進訊號',waitRows,{open:!focusRows.length&&!signalRows.length&&!queuedDisplayRows.length,tone:'near',preview:5})+
-          entryBucketHtml('recalc','⚡ 收盤資料待補算','資料尚未齊全，不列進場候選或一般等確認',recalcDisplayRows,{open:false,tone:'near',preview:5})+
-          entryBucketHtml('pullback','🔵 位置偏高｜等回踩','避免追高，觀察支撐與短均線',pullbackRows,{open:!focusRows.length&&!signalRows.length&&!queuedDisplayRows.length&&!waitRows.length,tone:'high',preview:5})+
-          entryBucketHtml('avoid','🔴 風險警戒｜先避開','已觸發風險或轉弱條件，不列買進候選',avoidRows,{open:!focusRows.length&&!signalRows.length&&!queuedDisplayRows.length&&!waitRows.length&&!pullbackRows.length,tone:'blocked',preview:5});
+        const actionableCount=starterRows.length+completedRows.length;
+        const banner='<div class="entry-list-overview" data-stable-key="entry-overview">'
+          +'<strong>🎯 進場雷達｜先看可行動，再看追蹤</strong>'
+          +'<span>🟢 正式買點 '+completedRows.length+'｜🟠 盤中試單 '+starterRows.length
+          +'｜📋 前次新版留存 '+retainedRows.length+'｜應更新日 '+esc(expectedSignalDataDate())+'</span>'
+          +'<small>只有當日有效成交與原風控全部通過才可試單／確認買點。未更新日K只供觀察；全部詳細判斷點開個股查看。'
+          +(staleRows.length?'｜另有 '+staleRows.length+' 檔過期資料不列入':'')+'</small></div>';
+        const outHtml=banner+simplifiedEntryHtml({
+          completedRows,starterRows,eodTrialRows,boxFirstRows,focusRows,signalRows,
+          eodTrackRows,reclaimRows,queuedDisplayRows,recalcDisplayRows,
+          retainedRows,avoidRows,pullbackRows,waitRows
+        });
         updateBuySignalNotice([...completedRows,...starterRows]);
         stableListRender(outHtml,{quoteUpdate});
         return { earlyRows, starterRows, completedRows, eodTrialRows, boxFirstRows, recalcRows, blockedRows, highRows,
