@@ -524,6 +524,28 @@ h1 {
 .entry-mini-date { color:#94a7c2; }
 .entry-mini-full { padding:5px 8px 9px; border-top:1px solid #334155; }
 .entry-mini-full > .card { margin:0; }
+
+/* ENTRY unified decision groups. Layout-only, MA/V5 and quotes unchanged. */
+.entry-bucket-simple-today { border-color:#3e755c; }
+.entry-bucket-simple-tracking { border-color:#435a7d; }
+.entry-bucket-simple-risk { border-color:#665362; }
+.entry-bucket-simple-history { border-color:#3c4658; }
+.entry-simple-empty { padding:8px 4px 12px; color:#afc0d6; font-size:14px; }
+.entry-saved-mini { padding:12px; display:grid; gap:6px; overflow-wrap:anywhere; }
+.entry-saved-name { display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:6px 12px; }
+.entry-saved-name strong { font-size:16px; }
+.entry-saved-name span { font-size:12px; color:#b6d1f4; }
+.entry-saved-mini small { color:#aebfd9; font-size:12px; line-height:1.5; }
+@media(max-width:640px){
+  .entry-bucket-simple-today .entry-bucket-headline b,
+  .entry-bucket-simple-tracking .entry-bucket-headline b,
+  .entry-bucket-simple-risk .entry-bucket-headline b,
+  .entry-bucket-simple-history .entry-bucket-headline b { font-size:17px; }
+  .entry-bucket-simple-today .entry-bucket-head,
+  .entry-bucket-simple-tracking .entry-bucket-head,
+  .entry-bucket-simple-risk .entry-bucket-head,
+  .entry-bucket-simple-history .entry-bucket-head { padding:12px; }
+}
 /* 發動前：與進場雷達相同的逐檔收合顯示；模型及行情邏輯不變。 */
 .launch-mini-wrap { margin:8px 0; min-width:0; }
 .launch-mini-wrap > .entry-mini { border-color:#46607c; }
@@ -6788,8 +6810,8 @@ h1 {
         }
         if (!liveBasePicks.length) {
           if (stage === 'ENTRY') {
-            $('#list').innerHTML = entryPersistedTrackingHtml()
-              +'<div class="box empty">新版今日候選尚在補算，跨日追蹤保留在上方；不可把昨日訊號當今天試單。</div>';
+            stableListRender(simplifiedEntryHtml()
+              +'<div class="box empty">今日新版候選尚在補算，已保存追蹤在上方第二區；不可把昨日訊號當今天試單。</div>',{force:true});
             $('#note').textContent = '只顯示新版山川候選；待原夜間掃描陸續補算，不能把尚未重算當成零訊號。';
             setCandidateSummary('bCount', 0, '最近完整日K追蹤名單');
           }
@@ -7046,12 +7068,12 @@ h1 {
                 livePoolTimer = null; // 候選快照由夜間掃描更新
                 return;
               }
-              const savedTracking = entryPersistedTrackingHtml();
-              stableListRender(savedTracking
+              const savedCount=groupedEntrySavedWatches(new Set()).savedCount;
+              stableListRender(simplifiedEntryHtml()
                 + '<div class="box empty">⚪ 新版候選來源暫時無法讀取。'
-                + (savedTracking ? '已保存的跨日追蹤在上方，待本交易日新版模型補算；不算買點。'
-                  : '尚未取得此登入帳號的跨日追蹤清單，請重新整理再試。')
-                + '</div>');
+                + (savedCount ? '已保存的跨日追蹤在上方第二區，待本交易日新版模型補算；不算買點。'
+                  : '目前沒有可確認的跨日追蹤，請稍後重新整理。')
+                + '</div>',{force:true});
               $('#note').textContent = '🎯 進場雷達｜已保存的跨日追蹤獨立顯示；完整日K尚未更新，不能當今日試單。';
               setCandidateSummary('bCount', null, '模型來源暫時無法讀取');
               livePoolTimer = null;
@@ -7127,11 +7149,11 @@ h1 {
             // transient model/API failure. Never fall back to a legacy model.
             await loadPullbackWatchItems();
             if (navigationSeq !== navToken || stage !== requestedStage) return;
-            const savedTracking = entryPersistedTrackingHtml();
-            stableListRender(savedTracking
+            const savedCount=groupedEntrySavedWatches(new Set()).savedCount;
+            stableListRender(simplifiedEntryHtml()
               + '<div class="box empty error">新版進場候選暫時讀取失敗。'
-              + (savedTracking ? '跨日追蹤仍在上方；尚未補算的股票不能試單。' : '私人追蹤資料也尚未確認，請稍後重新整理。')
-              + '</div>');
+              + (savedCount ? '跨日追蹤仍在上方第二區；尚未補算的股票不能試單。' : '私人追蹤資料也尚未確認，請稍後重新整理。')
+              + '</div>',{force:true});
             $('#note').textContent = '⚠️ 新版候選來源暫時異常｜已保留可讀取的跨日追蹤；不是舊版選股結果。';
           } else {
             $('#list').innerHTML = '<div class="box empty error">候選資料暫時讀取失敗，請重新整理。</div>';
