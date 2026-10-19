@@ -3529,6 +3529,8 @@ h1 {
           &&close>=Math.max(ma10,ma20,ma60)&&(close/ma20-1)*100<=5
           &&Number.isFinite(pos)&&pos<80&&Number.isFinite(k)&&k<=80
           &&g.main_bull!==false&&g.weak_after_breakout!==true
+          &&g.macd_weak!==true&&g.kd_high_weak!==true
+          &&m.holding_management?.strong_breakdown!==true
           &&!['mother_low_broken','child_low_broken','invalid','broken'].includes(motherState)
           &&newEntryRiskGate(item,null)==null;
       };
