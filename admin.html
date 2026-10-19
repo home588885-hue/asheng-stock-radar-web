@@ -530,11 +530,19 @@ h1 {
 .entry-research-panel>strong{font-size:18px;color:#eef5ff}
 .entry-research-hint,.entry-research-empty,.entry-research-meta{color:#bdcde1;line-height:1.6;font-size:13px}
 .entry-research-stock{padding:11px 12px;background:#1b304b;border:1px solid #435b78;border-radius:12px;display:grid;gap:5px;min-width:0}
-.entry-research-stock>div{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px}
+.entry-research-stock>.entry-research-summary{display:block;list-style:none;cursor:pointer;outline-offset:4px}
+.entry-research-stock>.entry-research-summary::-webkit-details-marker{display:none}
+.entry-research-stock>.entry-research-summary:focus-visible{outline:2px solid #7db9ff;border-radius:8px}
+.entry-research-name{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px}
+.entry-research-details[open]{border-color:#6997c5}
+.entry-research-expanded{margin-top:12px;padding-top:12px;border-top:1px solid #3e5b7d;min-width:0}
+.entry-research-expanded .card{max-width:100%;min-width:0}
+.entry-research-safety{font-size:13px;line-height:1.6;font-weight:600;color:#ffe0a1;margin-bottom:10px}
+
 .entry-research-stock strong{font-size:17px;color:#f5f9ff}
 .entry-research-stock span{font-size:12px;color:#ffdb8d}
 .entry-research-stock small{font-size:12px;line-height:1.65;color:#c5d5e9;overflow-wrap:anywhere}
-@media(max-width:640px){.entry-research-panel{padding:12px;margin:10px 0;border-radius:14px}.entry-research-stock>div{align-items:flex-start;flex-direction:column}.entry-research-stock{padding:10px}}
+@media(max-width:640px){.entry-research-panel{padding:12px;margin:10px 0;border-radius:14px}.entry-research-name{align-items:flex-start;flex-direction:column}.entry-research-stock{padding:10px}}
 /* ENTRY unified decision groups. Layout-only, MA/V5 and quotes unchanged. */
 .entry-bucket-simple-today { border-color:#3e755c; }
 .entry-bucket-simple-tracking { border-color:#435a7d; }
@@ -4605,7 +4613,7 @@ h1 {
             ||m.entry_candle_guard?.weak_after_breakout===true
             ||m.holding_management?.strong_breakdown===true)continue;
           researchSeen.add(id);
-          researchCandidates.push({item,gap,vol,weight:group.weight,label:group.label,
+          researchCandidates.push({row,item,gap,vol,weight:group.weight,label:group.label,
             reason:String(row.action?.text||row.action?.detail||'仍未取得完整進場確認')});
         }
         researchCandidates.sort((a,b)=>b.weight-a.weight||Number(b.item.score)-Number(a.item.score)
@@ -4620,6 +4628,23 @@ h1 {
             &&!holdings.has(String(row.item.stock_id||'')))
           .sort((a,b)=>Number(b.item.score||0)-Number(a.item.score||0))
           .slice(0,3);
+        // The evening shortlist uses the EXACT same complete V2 stock card as
+        // the ENTRY candidates. Only the wrapper/presentation is new; the
+        // existing V5, Shan-Chuan, quotes and risk evaluation are unchanged.
+        const researchExpandedCard = (row,blocked=false) => {
+          const item=row?.item;
+          if(!item||!unifiedRadarGeneration(item))return '';
+          const original=row.action||{};
+          const studyAction={...original,buyable:false,trialable:false,
+            phase:blocked?'blocked':'observe',
+            text:blocked?'🔴 暫不進場｜研究用':'🟡 明日觀察｜非買點',
+            detail:String(original.detail||original.text||'原本進場條件待確認')
+              +'｜今晚僅供研究，明日仍需當日有效成交與原風控確認'};
+          return '<div class="entry-research-expanded">'
+            +'<div class="entry-research-safety">📘 詳細模型分析｜研究用途，非🟠試單或🟢買點</div>'
+            +v5MonitorCard(item,null,studyAction)
+            +'</div>';
+        };
         const riskStudyHtml=!topResearch.length&&riskStudy.length
           ?'<div class="entry-research-empty"><strong>📘 今晚可先研究的風控案例（全部不是買點）</strong>'
             +riskStudy.map(row=>{
@@ -4631,26 +4656,31 @@ h1 {
                 :String(m.shanchuan_v2?.mother_child?.lifecycle?.state||'').includes('low_broken')
                   ?'山川母子K低點跌破'
                   :'結構或位置風控未通過';
-              return '<div class="entry-research-stock"><div><strong>'
+              return '<details class="entry-research-stock entry-research-details" data-stock-key="'
+                +esc(String(item.stock_id||''))+'" data-research-kind="blocked">'
+                +'<summary class="entry-research-summary"><div class="entry-research-name"><strong>'
                 +esc(String(item.stock_id||'')+' '+String(item.stock_name||''))
-                +'</strong><span>🔴 暫不進場</span></div>'
+                +'</strong><span>🔴 暫不進場｜點開完整分析 ▾</span></div>'
                 +'<small>模型 '+esc(expected)+'｜分數 '+esc(String(item.score||'-'))
                 +(gap!==null?'｜距MA20 '+esc(num(gap,1))+'%':'')
                 +'｜主要阻擋：'+esc(why)+'</small>'
                 +'<small>研究目的：確認哪個風險條件未解除；原分類：'
-                +esc(String(row.action?.text||'警戒'))+'。不可因隔日反彈就直接改判試單。</small></div>';
+                +esc(String(row.action?.text||'警戒'))+'。不可因隔日反彈就直接改判試單。</small></summary>'
+                +researchExpandedCard(row,true)+'</details>';
             }).join('')+'</div>'
           :'';
         const researchCard=info=>{
           const item=info.item,id=String(item.stock_id),close=Number(item.metrics?.close);
-          return '<div class="entry-research-stock">'
-            +'<div><strong>'+esc(id+' '+String(item.stock_name||''))+'</strong>'
-            +'<span>🟡 '+esc(info.label)+'｜非買點</span></div>'
+          return '<details class="entry-research-stock entry-research-details" data-stock-key="'
+            +esc(id)+'" data-research-kind="watch">'
+            +'<summary class="entry-research-summary"><div class="entry-research-name"><strong>'
+            +esc(id+' '+String(item.stock_name||''))+'</strong>'
+            +'<span>🟡 '+esc(info.label)+'｜點開完整分析 ▾</span></div>'
             +'<small>模型 '+esc(String(item.as_of))+'｜分數 '+esc(String(item.score))
               +'｜收盤 '+esc(num(close,2))+'｜距MA20 '+esc(num(info.gap,1))+'%｜成交 '+esc(String(info.vol))+' 張</small>'
             +'<small>今晚尚待確認：'+esc(info.reason)+'。研究用途，非買點。</small>'
-            +'<small>明日先確認：有效 C 成交、MA10／MA20 是否守穩、量價與山川風控；未通過不試單。</small>'
-            +'</div>';
+            +'<small>明日先確認：有效 C 成交、MA10／MA20 是否守穩、量價與山川風控；未通過不試單。</small></summary>'
+            +researchExpandedCard(info.row,false)+'</details>';
         };
         const researchPreview='<section class="entry-research-panel" data-stable-key="entry-research">'
           +'<strong>🌙 今晚先研究｜明日開盤觀察</strong>'
