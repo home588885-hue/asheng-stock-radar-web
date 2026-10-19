@@ -66,7 +66,8 @@ assert.equal(research({focus:[safe],held:[['1111',{}]]}).topResearch.length,0,'H
 assert.match(html,/const outHtml=banner\+researchPreview\+simplifiedEntryHtml/);
 assert.doesNotMatch(code,/fetch\(|savePullbackWatchRows\(|scanBatch|refreshLiveQuotes\(/);
 if(process.env.XC_EXPORT_RESEARCH_PREVIEW==='1'){
- const css=(html.match(/<style>([\\s\\S]*?)<\\/style>/i)||[])[1]||'';
+ const styleStart=html.indexOf('<style>'),styleEnd=html.indexOf('</style>',styleStart+7);
+ const css=styleStart>=0&&styleEnd>styleStart?html.slice(styleStart+7,styleEnd):'';
  fs.writeFileSync('diagnostics/night-research-fixture-20261019.html',
    '<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
    +'<style>'+css+'</style></head><body><main class="wrap">'
