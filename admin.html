@@ -3543,14 +3543,15 @@ h1 {
             body:JSON.stringify({ portfolio_id: portfolioId, items: rows }),
           });
           const data = await response.json();
-          if (!response.ok || !data?.ok) return;
+          if (!response.ok || !data?.ok) return null;
           (data.watches || []).forEach(w => {
             const id=String(w.stock_id || '');
             if (!id) return;
             if (w.active === false) pullbackWatch.delete(id);
             else pullbackWatch.set(id,w);
           });
-        } catch (error) {}
+          return data;
+        } catch (error) { return null; }
       };
       // === ASHENG RADAR CLASSIFICATION BASELINE LOCK ===
       // Locked at 2026-10-07 after formal QA of:
@@ -4297,27 +4298,81 @@ h1 {
             +'<div style="padding:10px">'+archive+'</div></details>':'')
           +'</section>';
       };
+      // Authenticated user's locally durable ACK outbox for REAL confirmed
+      // C quotes only. The outbox is not a trading signal source or scanner.
+      // This keeps the observation when POST fails/reloading iOS tabs, while
+      // requiring the server's matching trial_last_as_of before deletion.
+      const VERIFIED_TRIAL_OUTBOX_KEY='asheng-verified-trial-outbox-v1-'+portfolioId;
+      const verifiedTrialOutbox=new Map();
+      const trialOutboxRecent=event=>{
+        const observed=Date.parse(String(event?.observed_at||''));
+        const age=Date.now()-observed;
+        const id=String(event?.stock_id||''),day=String(event?.as_of||'');
+        return /^[0-9A-Z.-]{2,12}$/.test(id)
+          &&/^20\d\d-\d\d-\d\d$/.test(day)
+          &&Number.isFinite(observed)&&age>=-60000&&age<=5*86400000
+          &&new Date(observed).toLocaleDateString('en-CA',{timeZone:'Asia/Taipei'}).replace(/\//g,'-')===day;
+      };
+      try{
+        const old=JSON.parse(localStorage.getItem(VERIFIED_TRIAL_OUTBOX_KEY)||'[]');
+        if(Array.isArray(old))old.forEach(event=>{
+          if(trialOutboxRecent(event))verifiedTrialOutbox.set(event.stock_id+'@'+event.as_of,event);
+        });
+      }catch(error){}
+      const persistTrialOutbox=()=>{
+        try{localStorage.setItem(VERIFIED_TRIAL_OUTBOX_KEY,
+          JSON.stringify([...verifiedTrialOutbox.values()].filter(trialOutboxRecent).slice(-32)));}
+        catch(error){}
+      };
       const persistVerifiedTrialRows = rows => {
-        // Record only a REAL current, valid C trade which the existing locked
-        // entrySnapshotState classified trialable; never record EOD mock trials.
-        const updates=[];
+        // Only create an outbox entry from the already-validated live orange
+        // row AND its current <=5 minute Cloudflare trade. Never EOD models.
         for(const row of (rows||[])){
           const id=String(row.item?.stock_id||''),day=String(row.item?.as_of||'');
           const key=id+'@'+day,existing=pullbackWatch.get(id);
           if(!id||!unifiedRadarGeneration(row.item)
+            ||day!==expectedSignalDataDate()
             ||row.action?.phase!=='trial'||row.action?.trialable!==true
-            ||!quoteFreshForTrial(row.quote)||existing?.trial_last_as_of===day
-            ||persistentTrialInFlight.has(key))continue;
-          persistentTrialInFlight.add(key);
-          updates.push({stock_id:id,first_as_of:day,first_price:Number(row.item.metrics?.close)||null,
-            state:existing?.active===true?existing.state:'tracking',
-            active:true,touch_signal:true,touch_trial:true,
-            reason:'先前曾通過盤中橘色小量試單；跨日僅追蹤，不代表今天仍能試單'});
+            ||!quoteFreshForTrial(row.quote)||existing?.trial_last_as_of===day)continue;
+          if(verifiedTrialOutbox.has(key))continue;
+          const event={stock_id:id,as_of:day,
+            observed_at:new Date().toISOString(),quote_time:String(row.quote.quote_time||''),
+            quote_price:Number(row.quote.price)||null,
+            first_price:Number(row.item.metrics?.close)||null,
+            last_attempt_at:0};
+          if(!trialOutboxRecent(event))continue;
+          verifiedTrialOutbox.set(key,event);
+          persistTrialOutbox();
         }
-        if(!updates.length)return;
-        void savePullbackWatchRows(updates).finally(()=>{
-          for(const row of updates)persistentTrialInFlight.delete(row.stock_id+'@'+row.first_as_of);
-        });
+        // Retry only while the owner is viewing the active ENTRY tab, never
+        // via background polling. Rate-limit failed POST to 3 minutes.
+        if(stage!=='ENTRY'||document.hidden)return;
+        for(const [key,event] of verifiedTrialOutbox){
+          if(!trialOutboxRecent(event)){verifiedTrialOutbox.delete(key);continue;}
+          const current=pullbackWatch.get(event.stock_id);
+          if(String(current?.trial_last_as_of||'')>=event.as_of){
+            verifiedTrialOutbox.delete(key);persistTrialOutbox();continue;
+          }
+          if(persistentTrialInFlight.has(key)
+            ||Date.now()-Number(event.last_attempt_at||0)<180000)continue;
+          event.last_attempt_at=Date.now();
+          persistentTrialInFlight.add(key);
+          persistTrialOutbox();
+          const existing=pullbackWatch.get(event.stock_id);
+          const when=new Date(event.observed_at).toLocaleString('zh-TW',{timeZone:'Asia/Taipei'});
+          const update={stock_id:event.stock_id,first_as_of:event.as_of,
+            first_price:event.first_price,state:existing?.active===true?existing.state:'tracking',
+            active:true,touch_signal:true,touch_trial:true,
+            reason:'歷史盤中已驗證橘色小量試單｜實際觀測 '+when
+              +'，成交 '+(event.quote_price??'-')+'（'+event.quote_time+'）；目前不是新買點'};
+          void savePullbackWatchRows([update]).then(result=>{
+            const saved=(result?.watches||[]).some(w=>
+              String(w.stock_id||'')===event.stock_id
+              &&String(w.trial_last_as_of||'')===event.as_of);
+            if(saved){verifiedTrialOutbox.delete(key);persistTrialOutbox();}
+          }).catch(()=>{}).finally(()=>persistentTrialInFlight.delete(key));
+        }
+        persistTrialOutbox();
       };
       const renderEntrySections = (rows,{quoteUpdate=false}={}) => {
         rows=[...new Map((rows||[]).map(row=>[String(row?.item?.stock_id||''),row])).values()]
