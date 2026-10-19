@@ -4605,7 +4605,8 @@ h1 {
             ||m.entry_candle_guard?.weak_after_breakout===true
             ||m.holding_management?.strong_breakdown===true)continue;
           researchSeen.add(id);
-          researchCandidates.push({item,gap,vol,weight:group.weight,label:group.label});
+          researchCandidates.push({item,gap,vol,weight:group.weight,label:group.label,
+            reason:String(row.action?.text||row.action?.detail||'仍未取得完整進場確認')});
         }
         researchCandidates.sort((a,b)=>b.weight-a.weight||Number(b.item.score)-Number(a.item.score)
           ||Math.abs(a.gap)-Math.abs(b.gap));
@@ -4647,6 +4648,7 @@ h1 {
             +'<span>🟡 '+esc(info.label)+'｜非買點</span></div>'
             +'<small>模型 '+esc(String(item.as_of))+'｜分數 '+esc(String(item.score))
               +'｜收盤 '+esc(num(close,2))+'｜距MA20 '+esc(num(info.gap,1))+'%｜成交 '+esc(String(info.vol))+' 張</small>'
+            +'<small>今晚尚待確認：'+esc(info.reason)+'。研究用途，非買點。</small>'
             +'<small>明日先確認：有效 C 成交、MA10／MA20 是否守穩、量價與山川風控；未通過不試單。</small>'
             +'</div>';
         };
