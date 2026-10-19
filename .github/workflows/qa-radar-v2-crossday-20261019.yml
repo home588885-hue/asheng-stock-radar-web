@@ -16,3 +16,5 @@ jobs:
       - uses: actions/checkout@v4
       - name: Regression-gate validation (zero S/C network calls)
         run: node diagnostics/radar-regression-gates.js
+      - name: Mobile/desktop V2 group render and cross-day dedup (zero network calls)
+        run: node diagnostics/entry-simplified-qa-20261019.js
