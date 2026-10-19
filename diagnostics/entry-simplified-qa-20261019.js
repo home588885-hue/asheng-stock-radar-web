@@ -68,7 +68,7 @@ assert.ok(!fallback.includes('🟢 正式買點｜當日已驗證'),
 assert.ok(!fallback.includes('🟠 可小量試單｜當日已驗證'),
   'past watch must not convert to current orange trial');
 assert.match(html,/stableListRender\(simplifiedEntryHtml\(\)/);
-assert.match(html,/const outHtml=banner\+simplifiedEntryHtml\(/);
+assert.match(html,/const outHtml=banner\+researchPreview\+simplifiedEntryHtml\(/);
 assert.doesNotMatch(html,/= entryPersistedTrackingHtml\(\)/);
 assert.match(html,/@media\(max-width:640px\)\{\s*\.entry-bucket-simple-today/);
 const scriptBlock=html.slice(html.indexOf('const renderEntrySections ='),
