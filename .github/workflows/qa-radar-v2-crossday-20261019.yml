@@ -20,6 +20,8 @@ jobs:
         run: XC_EXPORT_PREVIEW=1 node diagnostics/entry-simplified-qa-20261019.js
       - name: Verified-orange trial ACK outbox (read-only local simulation)
         run: node diagnostics/trial-ack-outbox-qa-20261019.js
+      - name: Night-before research shortlist safely selects newest signed V2 without fake buys
+        run: node diagnostics/entry-night-research-qa-20261019.js
       - name: Install isolated test browser
         run: |
           pip install --disable-pip-version-check --no-input playwright
