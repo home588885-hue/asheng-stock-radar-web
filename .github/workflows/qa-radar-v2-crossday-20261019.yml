@@ -18,6 +18,8 @@ jobs:
         run: node diagnostics/radar-regression-gates.js
       - name: Mobile/desktop V2 group render and cross-day dedup (zero network calls)
         run: XC_EXPORT_PREVIEW=1 node diagnostics/entry-simplified-qa-20261019.js
+      - name: Verified-orange trial ACK outbox (read-only local simulation)
+        run: node diagnostics/trial-ack-outbox-qa-20261019.js
       - name: Install isolated test browser
         run: |
           pip install --disable-pip-version-check --no-input playwright
