@@ -567,6 +567,13 @@ h1 {
 .holding-quick-controls{display:flex;gap:8px;flex-wrap:wrap;margin:5px 0 10px}
 .holding-quick-controls .holding-btn{flex:1;min-width:110px}
 .holding-mini-body>.radar-deep-dive{margin-top:5px}
+.radar-flat-technical{display:grid;gap:10px;margin-top:9px}
+.radar-technical-section{padding:9px 11px;margin:8px 0;border:1px solid #455a77;border-radius:10px;background:#15243a}
+.radar-technical-title{font-size:13px;line-height:1.5;font-weight:750;margin:0 0 8px;color:#dceaff}
+.radar-flat-technical>.card{margin:0}
+.radar-flat-technical .card-details{margin:0}
+.radar-flat-technical .holding-survival-summary{display:none}
+@media(max-width:640px){.radar-technical-section{padding:8px}.radar-technical-title{font-size:13px}}
 @media(max-width:640px){.radar-decision-title{font-size:17px}.radar-decision-levels dd{font-size:14px}}
 
 /* 進場雷達：先看重點，股票詳情按需展開。僅影響進場分類視覺。 */
@@ -5542,7 +5549,7 @@ h1 {
         const detailBody = `<div class="detail-body">${hiddenModelHtml}${v5Html}${chipHtml}${holding ? '' : liquidityHtml}${playbookHtml}<div class="metrics"><span class="pill">3年位階 ${num(metrics.position_3y_pct)}%</span><span class="pill">週K ${num(metrics.weekly_k)}｜${gradeText(weeklyKGrade(metrics.weekly_k))}</span><span class="pill">月K ${num(metrics.monthly_k)}｜${gradeText(monthlyKGrade(metrics.monthly_k))}</span><span class="pill">${backtestSignal(item)}</span>${metrics.backtest ? `<span class="pill">5日 ${num(metrics.backtest.win_rate_5d_pct)}%</span><span class="pill">20日 ${num(metrics.backtest.win_rate_20d_pct)}%</span>` : ''}</div><div class="why">${reasons}</div>${cautions ? `<div class="warn">${cautions}</div>` : ''}</div>`;
         const detailHtml = options.compactHolding && holding ? detailBody : `<details class="card-details"><summary>完整判斷與數據</summary>${detailBody}</details>`;
         const actionHtml = options.hideSignal ? '' : `<div class="trade-signal ${signal.className}">${esc(memberFacingText(signal.text))}<small style="display:block;margin-top:4px;font-weight:500">${esc(memberFacingText(signal.detail || ''))}</small></div>`;
-        return `<article class="card" data-stock-id="${esc(item.stock_id)}"><div class="top"><div><div class="name">${esc(item.stock_id)} ${esc(item.stock_name)}</div><div class="meta">${esc(item.market)}${item.industry ? '・' + esc(item.industry) : ''}${timeInfoStages() ? '' : '｜資料日 ' + esc(item.as_of || '-')}</div></div><div class="badge ${esc(item.stage)}">模型 ${Number(item.score || 0)}分</div></div>${companyProfileHtml(item)}${activeLaunchVisibleHtml}${volumePriceHtml(item, displayQuote)}${researchPanel}${options.historicalObservation?'':pullbackWatchHtml(item, displayQuote)}${candidateGreenHtml}${holding ? (options.compactHolding ? '' : holdingTodayHtml + holdingGreenHtml + holdingDipHtml) : actionHtml + quickHtml + deviationWarningHtml + riskSummary}${holdingHtml}${options.compactHolding && holding ? `<details class="card-details holding-combined"><summary>完整判斷與技術數據</summary>${holdingStatusHtml}${detailHtml}</details>` : holdingStatusHtml+detailHtml}${timeInfoStages() ? timeInfoHtml(item, displayQuote) : '<div class="time">背景模型掃描：' + updated + '</div>'}</article>`;
+        return `<article class="card" data-stock-id="${esc(item.stock_id)}"><div class="top"><div><div class="name">${esc(item.stock_id)} ${esc(item.stock_name)}</div><div class="meta">${esc(item.market)}${item.industry ? '・' + esc(item.industry) : ''}${timeInfoStages() ? '' : '｜資料日 ' + esc(item.as_of || '-')}</div></div><div class="badge ${esc(item.stage)}">模型 ${Number(item.score || 0)}分</div></div>${companyProfileHtml(item)}${activeLaunchVisibleHtml}${volumePriceHtml(item, displayQuote)}${researchPanel}${options.historicalObservation?'':pullbackWatchHtml(item, displayQuote)}${candidateGreenHtml}${holding ? (options.technicalOnly === true ? holdingGreenHtml + holdingDipHtml : options.compactHolding ? '' : holdingTodayHtml + holdingGreenHtml + holdingDipHtml) : actionHtml + quickHtml + deviationWarningHtml + riskSummary}${holdingHtml}${options.compactHolding && holding ? `<details class="card-details holding-combined"><summary>完整判斷與技術數據</summary>${holdingStatusHtml}${detailHtml}</details>` : holdingStatusHtml+detailHtml}${timeInfoStages() ? timeInfoHtml(item, displayQuote) : '<div class="time">背景模型掃描：' + updated + '</div>'}</article>`;
       }
 
       // Explain an empty launch list using *the actual API result and this
@@ -6943,9 +6950,18 @@ h1 {
         return risk.flag?'<div class="radar-continuation-risk-full" data-continuation-risk-version="'
           +esc(CONTINUATION_RISK_DISPLAY_VERSION)+'">'+esc(risk.detail)+'</div>':'';
       };
-      const radarDeepDetailsHtml=html=>'<details class="radar-deep-dive">'
-        +'<summary>📋 完整數據與山川風控（需要再看）</summary>'
-        +'<div class="radar-deep-body">'+html+'</div></details>';
+      // Shared second level for launch, entry, watch lists and holdings.
+      // Strip only the nested drawer mechanics, preserve the original detailed content.
+      const radarDeepDetailsHtml=html=>{
+        const flat=String(html||'')
+          .replace(/<details\b[^>]*>/gi,'<section class="radar-technical-section">')
+          .replace(/<\/details\s*>/gi,'</section>')
+          .replace(/<summary\b[^>]*>/gi,'<h4 class="radar-technical-title">')
+          .replace(/<\/summary\s*>/gi,'</h4>');
+        return '<details class="radar-deep-dive" data-flat-technical-v="20261020-v2">'
+          +'<summary>📋 完整技術資料｜一次看完</summary>'
+          +'<div class="radar-deep-body radar-flat-technical">'+flat+'</div></details>';
+      };
 
       // Shared stock movement panel. Read-only S/C snapshot, zero extra requests.
       // The status labels never override ENTRY buy permissions or holdings actions.
@@ -7061,7 +7077,7 @@ h1 {
                 <button class="holding-btn" data-holding-edit="${esc(id)}">部分賣出／調整</button>
                 <button class="holding-btn danger" data-holding-sell="${esc(id)}">全部賣出</button>
               </div>
-              ${radarDeepDetailsHtml(card(item,{quote:safeQuote,hideHoldingControls:true}))}
+              ${radarDeepDetailsHtml(card(item,{quote:safeQuote,hideHoldingControls:true,technicalOnly:true}))}
             </div>
           </details></section>`;
       };

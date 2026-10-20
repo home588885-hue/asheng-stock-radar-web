@@ -166,7 +166,7 @@ test('Three zones and saved cross-day stocks have individual expandable movement
   assert.match(entryStock,/stockMovementHtml\(item,q,'entry'/);
   assert.match(holding,/details class="holding-mini" data-stock-key/);
   assert.match(holding,/holdingMa20DaysHtml\(item,live\)/);
-  assert.match(holding,/card\(item,\{quote:safeQuote,hideHoldingControls:true\}\)/);
+  assert.match(holding,/card\(item,\{quote:safeQuote,hideHoldingControls:true,technicalOnly:true\}\)/);
   assert.match(saved,/details class="entry-mini entry-saved-mini" data-stock-key/);
   assert.match(saved,/stockMovementHtml\(item,q,'entry'/);
   assert.match(html,/const entryExpandedIds = new Set\(\)/);
@@ -371,7 +371,7 @@ test('Expanded radar shows one clear action, next and three prices; holdings ope
  assert.match(holding,/holdingCloseWatchHtml\(item,live\)/);
  assert.match(holding,/data-holding-edit=/);
  assert.match(holding,/data-holding-sell=/);
- assert.match(holding,/radarDeepDetailsHtml\(card\(item,\{quote:safeQuote,hideHoldingControls:true\}\)\)/);
+ assert.match(holding,/radarDeepDetailsHtml\(card\(item,\{quote:safeQuote,hideHoldingControls:true,technicalOnly:true\}\)\)/);
  assert.match(html,/options\.hideHoldingControls === true/);
  assert.match(html,/const LOCKED_RULE_VERSION = '2026-10-06-ma10-20-60-v1'/);
  assert.match(html,/CONTINUATION_RISK_DISPLAY_VERSION='2026-10-20-continuation-risk-display-v1'/);
@@ -413,6 +413,38 @@ test('C failure is visible and user can manually retry failed quotes without exp
  assert.match(fetcher,/C 無法取得交易所報價/);
  assert.match(fetcher,/C 連線／逾時／CORS 異常/);
  assert.match(html,/const LOCKED_RULE_VERSION = '2026-10-06-ma10-20-60-v1'/);
+});
+
+test('All three zones use identical two-click expanded cards with accessible technical sections',()=>{
+ const component=section('      const radarDeepDetailsHtml=html=>','      // Shared stock movement panel.');
+ const create=new Function(component+'return radarDeepDetailsHtml;');
+ const render=create();
+ const nested='<article><details class="card-details"><summary>完整判斷</summary>'
+   +'<p>數據保留</p><details open><summary>山川戰法</summary>'
+   +'<div>MA20出場規則保留</div></details></details></article>';
+ const out=render(nested);
+ assert.equal((out.match(/<details\b/g)||[]).length,1);
+ assert.equal((out.match(/<\/details>/g)||[]).length,1);
+ assert.equal((out.match(/<summary\b/g)||[]).length,1);
+ assert.match(out,/完整技術資料｜一次看完/);
+ assert.match(out,/<h4 class="radar-technical-title">山川戰法<\/h4>/);
+ assert.match(out,/數據保留/);
+ assert.match(out,/MA20出場規則保留/);
+ for(const [start,end,expected] of [
+  ['      const launchMiniHtml = (item, quote = null) => {','      const launchListHtml =',/stockMovementHtml\(item,q,'launch'/],
+  ['      const entryCompactStock = (row, bucketLabel) => {','      const entryBucketHtml=',/stockMovementHtml\(item,q,'entry'/],
+  ['      const holdingMiniHtml = (item, quote = null) => {','      const holdingPlaceholderHtml =',/stockMovementHtml\(item,live,'holding'/]
+ ])assert.match(section(start,end),expected);
+ const holding=section('      const holdingMiniHtml = (item, quote = null) => {','      const holdingPlaceholderHtml =');
+ assert.match(holding,/holdingCloseWatchHtml\(item,live\)/);
+ assert.match(holding,/holdingMa20DaysHtml\(item,live\)/);
+ assert.match(holding,/data-holding-edit/);
+ assert.match(holding,/data-holding-sell/);
+ assert.match(holding,/radarDeepDetailsHtml\(card\(item,\{quote:safeQuote,hideHoldingControls:true,technicalOnly:true\}\)\)/);
+ assert.match(html,/options\.technicalOnly === true/);
+ assert.match(html,/const LOCKED_RULE_VERSION = '2026-10-06-ma10-20-60-v1'/);
+ assert.match(html,/holdingQuoteRefreshMs: 180000/);
+ assert.doesNotMatch(component,/fetch\s*\(|setInterval\s*\(|getLiveQuotes\s*\(/);
 });
 for(const g of html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi)){
   if(/\bsrc=/.test(g[1]))continue;
