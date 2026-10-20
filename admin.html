@@ -2302,7 +2302,7 @@ h1 {
       };
       const refreshGlobalHeaderSummary = async () => {
         try {
-          const query = new URLSearchParams({ limit:'1', fresh_hours:'144', mode:'launch', view_policy:'prior_day_observation_20261014' });
+          const query = new URLSearchParams({ limit:'1', fresh_hours:'144', mode:'launch', view_policy:'passive_observation_20261020' });
           const joiner = API.includes('?') ? '&' : '?';
           const result = await fetchJsonWithTimeout(API + joiner + query.toString(), { cache:'no-store' }, 10000);
           if (result.response.ok && result.data?.ok && isLockedRulePayload(result.data)) applyGlobalHeaderSummary(result.data);
@@ -5373,7 +5373,7 @@ h1 {
             for (let attempt = 0; attempt < 2; attempt++) {
               try {
                 const limit = attempt === 0 ? '250' : '100';
-                const result = await fetchSharedModelSnapshot(API + '&' + new URLSearchParams({ limit, fresh_hours:'144', mode: 'launch', view_policy:'prior_day_observation_20261014' }).toString(), attempt === 0 ? 15000 : 12000);
+                const result = await fetchSharedModelSnapshot(API + '&' + new URLSearchParams({ limit, fresh_hours:'144', mode: 'launch', view_policy:'passive_observation_20261020' }).toString(), attempt === 0 ? 15000 : 12000);
                 response = result.response;
                 launchData = result.data;
                 if (response.ok && launchData.ok) break;
@@ -5547,7 +5547,8 @@ h1 {
             const scanText = launchIncomplete
               ? `｜⚠️ 最新交易日僅更新 ${Number(progress.latest_count || 0)}/${Number(progress.total_stocks || 0)} 檔；未掃齊，不能判定全市場為零`
               : '';
-            $('#note').textContent = `🌱 發動前｜追蹤 ${rankedPicks.length} 檔｜🔥發動中 ${activeCount}｜🟠發動前 ${pre}｜🟢突破 ${breakout}｜🔁回踩 ${add}｜${launchTally.text}${scanText}`;
+            const historicalCount=rankedPicks.filter(item=>item.__observation_only===true).length;
+            $('#note').textContent = `🌱 發動前｜追蹤 ${rankedPicks.length} 檔（⚪ 待新版確認 ${historicalCount}）｜🔥發動中 ${activeCount}｜🟠發動前 ${pre}｜🟢突破 ${breakout}｜🔁回踩 ${add}｜${launchTally.text}${scanText}`;
           }
           const launchStillIncomplete = progress.latest_complete !== true || String(progress.latest_as_of || '') !== expectedSignalDataDate();
           stableListRender(rankedPicks.length
@@ -7456,7 +7457,7 @@ h1 {
       const entrySourceUrl = (base, params) => base + (String(base).includes('?') ? '&' : '?') + params.toString();
       const loadEntrySourcePair = async () => {
         const paramsV5 = new URLSearchParams({ limit:'100', fresh_hours:'144', mode:'monitor' });
-        const paramsLaunch = new URLSearchParams({ limit:'250', fresh_hours:'144', mode:'launch', view_policy:'prior_day_observation_20261014' });
+        const paramsLaunch = new URLSearchParams({ limit:'250', fresh_hours:'144', mode:'launch', view_policy:'passive_observation_20261020' });
         const settled = await Promise.allSettled([
           fetchSharedModelSnapshot(entrySourceUrl(V5_API, paramsV5), 15000),
           fetchSharedModelSnapshot(entrySourceUrl(API, paramsLaunch), 15000),
