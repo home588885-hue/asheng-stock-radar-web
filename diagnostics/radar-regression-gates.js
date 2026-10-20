@@ -203,6 +203,8 @@ test('Movement cards only display S or already-valid C trades and never grant a 
   assert.match(live,/觀察MA20/);
   const legacy={...item,metrics:{...item.metrics,chase_rule_version:'old'}};
   assert.match(fn(legacy,null,'entry',{}),/舊版模型待補算/);
+  assert.match(fn(item,null,'entry',{phase:'confirmed',buyable:false,text:'🟢 正式買點'}),/目前不可直接買/);
+  assert.match(fn(item,null,'entry',{phase:'trial',trialable:false,text:'🟠 可小量試單'}),/目前非買點/);
 });
 for(const g of html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi)){
   if(/\bsrc=/.test(g[1]))continue;
