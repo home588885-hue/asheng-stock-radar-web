@@ -4299,15 +4299,14 @@ h1 {
           const movement=existing?stockMovementHtml(item,null,'entry',safeAction)
             :'<div class="box empty">這檔追蹤紀錄仍在，尚無完整日K卡片資料；等待原排程補算。</div>';
           const detail=existing?v5MonitorCard(item,null,safeAction):'';
+          const next=existing?radarShortAdvice(item,{detail:note}):'等待完整日K回補';
           return '<details class="entry-mini entry-saved-mini" data-stock-key="'+esc(id)+'" data-tracking-symbol="'+esc(id)+'"'+selected+'>'
-            +'<summary class="entry-mini-summary">'
+            +'<summary class="entry-mini-summary radar-compact-summary">'
             +'<span class="entry-mini-name"><strong>'+esc(id+' '+name)+'</strong><small>'+esc(label)+'</small></span>'
-            +'<span class="entry-mini-expand">股票動向</span>'
-            +'<span class="entry-mini-date">首次追蹤 '+esc(first)+'｜S 模型 '+esc(day)
-            +(Number.isFinite(close)&&close>0?'｜收盤 '+esc(num(close,2)):'')
-            +(Number.isFinite(ma20)&&ma20>0&&close>0?'｜距MA20 '+esc(num((close/ma20-1)*100,1))+'%':'')+'</span>'
-            +'<span class="entry-mini-lifecycle">'+esc(note)+'</span></summary>'
-            +'<div class="entry-mini-full">'+movement+detail+'</div></details>';
+            +'<span class="entry-mini-expand">展開</span>'
+            +'<span class="entry-mini-metrics">模型收盤 <b>'+(Number.isFinite(close)&&close>0?esc(num(close,2)):'-')+'</b>｜'+esc(day)+'</span>'
+            +'<span class="radar-compact-next">🔎 '+esc(next)+'</span></summary>'
+            +'<div class="entry-mini-full">'+movement+(detail?radarDeepDetailsHtml(detail):'')+'</div></details>';
         };
         let pendingCount=0;
         watches.forEach(w=>{
