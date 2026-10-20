@@ -609,6 +609,8 @@ h1 {
   border:1px solid #50627c; border-radius:9px; padding:7px 10px;
   background:#17253c; color:#d8e7f9; line-height:1.35;
 }
+.entry-mini-lifecycle { display:block; grid-column:1/-1; font-size:13px; font-weight:700;
+  line-height:1.5; color:#d5e5ff; padding:4px 0; }
 .entry-survival-status { display:block; grid-column:1/-1; font-size:12px; font-weight:700;
   padding:5px 9px; border-radius:7px; border:1px solid #415a77; background:#112138; color:#cbd5e1; }
 .entry-survival-status.passed { background:#103124; border-color:#166534; color:#bbf7d0; }
@@ -4015,6 +4017,46 @@ h1 {
       };
 
       // Compact entry display only; this does not alter MA10/20/60 signals or eligibility.
+      // Completed EOD state only: describe WHERE a stock is in the launch
+      // lifecycle, separately from permission to buy. A historical candidate
+      // must not vanish merely because its score fell or MA20 gap grew.
+      const overnightLifecycleState = item => {
+        const m=item?.metrics||{},mc=m.ma_cluster||{},g=m.entry_candle_guard||{};
+        const seq=m.launch_sequence||mc.launch_sequence||{},si=m.scan_intelligence||{};
+        const close=Number(m.close),ma10=Number(m.ma10),ma20=Number(m.ma20),ma60=Number(m.ma60);
+        const gap=close>0&&ma20>0?100*(close/ma20-1):null;
+        const days=seq.days_since_first==null?null:Number(seq.days_since_first);
+        const firstSeen=String(si.first_candidate_at||'').slice(0,10);
+        const firstSignal=String(seq.first_signal_date||'').slice(0,10);
+        const trendOk=close>0&&ma10>0&&ma20>0&&ma60>0
+          &&close>=Math.max(ma10,ma20,ma60)
+          &&mc.all_rising===true&&g.main_bull===true&&g.weak_after_breakout!==true;
+        const startSeen=!!firstSignal||mc.breakout_detected_raw===true
+          ||['ACTIVE','ENTRY'].includes(String(si.effective_lifecycle||''));
+        const result=(key,label,tomorrow)=>({key,label,tomorrow,gap,firstSeen,firstSignal,
+          observedFirstDays:Number.isInteger(days)&&days>=0?days:null});
+        if(m.holding_management?.strong_breakdown===true ||g.weak_after_breakout===true
+          ||(ma20>0&&close<ma20&&g.main_bull===false))
+          return result('weak','🔴 結構轉弱｜等重新轉強','確認是否重新站回MA20、突破壓力；未重建前先排除');
+        if(trendOk&&startSeen&&gap!==null&&gap>5)
+          return result('extended','🚀 起漲後續｜高乖離等回踩',
+            '保留追蹤；等乖離回到MA20＋5%內、回踩MA10／20守住並重新放量，不追高');
+        if(trendOk&&startSeen&&Number.isInteger(days)&&days>=1&&days<=5)
+          return result('continuation','🚀 起漲延續｜觀察續強',
+            '觀察MA10守住、量價續強，或回踩MA20後再轉強；不得只因連漲就追價');
+        if(trendOk&&startSeen&&(mc.breakout_detected_raw===true||days===0))
+          return result('first','🟠 第一根突破｜隔日量價確認',
+            '隔天核對突破位、MA10／20／60、成交量及盤中有效成交，達原條件才評估試單');
+        if(m.box_strategy?.discovery?.ready_watch===true||mc.watch_ready===true
+          ||m.bottom_start?.current_base===true)
+          return result('ready','🌱 底部整理｜等待第一根',
+            '明天看突破前高是否放量、三條均線是否上揚，尚未發動先列準備');
+        if(g.main_bull===true&&mc.all_rising===true)
+          return result('near','🟡 均線轉強｜待量價確認',
+            '觀察收盤能否站穩MA10／20／60及放量突破；無成交確認不升級');
+        return result('pending','⚪ 條件整理中｜等待轉強',
+          '先看量能、均線和支撐是否重新達標，保留模型紀錄但不冒充買點');
+      };
       const entryCompactStock = (row, bucketLabel) => {
         const item=row.item||{}, m=item.metrics||{}, id=String(item.stock_id||'');
         const score=Number(item.score), q=marketBridgeReady()&&validTodayQuote(row.quote)?row.quote:null;
@@ -4049,6 +4091,7 @@ h1 {
         const scHeadline=scSummary.highRisk?scSummary.text
           :patternChecklist.visible?patternChecklist.text:'';
         const greenMini=greenDipMiniHtml(item,q);
+        const tonight=overnightLifecycleState(item);
         return `<details class="entry-mini" data-stock-key="${esc(id)}">
           <summary class="entry-mini-summary">
             <span class="entry-mini-name"><strong>${esc(id)} ${esc(item.stock_name||'')}</strong><small>${esc(actionText)}</small></span>
@@ -4056,6 +4099,7 @@ h1 {
             <span class="entry-mini-expand">詳情 ▾</span>
             <span class="entry-mini-metrics">${q?(quoteRecentForDisplay(q)?'C即時成交':'今日前次成交（非即時）'):'模型收盤（非即時）'} <b>${close>0?esc(num(close,2)):'-'}</b>｜距MA20 ${dist==null?'-':(dist>=0?'+':'')+esc(num(dist,1))+'%'}｜成交量 ${Number.isFinite(vol)?esc(num(vol,0))+'張':'-'}</span>
             <span class="entry-mini-date">S 模型 ${esc(item.as_of||'待更新')}｜${tradeContext}${esc(missingText)}</span>
+            <span class="entry-mini-lifecycle">${esc(tonight.label)}｜明日：${esc(tonight.tomorrow)}</span>
             ${greenMini}
             ${scHeadline?'<span class="entry-mini-date">'+esc(scHeadline)+'</span>':''}
             <span class="entry-survival-status ${survival.tone}" data-entry-survival-id="${esc(id)}" data-entry-survival-trial="${activeTrial?'1':'0'}">${esc(survival.text)}</span>
@@ -4619,6 +4663,25 @@ h1 {
         researchCandidates.sort((a,b)=>b.weight-a.weight||Number(b.item.score)-Number(a.item.score)
           ||Math.abs(a.gap)-Math.abs(b.gap));
         const topResearch=researchCandidates.slice(0,5);
+        // The second overnight rail keeps ALREADY-LAUNCHED, overextended stocks
+        // visible for the next-session review. It never feeds trial/green gates.
+        const extendedSeen=new Set();
+        const strongFollowups=rows.filter(row=>{
+          const item=row?.item||{},id=String(item.stock_id||'');
+          const lifecycle=overnightLifecycleState(item);
+          if(!id||extendedSeen.has(id)||holdings.has(id)
+            ||!unifiedRadarGeneration(item)||String(item.as_of||'')!==expected
+            ||lifecycle.key!=='extended')return false;
+          const m=item.metrics||{};
+          if(Number(m.current_volume_lots)<1000
+            ||Number(m.avg_volume_20_lots)<500)return false;
+          extendedSeen.add(id);return true;
+        }).sort((a,b)=>{
+          const x=overnightLifecycleState(a.item),y=overnightLifecycleState(b.item);
+          const dateDiff=String(y.firstSignal||'').localeCompare(String(x.firstSignal||''));
+          return dateDiff||Number(b.item.score||0)-Number(a.item.score||0);
+        }).slice(0,5);
+        
         // Never fabricate a buy or a 'ready-to-trial' candidate when the
         // real daily model excludes everything. Give a short RISK STUDY list
         // instead, explicitly disqualified, so preparation happens tonight.
@@ -4634,14 +4697,14 @@ h1 {
         const researchExpandedCard = (row,blocked=false) => {
           const item=row?.item;
           if(!item||!unifiedRadarGeneration(item))return '';
-          const original=row.action||{};
+          const original=row.action||{},phaseInfo=overnightLifecycleState(item);
           const studyAction={...original,buyable:false,trialable:false,
             phase:blocked?'blocked':'observe',
-            text:blocked?'🔴 暫不進場｜研究用':'🟡 明日觀察｜非買點',
-            detail:String(original.detail||original.text||'原本進場條件待確認')
-              +'｜今晚僅供研究，明日仍需當日有效成交與原風控確認'};
+            text:phaseInfo.label,
+            detail:'明日觀察：'+phaseInfo.tomorrow+'｜'+
+              String(original.detail||original.text||'依盤後模型核對現階段')};
           return '<div class="entry-research-expanded">'
-            +'<div class="entry-research-safety">📘 詳細模型分析｜研究用途，非🟠試單或🟢買點</div>'
+            +'<div class="entry-research-safety">📊 階段判讀與完整量價風控｜此處僅呈現盤後模型，當日試單資格仍須盤中核對</div>'
             +v5MonitorCard(item,null,studyAction)
             +'</div>';
         };
@@ -4664,33 +4727,52 @@ h1 {
                 +'<small>模型 '+esc(expected)+'｜分數 '+esc(String(item.score||'-'))
                 +(gap!==null?'｜距MA20 '+esc(num(gap,1))+'%':'')
                 +'｜主要阻擋：'+esc(why)+'</small>'
-                +'<small>研究目的：確認哪個風險條件未解除；原分類：'
-                +esc(String(row.action?.text||'警戒'))+'。不可因隔日反彈就直接改判試單。</small></summary>'
+                +'<small>目前階段：'+esc(overnightLifecycleState(item).label)
+                +'｜明日先看：'+esc(overnightLifecycleState(item).tomorrow)+'</small></summary>'
                 +researchExpandedCard(row,true)+'</details>';
             }).join('')+'</div>'
           :'';
         const researchCard=info=>{
           const item=info.item,id=String(item.stock_id),close=Number(item.metrics?.close);
+          const phaseInfo=overnightLifecycleState(item);
           return '<details class="entry-research-stock entry-research-details" data-stock-key="'
             +esc(id)+'" data-research-kind="watch">'
             +'<summary class="entry-research-summary"><div class="entry-research-name"><strong>'
             +esc(id+' '+String(item.stock_name||''))+'</strong>'
-            +'<span>🟡 '+esc(info.label)+'｜點開完整分析 ▾</span></div>'
+            +'<span>'+esc(phaseInfo.label)+'｜點開完整分析 ▾</span></div>'
             +'<small>模型 '+esc(String(item.as_of))+'｜分數 '+esc(String(item.score))
               +'｜收盤 '+esc(num(close,2))+'｜距MA20 '+esc(num(info.gap,1))+'%｜成交 '+esc(String(info.vol))+' 張</small>'
-            +'<small>今晚尚待確認：'+esc(info.reason)+'。研究用途，非買點。</small>'
-            +'<small>明日先確認：有效 C 成交、MA10／MA20 是否守穩、量價與山川風控；未通過不試單。</small></summary>'
+            +'<small>目前階段：'+esc(phaseInfo.label)
+              +(phaseInfo.firstSeen?'｜系統最早候選紀錄 '+esc(phaseInfo.firstSeen):'')
+              +(phaseInfo.firstSignal?'｜首次突破模型日 '+esc(phaseInfo.firstSignal):'')
+              +'</small>'
+            +'<small>明日主要觀察：'+esc(phaseInfo.tomorrow)+'</small></summary>'
             +researchExpandedCard(info.row,false)+'</details>';
         };
         const researchPreview='<section class="entry-research-panel" data-stable-key="entry-research">'
-          +'<strong>🌙 今晚先研究｜明日開盤觀察</strong>'
-          +'<div class="entry-research-hint">只從今天已完成的新版日K中選出，最多五檔。'
-          +'不是🟠可小量試單、也不是🟢正式買點；隔日必須重新驗證。</div>'
-          +(topResearch.length?topResearch.map(researchCard).join('')
-            :'<div class="entry-research-empty">⚪ 今晚沒有可準備試單的新版研究候選。以下只能研究失敗原因，'
-              +'不硬湊買點；尚未掃描的股票不能當作已淘汰。</div>'+riskStudyHtml)
-          +'<small class="entry-research-meta">已核對新版候選 '+rows.length+' 檔；'+esc(expected)
-          +' 模型已驗證者才列入。全市場更新率以頁首掃描進度為準。</small>'
+          +'<strong>🌙 明日看盤清單｜直接看目前階段</strong>'
+          +'<div class="entry-research-hint">依今日已完成日K分成「準備發動」與「已發動待回踩」兩路。'
+          +'每檔直接寫明目前位置、首次記錄及明日應觀察的確認條件。</div>'
+          +(topResearch.length
+            ?'<div class="entry-research-hint"><b>🌱 準備第一根／回踩再轉強｜'+topResearch.length+' 檔</b></div>'
+              +topResearch.map(researchCard).join('')
+            :'<div class="entry-research-empty">🌱 本輪沒有達到低乖離準備條件的候選，並非全市場沒有機會。</div>')
+          +(strongFollowups.length
+            ?'<div class="entry-research-hint"><b>🚀 已發動｜高乖離等待回踩｜'+strongFollowups.length+' 檔</b>'
+              +'｜保留起漲階段，不因超過追價區就從晚間清單消失</div>'
+              +strongFollowups.map(row=>{
+                const item=row.item||{},m=item.metrics||{},phaseInfo=overnightLifecycleState(item);
+                const close=Number(m.close),gap=phaseInfo.gap;
+                const info={row,item,label:phaseInfo.label,gap,
+                  vol:Number(m.current_volume_lots),weight:0,
+                  reason:'已發動但不追高'};
+                return researchCard(info);
+              }).join('')
+            :'')
+          +(!topResearch.length&&!strongFollowups.length?riskStudyHtml:'')
+          +'<small class="entry-research-meta">以上是 '+esc(expected)
+          +' 的完成日K，起漲階段≠現在可以下單；隔天以原本5%乖離、量價與C有效成交確認試單。'
+          +'｜本輪候選 '+rows.length+' 檔，未掃到的股票不算淘汰。</small>'
           +'</section>';
         const actionableCount=starterRows.length+completedRows.length;
         const banner='<div class="entry-list-overview" data-stable-key="entry-overview">'
