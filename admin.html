@@ -1246,6 +1246,7 @@ h1 {
 #app .entry-bucket-headline small{display:none}
 }
 
+#app .entry-bucket-flat > .entry-bucket-head::after{display:none;content:none}
 </style>
   
     <link rel="manifest" href="./admin.webmanifest">
@@ -4519,13 +4520,16 @@ h1 {
         const preview=entries.slice(0,maxVisible),extra=entries.slice(maxVisible);
         const cards=arr=>arr.map(e=>entryCompactStock(e.row,e.label)).join('');
         const body=cards(preview)+(extra.length
-          ?'<details class="entry-extra"><summary>展開其餘 '+extra.length+' 檔</summary>'+cards(extra)+'</details>':'')
-          +extraHtml;
-        return '<section class="entry-bucket entry-bucket-simple-'+key+'" data-stable-key="entry-simple-'+key+'">'
-          +'<details class="entry-bucket-fold" data-entry-fold="simple-'+key+'"'+(open?' open':'')+'>'
-          +'<summary class="entry-bucket-head"><span class="entry-bucket-headline"><b>'+esc(title)+'</b>'
-          +'<small>'+esc(note)+'</small></span><span class="entry-bucket-count">'+total+' 檔</span></summary>'
-          +'<div class="entry-bucket-body">'+(body||'<div class="entry-simple-empty">目前沒有符合的股票</div>')+'</div></details></section>';
+          ?'<details class="entry-extra"><summary>展開其餘 '+extra.length+' 檔</summary>'+cards(extra)+'</details>':'')+extraHtml;
+        const head='<span class="entry-bucket-headline"><b>'+esc(title)+'</b><small>'+esc(note)
+          +'</small></span><span class="entry-bucket-count">'+total+' 檔</span>';
+        const base='<section class="entry-bucket entry-bucket-simple-'+key+'" data-stable-key="entry-simple-'+key+'">';
+        const content='<div class="entry-bucket-body">'+(body||'<div class="entry-simple-empty">目前沒有符合的股票</div>')+'</div>';
+        const flat=key==='today'||key==='tracking';
+        if(flat)return base+'<div class="entry-bucket-fold entry-bucket-flat"><div class="entry-bucket-head">'
+          +head+'</div>'+content+'</div></section>';
+        return base+'<details class="entry-bucket-fold" data-entry-fold="simple-'+key+'"'+(open?' open':'')+'>'
+          +'<summary class="entry-bucket-head">'+head+'</summary>'+content+'</details></section>';
       };
       const groupedEntrySavedWatches = visibleIds => {
         const seen=new Set(visibleIds||[]);
