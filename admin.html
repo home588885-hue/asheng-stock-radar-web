@@ -4617,6 +4617,23 @@ h1 {
         }
         persistTrialOutbox();
       };
+      // Selection-quality PRIORITY only; never an entry permission or a new model.
+      // Shares the SAME evidence thresholds as spring-swallow-picks v58.
+      const strongRebreakStudyRank = item => {
+        if(!item||item.__observation_only===true||item.__passive_monitor===true
+          ||String(item.as_of||'')!==expectedSignalDataDate())return 0;
+        const m=item.metrics||{},mc=m.ma_cluster||{},g=m.entry_candle_guard||{};
+        const close=Number(m.close),ma10=Number(m.ma10),ma20=Number(m.ma20),ma60=Number(m.ma60);
+        const pos=Number(m.position_1y_pct),vol=Number(m.current_volume_lots),avg=Number(m.avg_volume_20_lots);
+        const ratio=Number(mc.day_volume_ratio),k=Number(m.daily_k);
+        const bias=ma20>0?(close/ma20-1)*100:NaN;
+        const actualRebreak=m.pullback_rebreak===true||m.v5?.structure_pass===true||m.v5?.entry_confirmed===true;
+        return actualRebreak&&ma10>0&&ma20>0&&ma60>0&&close>=Math.max(ma10,ma20,ma60)
+          &&pos>75&&pos<85&&bias>=0&&bias<=5
+          &&vol>=1000&&avg>=500&&ratio>=1&&ratio<=2.5&&Number.isFinite(k)&&k<=80
+          &&mc.rising?.ma20===true&&mc.rising?.ma60===true
+          &&g.weak_after_breakout!==true&&m.holding_management?.strong_breakdown!==true?1:0;
+      };
       let overnightPassiveResearch=[];
       const renderEntrySections = (rows,{quoteUpdate=false}={}) => {
         rows=[...new Map((rows||[]).map(row=>[String(row?.item?.stock_id||''),row])).values()]
@@ -4645,8 +4662,9 @@ h1 {
         const market=taipeiMarketState(),afterClose=market.weekday&&market.totalMinutes>=810;
         const expected=expectedSignalDataDate();
         const byRank = a=>[...a].sort((x,y)=>
-          Number(y.item?.score||0)-Number(x.item?.score||0)
-          ||Number(y.action?.rank||0)-Number(x.action?.rank||0)
+          Number(y.action?.rank||0)-Number(x.action?.rank||0)
+          ||strongRebreakStudyRank(y.item)-strongRebreakStudyRank(x.item)
+          ||Number(y.item?.score||0)-Number(x.item?.score||0)
           ||Number(y.item?.metrics?.current_volume_lots||0)-Number(x.item?.metrics?.current_volume_lots||0)
           ||String(y.item?.scanned_at||'').localeCompare(String(x.item?.scanned_at||'')));
         const b={blocked:[],weak:[],high:[],focus:[],signal:[],eod:[],eodTrial:[],
@@ -4855,8 +4873,9 @@ h1 {
           researchCandidates.push({row,item,gap,vol,weight:group.weight,label:group.label,
             reason:String(row.action?.text||row.action?.detail||'仍未取得完整進場確認')});
         }
-        researchCandidates.sort((a,b)=>b.weight-a.weight||Number(b.item.score)-Number(a.item.score)
-          ||Math.abs(a.gap)-Math.abs(b.gap));
+        researchCandidates.sort((a,b)=>b.weight-a.weight
+          ||strongRebreakStudyRank(b.item)-strongRebreakStudyRank(a.item)
+          ||Number(b.item.score)-Number(a.item.score)||Math.abs(a.gap)-Math.abs(b.gap));
         const topResearch=researchCandidates.slice(0,5);
         // The second overnight rail keeps ALREADY-LAUNCHED, overextended stocks
         // visible for the next-session review. It never feeds trial/green gates.
@@ -4946,7 +4965,9 @@ h1 {
             +'</strong><span>'+esc(stageLabel)+'</span></div>'
             +'<small>'+esc(compactPrice)+'</small>'
             +continuationRiskMiniHtml(item)
-            +'<small class="radar-compact-next">🔎 '+esc(nextFocus)+'</small>'
+            +'<small class="radar-compact-next">🔎 '
+            +esc((strongRebreakStudyRank(item)?'強勢回踩再突破｜研究優先（非買點）。 ':'')+nextFocus)
+            +'</small>'
             +'<span class="radar-compact-arrow">展開 ▾</span></summary>'
             +researchExpandedCard(info.row,false)+'</details>';
         };
@@ -5692,6 +5713,12 @@ h1 {
             }
             const stageDiff = (stageRank[b.stage] || 0) - (stageRank[a.stage] || 0);
             if (stageDiff) return stageDiff;
+            // Same entry action + stage: rebreak quality above raw model score,
+            // but never override the existing live risk, BUY/TRIAL or launch buckets.
+            if(stage==='ENTRY'){
+              const rebreakDiff=strongRebreakStudyRank(b)-strongRebreakStudyRank(a);
+              if(rebreakDiff)return rebreakDiff;
+            }
             const aLiquidity = a.metrics?.liquidity_ok === true ? 2 : a.metrics?.liquidity_ok === false ? 0 : 1;
             const bLiquidity = b.metrics?.liquidity_ok === true ? 2 : b.metrics?.liquidity_ok === false ? 0 : 1;
             if (aLiquidity !== bLiquidity) return bLiquidity - aLiquidity;
