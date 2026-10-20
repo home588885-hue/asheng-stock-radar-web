@@ -19,7 +19,7 @@ const generation='shanchuan-independent-v2';
 const discovery='2026-10-16-shanchuan-independent-v2';
 const mk=(date,gen=generation)=>({
   stock_id:'3062',as_of:date,
-  metrics:{box_strategy:{model_generation:gen,discovery:{version:discovery,as_of:date}},
+  metrics:{chase_rule_version:'2026-10-20-bias-8-12-15-v1',chase_risk:{version:'2026-10-20-bias-8-12-15-v1'},box_strategy:{model_generation:gen,discovery:{version:discovery,as_of:date}},
     shanchuan_v2:{mother_child:{lifecycle:{state:'none'}}}}
 });
 const exactNew=item=>item?.metrics?.box_strategy?.model_generation===generation
@@ -27,15 +27,19 @@ const exactNew=item=>item?.metrics?.box_strategy?.model_generation===generation
   &&String(item?.metrics?.box_strategy?.discovery?.as_of||'')===String(item?.as_of||'')
   &&item?.metrics?.shanchuan_v2?.mother_child?.lifecycle!=null;
 const expected=()=> '2026-10-19';
-const recent=new Function('unifiedRadarGeneration','expectedSignalDataDate',
+const recent=new Function('unifiedRadarGeneration','chaseModelReady','expectedSignalDataDate',
   section('      const recentModelForDisplay=item=>{','      const displayModelWarning=')+
-  '\nreturn recentModelForDisplay;')(exactNew,expected);
+  '\nreturn recentModelForDisplay;')(exactNew,item=>item?.metrics?.chase_rule_version==='2026-10-20-bias-8-12-15-v1' && item?.metrics?.chase_risk?.version==='2026-10-20-bias-8-12-15-v1',expected);
 
 test('Model-day rollover keeps Friday signed v2 only as observation',()=>{
   assert.equal(recent(mk('2026-10-16')),true);
   assert.equal(recent(mk('2026-10-19')),true);
   assert.equal(recent(mk('2026-10-13')),false);
   assert.equal(recent(mk('2026-10-20')),false);
+});
+test('Unsigned old chase snapshots are never current buy models',()=>{
+  const item=mk('2026-10-19');delete item.metrics.chase_rule_version;
+  assert.equal(recent(item),false);
 });
 test('Legacy Shan-Chuan or incomplete v2 never counts as a new model',()=>{
   assert.equal(recent(mk('2026-10-16','old')),false);
