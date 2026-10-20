@@ -548,6 +548,23 @@ h1 {
  .radar-compact-summary .entry-mini-expand{grid-column:auto!important}
 }
 
+/* Shared simple expanded radar cards; display only, no effect on risk or transactions. */
+.radar-decision-card{padding:12px!important;margin:0 0 9px!important;border-radius:12px}
+.radar-decision-label{font-size:11px;font-weight:750;color:#a8bfdc}
+.radar-decision-title{font-size:18px;line-height:1.45;color:#f4f8ff;font-weight:800;overflow-wrap:anywhere;margin:4px 0 8px}
+.radar-decision-next{font-size:14px;line-height:1.5;color:#e7f2ff;overflow-wrap:anywhere;margin:7px 0}
+.radar-decision-next b{color:#a8c8f0;margin-right:5px}
+.radar-decision-why{font-size:12px;line-height:1.5;color:#b8cfe8;margin:6px 0 10px}
+.radar-decision-card .radar-decision-levels{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:0}
+.radar-decision-levels>div{min-width:0;padding:8px 6px;border:1px solid #3a506a;border-radius:8px;background:#18253c}
+.radar-decision-levels dt{font-size:11px;color:#a2bddb}
+.radar-decision-levels dd{font-size:15px;font-weight:800;color:#f7fafc;overflow-wrap:anywhere;margin:3px 0 0}
+.radar-decision-meta{display:block;font-size:11px;line-height:1.45;color:#9bb0cc;margin-top:8px}
+.holding-quick-controls{display:flex;gap:8px;flex-wrap:wrap;margin:5px 0 10px}
+.holding-quick-controls .holding-btn{flex:1;min-width:110px}
+.holding-mini-body>.radar-deep-dive{margin-top:5px}
+@media(max-width:640px){.radar-decision-title{font-size:17px}.radar-decision-levels dd{font-size:14px}}
+
 /* 進場雷達：先看重點，股票詳情按需展開。僅影響進場分類視覺。 */
 .entry-list-overview { padding:14px; border:1px solid #64748b55; border-radius:14px; background:#142039; display:grid; gap:6px; margin:8px 0 12px; }
 .entry-list-overview strong { font-size:19px; color:#e5edf9; }
@@ -5396,7 +5413,7 @@ h1 {
         const avg = Number(holding?.avg_cost);
         const pnl = holding && Number.isFinite(close) && Number.isFinite(avg) && avg > 0 ? ((close / avg) - 1) * 100 : null;
         const pnlLabel = displayQuote ? (quoteFinal ? '今日收盤損益' : '即時損益') : '模型收盤損益';
-        const holdingHtml = holding ? `<div class="holding-row"><span>📌 持有 ${Number(holding.quantity)}股｜成本 ${num(avg, 2)}${pnl == null ? '' : `｜${pnlLabel} ${pnl >= 0 ? '+' : ''}${num(pnl, 1)}%`}</span><div class="holding-actions"><button class="holding-btn" data-holding-edit="${esc(item.stock_id)}">部分賣出／調整</button><button class="holding-btn danger" data-holding-sell="${esc(item.stock_id)}">全部賣出</button></div></div>` : `<div class="holding-row holding-empty"><button class="holding-btn buy" data-holding-buy="${esc(item.stock_id)}">✅ 我已買進</button></div>`;
+        const holdingHtml = holding ? (options.hideHoldingControls === true ? '' : `<div class="holding-row"><span>📌 持有 ${Number(holding.quantity)}股｜成本 ${num(avg, 2)}${pnl == null ? '' : `｜${pnlLabel} ${pnl >= 0 ? '+' : ''}${num(pnl, 1)}%`}</span><div class="holding-actions"><button class="holding-btn" data-holding-edit="${esc(item.stock_id)}">部分賣出／調整</button><button class="holding-btn danger" data-holding-sell="${esc(item.stock_id)}">全部賣出</button></div></div>`) : `<div class="holding-row holding-empty"><button class="holding-btn buy" data-holding-buy="${esc(item.stock_id)}">✅ 我已買進</button></div>`;
         const holdingStatusHtml = holding ? holdingRulesHtml(item, displayQuote, options.compactHolding === true) : '';
         const holdingTodayHtml = holding ? holdingActionHtml(item, displayQuote) : '';
         const holdingDipHtml = holding ? holdingDipReviewHtml(item,displayQuote) : '';
@@ -6906,7 +6923,8 @@ h1 {
         const life=overnightLifecycleState(item);
         const origin=q?(quoteRecentForDisplay(q)?'C 今日即時成交':'C 今日前次成交（非即時）')
           :'S 完整日K收盤（非即時）';
-        const headline=item.__passive_monitor===true
+        const headline=zone==='holding'?String(action?.text||'續抱'):
+          item.__passive_monitor===true
           ?String(action?.text||passiveWatchDescription(item).label)
           :!recent?'⚪ 舊版模型待補算｜僅供觀察':
           zone==='entry'&&action?.phase==='confirmed'&&action?.buyable!==true
@@ -6938,16 +6956,20 @@ h1 {
           zone==='launch'?'發動前觀察，未確認進場':
           action?.phase==='confirmed'&&action?.buyable!==true?'正式買點未驗證':
           action?.phase==='trial'&&action?.trialable!==true?'小量試單未驗證':'買點仍以風控與當日有效成交為準';
-        return '<section class="live-banner holding-action stock-motion stock-motion-compact" data-motion-zone="'+esc(zone)+'">'
-          +'<div class="stock-motion-head"><b>📈 股票動向</b><strong>'+esc(headline)+'</strong></div>'
-          +'<div class="stock-motion-next">🔎 '+esc(radarShortAdvice(item,action))+'</div>'
-          +continuationRiskFullHtml(item)
-          +'<dl class="holding-quote-grid">'+fields.map(([k,v])=>
+        // One top-level action, one next step, three reference prices. Research stays folded.
+        const next=zone==='holding'&&String(action?.detail||'').trim()
+          ?String(action.detail).trim().slice(0,95):radarShortAdvice(item,action);
+        const levels=[[origin,fp(price)],['MA10',fp(ma10)],['MA20',fp(ma20)]];
+        return '<section class="live-banner holding-action stock-motion stock-motion-compact radar-decision-card" data-motion-zone="'+esc(zone)+'">'
+          +'<div class="radar-decision-label">① 目前判斷</div>'
+          +'<div class="radar-decision-title">'+esc(headline)+'</div>'
+          +'<div class="radar-decision-next"><b>② 下一步：</b>'+esc(next)+'</div>'
+          +'<div class="radar-decision-why">'+esc(structure)+'</div>'
+          +'<dl class="radar-decision-levels">'+levels.map(([k,v])=>
             '<div><dt>'+esc(k)+'</dt><dd>'+esc(v)+'</dd></div>').join('')+'</dl>'
-          +'<small class="model-only-note">'+esc(risk)+'｜S '+esc(String(item.as_of||'待更新'))
-          +(q?'｜C '+esc(String(q.quote_time||'-')):'｜非即時成交')+'</small>'
-          +(item.__observation_only===true&&String(m.shanchuan_v2?.mother_child?.lifecycle?.state||'').includes('low_broken')
-            ?'<small class="model-only-note">⚠️ 母子K低點已破，僅供風險複盤</small>':'')
+          +continuationRiskFullHtml(item)
+          +'<small class="radar-decision-meta">'+esc(risk)+'｜S '+esc(String(item.as_of||'待更新'))
+            +(q?'｜C '+esc(String(q.quote_time||'-')):'｜非即時成交')+'</small>'
           +'</section>';
       };
 
@@ -6987,7 +7009,16 @@ h1 {
               ${continuationRiskMiniHtml(item)}
               <span class="holding-mini-date">S 模型 ${esc(item.as_of||'待更新')}｜${live?'C 今日成交 '+esc(String(live.quote_time||'-')):'無今日有效成交（非即時價）'}</span>
             </summary>
-            <div class="holding-mini-body">${researchNote}${continuationRiskFullHtml(item)}${card(item,{quote:safeQuote})}</div>
+            <div class="holding-mini-body">
+              ${researchNote}
+              ${stockMovementHtml(item,live,'holding',{text:main,detail:holdingDisplay(item,live).reminder})}
+              ${holdingCloseWatchHtml(item,live)}
+              <div class="holding-quick-controls">
+                <button class="holding-btn" data-holding-edit="${esc(id)}">部分賣出／調整</button>
+                <button class="holding-btn danger" data-holding-sell="${esc(id)}">全部賣出</button>
+              </div>
+              ${radarDeepDetailsHtml(card(item,{quote:safeQuote,hideHoldingControls:true}))}
+            </div>
           </details></section>`;
       };
       const holdingPlaceholderHtml = (symbol, note = '完整模型載入中…', isError = false, quote = null, displayName = '') => {

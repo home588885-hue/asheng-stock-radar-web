@@ -166,7 +166,7 @@ test('Three zones and saved cross-day stocks have individual expandable movement
   assert.match(entryStock,/stockMovementHtml\(item,q,'entry'/);
   assert.match(holding,/details class="holding-mini" data-stock-key/);
   assert.match(holding,/holdingMa20DaysHtml\(item,live\)/);
-  assert.match(holding,/card\(item,\{quote:safeQuote\}\)/);
+  assert.match(holding,/card\(item,\{quote:safeQuote,hideHoldingControls:true\}\)/);
   assert.match(saved,/details class="entry-mini entry-saved-mini" data-stock-key/);
   assert.match(saved,/stockMovementHtml\(item,q,'entry'/);
   assert.match(html,/const entryExpandedIds = new Set\(\)/);
@@ -359,6 +359,24 @@ test('Latest S-signed continuation warning is read-only and appears in all radar
  assert.match(html,/const LOCKED_RULE_VERSION = '2026-10-06-ma10-20-60-v1'/);
  assert.match(html,/selectionMas: Object.freeze\(\['MA10','MA20','MA60'\]\)/);
  assert.match(html,/holdingQuoteRefreshMs: 180000/);
+});
+
+test('Expanded radar shows one clear action, next and three prices; holdings operations remain visible',()=>{
+ const body=section('      const stockMovementHtml = (item, quote = null, zone =','      // UI-only folding. The holdings Map remains verified by the server.');
+ for(const re of [/① 目前判斷/,/② 下一步/,/'MA10'/,/'MA20'/,/C 今日前次成交（非即時）/])
+   assert.match(body,re);
+ assert.doesNotMatch(body,/\bfetch\s*\(|getLiveQuotes\s*\(|setInterval\s*\(/);
+ const holding=section('      const holdingMiniHtml = (item, quote = null) => {','      const holdingPlaceholderHtml =');
+ assert.match(holding,/stockMovementHtml\(item,live,'holding'/);
+ assert.match(holding,/holdingCloseWatchHtml\(item,live\)/);
+ assert.match(holding,/data-holding-edit=/);
+ assert.match(holding,/data-holding-sell=/);
+ assert.match(holding,/radarDeepDetailsHtml\(card\(item,\{quote:safeQuote,hideHoldingControls:true\}\)\)/);
+ assert.match(html,/options\.hideHoldingControls === true/);
+ assert.match(html,/const LOCKED_RULE_VERSION = '2026-10-06-ma10-20-60-v1'/);
+ assert.match(html,/CONTINUATION_RISK_DISPLAY_VERSION='2026-10-20-continuation-risk-display-v1'/);
+ assert.match(section('      const entryCompactStock = (row, bucketLabel) => {','      const entryBucketHtml='),/radarDeepDetailsHtml\(v5MonitorCard/);
+ assert.match(section('      const launchMiniHtml = (item, quote = null) => {','      const launchListHtml ='),/radarDeepDetailsHtml\(/);
 });
 for(const g of html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi)){
   if(/\bsrc=/.test(g[1]))continue;
