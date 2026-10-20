@@ -180,14 +180,14 @@ test('Movement cards only display S or already-valid C trades and never grant a 
   const src=section('      const stockMovementHtml = ', '      // UI-only folding. The holdings Map remains verified by the server.');
   assert.doesNotMatch(src,/\bfetch\s*\(|getLiveQuotes\s*\(|\bsetInterval\s*\(/);
   const fn=new Function('bestTodayQuote','validTodayQuote','quoteRecentForDisplay','volumePriceState',
-    'chaseModelReady','unifiedRadarGeneration','overnightLifecycleState','chaseLimitNote','esc','num','radarShortAdvice',
+    'chaseModelReady','unifiedRadarGeneration','overnightLifecycleState','chaseLimitNote','esc','num','radarShortAdvice','continuationRiskFullHtml',
     src+'\nreturn stockMovementHtml;')(
     q=>q,q=>!!q&&q.has_today_trade===true&&q.price>0,q=>q.fresh===true,
     ()=>({tag:'🟢 量價改善',volumeRatio:1.2}),
     x=>x?.metrics?.chase_rule_version==='2026-10-20-bias-8-12-15-v1',
     ()=>true,()=>({label:'底部整理',tomorrow:'等量價轉強'}),()=>'+12%',
     x=>String(x).replace(/&/g,'&amp;').replace(/</g,'&lt;'),
-    (x,d=1)=>Number(x).toFixed(d),(item,action)=>action?.detail||'觀察量價');
+    (x,d=1)=>Number(x).toFixed(d),(item,action)=>action?.detail||'觀察量價',()=> '');
   const item={stock_id:'1605',as_of:'2026-10-19',metrics:{
     chase_rule_version:'2026-10-20-bias-8-12-15-v1',close:100,prev_close:98,
     current_volume_lots:1100,ma10:99,ma20:97,ma60:95}};
@@ -327,6 +327,38 @@ test('Passive lifecycle is visible in LAUNCH, ENTRY and tomorrow watchlist only'
   assert.match(html,/const activeTrial=originalAction\.phase==='trial'&&originalAction\.trialable===true/);
   assert.match(html,/const activeFormal=originalAction\.phase==='confirmed'&&originalAction\.buyable===true/);
   assert.doesNotMatch(source,/spring-swallow-scan-batch/);
+});
+test('Latest S-signed continuation warning is read-only and appears in all radar areas',()=>{
+ const src=section('      // 2026-10-20-continuation-risk-display-v1: read-only continuation warning','      const radarDeepDetailsHtml=html=>');
+ const funcs=new Function('unifiedRadarGeneration','num','esc',src+
+  '\nreturn {continuationRiskState,continuationRiskMiniHtml,continuationRiskFullHtml};')(
+   x=>x?.metrics?.signed===true,(n,d)=>Number(n).toFixed(d),x=>String(x));
+ const sample=(vol,up,signed=true)=>({as_of:'2026-10-19',
+  metrics:{signed,ma_cluster:{day_volume_ratio:vol,rising:{ma60:up}}}});
+ assert.equal(funcs.continuationRiskState(sample(2,false)).flag,true);
+ assert.equal(funcs.continuationRiskState(sample(1.99,false)).flag,false);
+ assert.equal(funcs.continuationRiskState(sample(2,true)).flag,false);
+ assert.equal(funcs.continuationRiskState(sample(2,false,false)).flag,false);
+ assert.equal(funcs.continuationRiskState({metrics:{signed:true}}).flag,false);
+ assert.match(funcs.continuationRiskMiniHtml(sample(2,false)),/續漲風險/);
+ assert.match(funcs.continuationRiskFullHtml(sample(2,false)),/第3個交易日/);
+ assert.match(funcs.continuationRiskFullHtml(sample(2,false)),/非自動賣出/);
+ for(const [a,b] of [
+ ['      const launchMiniHtml = (item, quote = null) => {','      const launchListHtml ='],
+ ['      const entryCompactStock = (row, bucketLabel) => {','      const entryBucketHtml='],
+ ['      const groupedEntrySavedWatches = visibleIds => {','      const simplifiedEntryHtml ='],
+ ['        const riskStudyHtml=','        const researchCard=info=>{'],
+ ['        const researchCard=info=>{','        // One stock per evening research panel.'],
+ ['      const holdingMiniHtml = (item, quote = null) => {','      const holdingPlaceholderHtml =']
+ ])assert.match(section(a,b),/continuationRiskMiniHtml\(item\)/);
+ assert.match(section('      const stockMovementHtml = (item, quote = null, zone =',
+      '      // UI-only folding. The holdings Map remains verified by the server.'),
+      /continuationRiskFullHtml\(item\)/);
+ assert.doesNotMatch(src,/\bfetch\s*\(|getLiveQuotes\s*\(|setInterval\s*\(/);
+ assert.match(html,/const CONTINUATION_RISK_DISPLAY_VERSION='2026-10-20-continuation-risk-display-v1'/);
+ assert.match(html,/const LOCKED_RULE_VERSION = '2026-10-06-ma10-20-60-v1'/);
+ assert.match(html,/selectionMas: Object.freeze\(\['MA10','MA20','MA60'\]\)/);
+ assert.match(html,/holdingQuoteRefreshMs: 180000/);
 });
 for(const g of html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi)){
   if(/\bsrc=/.test(g[1]))continue;

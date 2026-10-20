@@ -519,6 +519,8 @@ h1 {
 .radar-compact-summary .entry-mini-name small{font-size:13px;line-height:1.4}
 .radar-compact-summary .entry-mini-metrics{grid-column:1/-1;font-size:14px;line-height:1.4;margin:0}
 .radar-compact-summary .radar-compact-next{display:block;grid-column:1/-1;font-size:12px;line-height:1.45;color:#bdd5ed;overflow-wrap:anywhere}
+      .radar-continuation-risk{display:block;grid-column:1/-1;color:#fbd38d;font-size:12px;font-weight:650;line-height:1.5;overflow-wrap:anywhere}
+      .radar-continuation-risk-full{margin-top:7px;padding:6px 9px;border-left:3px solid #d99b37;color:#fbd38d;font-size:12px;line-height:1.5}
 .entry-research-summary.radar-compact-summary{position:relative;padding-right:0}
 .entry-research-summary.radar-compact-summary .entry-research-name{display:flex;align-items:baseline;justify-content:space-between;gap:6px 10px}
 .entry-research-summary.radar-compact-summary .entry-research-name span{font-size:12px;max-width:100%;line-height:1.35}
@@ -4257,6 +4259,7 @@ h1 {
             <span class="entry-mini-name"><strong>${esc(id)} ${esc(item.stock_name||'')}</strong><small>${esc(signal)}</small></span>
             <span class="entry-mini-expand">展開</span>
             <span class="entry-mini-metrics">${q?(quoteRecentForDisplay(q)?'今日即時成交':'今日前次成交'):'模型收盤（非即時）'} <b>${close>0?esc(num(close,2)):'-'}</b></span>
+            ${continuationRiskMiniHtml(item)}
             <span class="radar-compact-next">🔎 ${esc(radarShortAdvice(item,safeDisplayAction))}</span>
           </summary>
           <div class="entry-mini-full">${expanded}${(activeTrial||activeFormal)
@@ -4326,6 +4329,7 @@ h1 {
             +'<span class="entry-mini-name"><strong>'+esc(id+' '+name)+'</strong><small>'+esc(label)+'</small></span>'
             +'<span class="entry-mini-expand">展開</span>'
             +'<span class="entry-mini-metrics">'+esc(quoteLabel)+'｜S '+esc(day)+'</span>'
+            +continuationRiskMiniHtml(item)
             +'<span class="radar-compact-next">🔎 '+esc(next)+'</span></summary>'
             +'<div class="entry-mini-full">'+movement+(detail?radarDeepDetailsHtml(detail):'')+'</div></details>';
         };
@@ -4914,6 +4918,7 @@ h1 {
                 +esc(String(item.stock_id||'')+' '+String(item.stock_name||''))
                 +'</strong><span>🔴 暫不進場｜點開完整分析 ▾</span></div>'
                 +'<small>'+esc(quoteLabel)+'｜主要風險：'+esc(why)+'</small>'
+                +continuationRiskMiniHtml(item)
                 +'<small>🔎 '+esc(radarShortAdvice(item,{phase:'blocked'}))+'</small></summary>'
                 +researchExpandedCard(row,true)+'</details>';
             }).join('')+'</div>'
@@ -4935,6 +4940,7 @@ h1 {
             +'<div class="entry-research-name"><strong>'+esc(id+' '+String(item.stock_name||''))
             +'</strong><span>'+esc(stageLabel)+'</span></div>'
             +'<small>'+esc(compactPrice)+'</small>'
+            +continuationRiskMiniHtml(item)
             +'<small class="radar-compact-next">🔎 '+esc(nextFocus)+'</small>'
             +'<span class="radar-compact-arrow">展開 ▾</span></summary>'
             +researchExpandedCard(info.row,false)+'</details>';
@@ -6851,6 +6857,31 @@ h1 {
         if(m.ma_cluster?.breakout_detected_raw===true)return '確認突破後是否守穩';
         return '觀察量價、支撐與轉強';
       };
+      // 2026-10-20-continuation-risk-display-v1: read-only continuation warning from signed S daily-K data.
+      // No effect on C price, buy/sell decisions, or daily scan budget.
+      const CONTINUATION_RISK_DISPLAY_VERSION='2026-10-20-continuation-risk-display-v1';
+      const continuationRiskState=item=>{
+        const mc=item?.metrics?.ma_cluster||{};
+        const ratio=Number(mc.day_volume_ratio),ma60Up=mc.rising?.ma60;
+        if(!unifiedRadarGeneration(item)||!(ratio>0)||typeof ma60Up!=='boolean')
+          return {flag:false,reason:'新版完整日K資料未齊'};
+        if(ratio<2||ma60Up!==false)return {flag:false,reason:'未觸發此項警示'};
+        const day=String(item.as_of||'日期待確認');
+        return {flag:true,day,ratio,label:'⚠️ 續漲風險｜爆量但MA60未上揚',
+          detail:'S '+day+' 完整日K量比 '+num(ratio,2)+' 倍、MA60尚未上揚。'
+          +'歷史研究中續漲力較弱，試單後第3個交易日應留意突破位與MA10。'
+          +'此為提醒，非禁止試單、非自動賣出。'};
+      };
+      const continuationRiskMiniHtml=item=>{
+        const risk=continuationRiskState(item);
+        return risk.flag?'<span class="radar-continuation-risk" data-continuation-risk-version="'
+          +esc(CONTINUATION_RISK_DISPLAY_VERSION)+'">'+esc(risk.label)+'</span>':'';
+      };
+      const continuationRiskFullHtml=item=>{
+        const risk=continuationRiskState(item);
+        return risk.flag?'<div class="radar-continuation-risk-full" data-continuation-risk-version="'
+          +esc(CONTINUATION_RISK_DISPLAY_VERSION)+'">'+esc(risk.detail)+'</div>':'';
+      };
       const radarDeepDetailsHtml=html=>'<details class="radar-deep-dive">'
         +'<summary>📋 完整數據與山川風控（需要再看）</summary>'
         +'<div class="radar-deep-body">'+html+'</div></details>';
@@ -6910,6 +6941,7 @@ h1 {
         return '<section class="live-banner holding-action stock-motion stock-motion-compact" data-motion-zone="'+esc(zone)+'">'
           +'<div class="stock-motion-head"><b>📈 股票動向</b><strong>'+esc(headline)+'</strong></div>'
           +'<div class="stock-motion-next">🔎 '+esc(radarShortAdvice(item,action))+'</div>'
+          +continuationRiskFullHtml(item)
           +'<dl class="holding-quote-grid">'+fields.map(([k,v])=>
             '<div><dt>'+esc(k)+'</dt><dd>'+esc(v)+'</dd></div>').join('')+'</dl>'
           +'<small class="model-only-note">'+esc(risk)+'｜S '+esc(String(item.as_of||'待更新'))
@@ -6952,9 +6984,10 @@ h1 {
                 <span>${live?'今日成交':'模型收盤'} <b>${price!=null?esc(num(price,2)):'-'}</b></span>
                 <span>損益 <b class="${pnl==null?'':pnl>=0?'pnl-up':'pnl-down'}">${pnl==null?'-':(pnl>=0?'+':'')+esc(num(pnl,2))+'%'}</b></span></span>
               ${holdingMa20DaysHtml(item,live)}
+              ${continuationRiskMiniHtml(item)}
               <span class="holding-mini-date">S 模型 ${esc(item.as_of||'待更新')}｜${live?'C 今日成交 '+esc(String(live.quote_time||'-')):'無今日有效成交（非即時價）'}</span>
             </summary>
-            <div class="holding-mini-body">${researchNote}${card(item,{quote:safeQuote})}</div>
+            <div class="holding-mini-body">${researchNote}${continuationRiskFullHtml(item)}${card(item,{quote:safeQuote})}</div>
           </details></section>`;
       };
       const holdingPlaceholderHtml = (symbol, note = '完整模型載入中…', isError = false, quote = null, displayName = '') => {
@@ -7058,6 +7091,7 @@ h1 {
               <span class="entry-mini-name"><strong>${esc(id)} ${esc(item?.stock_name||'')}</strong><small>${esc(status)}</small></span>
               <span class="entry-mini-expand">展開</span>
               <span class="entry-mini-metrics">${source} <b>${price!=null&&price>0?esc(num(price,2)):'-'}</b></span>
+              ${continuationRiskMiniHtml(item)}
               <span class="radar-compact-next">🔎 ${esc(radarShortAdvice(item,{text:status}))}</span>
             </summary>
             <div class="entry-mini-full">${stockMovementHtml(item,q,'launch',{text:status,detail:overnightLifecycleState(item).tomorrow})}
