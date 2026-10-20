@@ -4603,6 +4603,13 @@ h1 {
           const item=row.item||{},m=item.metrics||{},a=row.action||{};
           const date=String(item.as_of||''),q=validTodayQuote(row.quote)?row.quote:null;
           row={...row,quote:q};
+          if(item.__passive_monitor===true){
+            const follow=passiveWatchDescription(item);
+            b.retained.push(safeRow(row,{key:'passive_breakout_watch',phase:'observe',
+              stale_model:true,rank:2,className:'scout',text:follow.label,
+              detail:follow.detail+'｜新版K線更新後核對，未重新確認不可試單或正式買'}));
+            return;
+          }
           if(item.__observation_only===true){
             b.retained.push(safeRow(row,{key:'historical_screen_only',phase:'observe',
               stale_model:true,rank:1,text:'⚪ 舊日K初選｜待新版確認（非買點）',
@@ -6749,13 +6756,17 @@ h1 {
         const life=overnightLifecycleState(item);
         const origin=q?(quoteRecentForDisplay(q)?'C 今日即時成交':'C 今日前次成交（非即時）')
           :'S 完整日K收盤（非即時）';
-        const headline=!recent?'⚪ 舊版模型待補算｜僅供觀察':
+        const headline=item.__passive_monitor===true
+          ?String(action?.text||passiveWatchDescription(item).label)
+          :!recent?'⚪ 舊版模型待補算｜僅供觀察':
           zone==='entry'&&action?.phase==='confirmed'&&action?.buyable!==true
             ?'⚪ 正式買點仍待盤中驗證｜目前不可直接買':
           zone==='entry'&&action?.phase==='trial'&&action?.trialable!==true
             ?'🟡 小量試單條件待確認｜目前非買點':
           String(action?.text||life.label||'⚪ 等待確認');
-        const reason=!recent?'新版完整日K尚未寫入，不得當作試單或正式買點':
+        const reason=item.__passive_monitor===true
+          ?passiveWatchDescription(item).detail+'｜未確認買進'
+          :!recent?'新版完整日K尚未寫入，不得當作試單或正式買點':
           zone==='launch'?'發動前仍是觀察名單，展開不代表可以買進':
           '進場資格另依當日有效成交、風控與存活確認，展開不會解鎖';
         const plan=String(action?.detail||life.tomorrow||'觀察量價及MA10／MA20／MA60');
@@ -7387,7 +7398,11 @@ h1 {
                   ||(recentModelForDisplay(row.item)
                     ?{key:'retained_model',rank:1,phase:'observe',buyable:false,trialable:false,
                       text:'📋 最近完整日K候選（非買點）',detail:'尚未取得目標交易日完整模型'}:null);
-                return { ...row, action: entrySnapshotState(row.item,baseAction,row.quote) };
+                return { ...row, action:row.item.__passive_monitor===true
+                  ?{key:'passive_breakout_watch',phase:'observe',rank:2,stale_model:true,
+                    buyable:false,trialable:false,...passiveWatchDescription(row.item),
+                    text:passiveWatchDescription(row.item).label}
+                  :entrySnapshotState(row.item,baseAction,row.quote) };
               })
               .filter(row => row.action)
               .sort((a,b)=>b.action.rank-a.action.rank);
@@ -7543,10 +7558,14 @@ h1 {
               String(item.as_of||'')<expectedSignalDataDate());
           }
           // Old source snapshots are independent research observations, never persisted as signed picks.
-          const observed=(launchData?.observation_entry||[])
+          const historical=(launchData?.observation_entry||[])
             .filter(item=>observationModelForDisplay(item)&&item.__observation_zone==='entry'
               &&!holdings.has(String(item.stock_id||''))).slice(0,10);
-          const ids=new Set(nextPool.map(item=>String(item.stock_id||'')));
+          const breakoutFollowups=(launchData?.observation_followups||[])
+              .filter(item=>item.__observation_kind==='extended_breakout_wait_pullback'
+                &&passiveRadarWatchEligible(item)).slice(0,5);
+            const observed=[...historical,...breakoutFollowups];
+            const ids=new Set(nextPool.map(item=>String(item.stock_id||'')));
           nextPool=[...nextPool,...observed.filter(item=>!ids.has(String(item.stock_id||'')))];
           liveBasePicks = nextPool;
           if(nextPool.some(recentModelForDisplay))writeEntryPoolCache(nextPool.filter(recentModelForDisplay));
@@ -7609,9 +7628,13 @@ h1 {
                 String(item.as_of||'')<expectedSignalDataDate());
             }
             // Old source snapshots are independent research observations, never persisted as signed picks.
-            const observed=(launchData?.observation_entry||[])
+            const historical=(launchData?.observation_entry||[])
               .filter(item=>observationModelForDisplay(item)&&item.__observation_zone==='entry'
                 &&!holdings.has(String(item.stock_id||''))).slice(0,10);
+            const breakoutFollowups=(launchData?.observation_followups||[])
+              .filter(item=>item.__observation_kind==='extended_breakout_wait_pullback'
+                &&passiveRadarWatchEligible(item)).slice(0,5);
+            const observed=[...historical,...breakoutFollowups];
             const ids=new Set(nextPool.map(item=>String(item.stock_id||'')));
             nextPool=[...nextPool,...observed.filter(item=>!ids.has(String(item.stock_id||'')))];
             liveBasePicks = nextPool;
