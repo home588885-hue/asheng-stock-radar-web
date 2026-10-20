@@ -1294,6 +1294,7 @@ h1 {
           <div class="c-quote-diagnostic" role="status"><span id="cQuoteStatus">C 報價狀態檢查中…</span><button type="button" id="cQuoteCheck">檢查／重試 C</button></div>
         </section>
                 <p id="timeInfoExplanation" class="time-info-explanation" hidden>管理員三區在 C 報價驗證成功時，交易時段約每3分鐘更新有效成交價；已買進12分鐘存活只統計12:50～13:20有效成交。MA10／MA20／MA60、KD、MACD 等完整模型仍以 S 的盤後完整日 K 更新為準。</p>
+        <section id="scoutPanel" class="box" hidden aria-label="第一根前哨與跨日追蹤"></section>
         <main class="list" id="list">
           <div class="box empty loading">正在載入候選股…</div>
         </main>
@@ -2051,6 +2052,89 @@ h1 {
             if(fresh.length)localStorage.setItem(ENTRY_POOL_CACHE_KEY, JSON.stringify({ saved_at:Date.now(), items:fresh }));
           }
         } catch (error) {}
+      };
+
+      // First-bar Shan-Chuan research shelf. Reuse the existing S snapshot
+      // response only; no new S/C calls, scan, trader signal, or holdings write.
+      const SCOUT_HISTORY_KEY='asheng-shanchuan-scout-v1-'+portfolioId;
+      const readScoutHistory=()=>{
+        try{
+          const data=JSON.parse(localStorage.getItem(SCOUT_HISTORY_KEY)||'[]');
+          if(!Array.isArray(data))return new Map();
+          return new Map(data.filter(x=>x&&/^\d{4}-\d{2}-\d{2}$/.test(String(x.as_of||''))
+            &&/^[0-9A-Z.-]{2,12}$/.test(String(x.stock_id||''))
+            &&['prelaunch','first_bar','followup','overheated','invalid'].includes(x.state)
+            &&Date.now()-Date.parse(String(x.as_of)+'T00:00:00Z')<14*86400000)
+            .slice(0,36).map(x=>[String(x.stock_id),x]));
+        }catch{return new Map();}
+      };
+      let scoutHistory=readScoutHistory();
+      const renderScoutPanel=()=>{
+        const panel=document.getElementById('scoutPanel');
+        if(!panel)return;
+        if(!['LAUNCH','ENTRY'].includes(stage)){panel.hidden=true;return;}
+        const day=expectedSignalDataDate();
+        const records=[...scoutHistory.values()].filter(x=>!holdings.has(String(x.stock_id||'')));
+        if(!records.length){panel.hidden=true;return;}
+        const active=records.filter(x=>!['invalid','overheated'].includes(x.state))
+          .sort((a,b)=>String(b.as_of).localeCompare(String(a.as_of))||b.score-a.score);
+        const archive=records.filter(x=>['invalid','overheated'].includes(x.state))
+          .sort((a,b)=>String(b.as_of).localeCompare(String(a.as_of))||b.score-a.score);
+        const open=!!panel.querySelector('details')?.open;
+        const itemHtml=x=>{
+          const old=String(x.as_of)!==day;
+          const label=old?'⚪ 待新版K線補算｜前次 '+x.label:x.label;
+          const price=Number(x.close)>0?Number(x.close).toFixed(2):'－';
+          const gap=Number.isFinite(x.bias)?(x.bias>=0?'+':'')+x.bias.toFixed(2)+'%':'－';
+          return '<div style="padding:8px 0;border-bottom:1px solid var(--line,rgba(120,120,120,.2));font-size:13px;line-height:1.6">'
+            +'<strong>'+esc(x.stock_id+' '+x.stock_name)+'</strong>｜'+esc(label)
+            +'<div>模型 '+esc(x.as_of)+'｜S收盤 '+esc(price)+'｜距MA20 '+esc(gap)
+            +(x.first_bar_date?'｜第一根 '+esc(x.first_bar_date):'')
+            +'｜'+esc(x.reason||'等新版核對')+'</div></div>';
+        };
+        const html='<details'+(open?' open':'')+'><summary style="cursor:pointer;font-weight:650">'
+          +'🌱 第一根前哨 '+active.length+' 檔｜📋 過熱／失效 '+archive.length+' 檔（展開）</summary>'
+          +'<p style="font-size:12px;margin:8px 0">山川箱型／母子K與均線轉強的研究觀察；不是橘色或綠色買點。'
+          +'未更新日K只能等待補算。跨日歷史保存在此瀏覽器，不額外抓S或C。</p>'
+          +(active.length?'<strong>持續觀察</strong>'+active.map(itemHtml).join(''):'')
+          +(archive.length?'<div style="font-weight:650;margin-top:10px">過熱／失效紀錄（禁止以此買進）</div>'+archive.map(itemHtml).join(''):'')
+          +'</details>';
+        if(panel.innerHTML!==html)panel.innerHTML=html;
+        panel.hidden=false;
+      };
+      const ingestScoutObservations=rows=>{
+        if(!Array.isArray(rows))return;
+        let changed=false;
+        for(const x of rows){
+          if(x?.__scout_only!==true||x.__scout_version!=='2026-10-20-shanchuan-v1')continue;
+          const id=String(x.stock_id||''),day=String(x.as_of||''),state=String(x.__scout_state||'');
+          if(!/^[0-9A-Z.-]{2,12}$/.test(id)||!/^\d{4}-\d{2}-\d{2}$/.test(day)
+            ||!['prelaunch','first_bar','followup','overheated','invalid'].includes(state))continue;
+          const prev=scoutHistory.get(id);
+          if(prev&&String(prev.as_of)>day)continue;
+          const row={stock_id:id,stock_name:String(x.stock_name||id).slice(0,64),
+            as_of:day,state,label:String(x.__scout_label||'').slice(0,90),
+            reason:String(x.__scout_reason||'').slice(0,240),
+            first_bar_date:String(x.__scout_first_date||prev?.first_bar_date||'').slice(0,10),
+            seen_as_of:String(prev?.seen_as_of||day),close:Number(x.close)||null,
+            bias:Number.isFinite(Number(x.__scout_bias20))?Number(x.__scout_bias20):null,
+            score:Number(x.score)||0};
+          if(JSON.stringify(prev)!==JSON.stringify(row)){scoutHistory.set(id,row);changed=true;}
+        }
+        // Missing coverage never silently invalidates or removes the old watch.
+        for(const [id,row] of scoutHistory){
+          const age=Date.now()-Date.parse(String(row.as_of)+'T00:00:00Z');
+          if(holdings.has(id)||!Number.isFinite(age)||age>=14*86400000){
+            scoutHistory.delete(id);changed=true;
+          }
+        }
+        if(changed){
+          const data=[...scoutHistory.values()]
+            .sort((a,b)=>String(b.as_of).localeCompare(String(a.as_of))||b.score-a.score).slice(0,36);
+          scoutHistory=new Map(data.map(x=>[x.stock_id,x]));
+          try{localStorage.setItem(SCOUT_HISTORY_KEY,JSON.stringify(data));}catch{}
+        }
+        renderScoutPanel();
       };
       const ENTRY_QUOTE_REFRESH_MS = LOCKED_SETTINGS.entryQuoteRefreshMs;
       const ENTRY_POOL_REFRESH_MS = LOCKED_SETTINGS.entryPoolRefreshMs;
@@ -5543,6 +5627,7 @@ h1 {
         };
       };
       async function load() {
+        renderScoutPanel();
         // Single active routes. Legacy inline ENTRY/LIVE/HOLDING branches below
         // are no longer reachable; only the current shared snapshot/quote path runs.
         if(stage==='ENTRY'||stage==='LIVE')return loadLiveMonitor();
@@ -5590,6 +5675,7 @@ h1 {
               ||launchData.quality_screen!=='2026-10-16-unified-shanchuan-generation-v3')
               throw new Error('發動前來源不是最新山川模型，拒絕混入舊版');
             applyGlobalHeaderSummary(launchData);
+            ingestScoutObservations(launchData.scout_observations);
             lastLaunchModelReadAt = Date.now();
             let launchPicks = (launchData.picks || []).filter(recentModelForDisplay);
             const launchObservation=(launchData.observation_launch||[])
@@ -7644,6 +7730,7 @@ h1 {
         };
         const v5Data=unwrap(settled[0]),launchData=unwrap(settled[1]);
         if(launchData){
+          ingestScoutObservations(launchData.scout_observations);
           overnightPassiveResearch=(launchData.observation_followups||[])
             .filter(item=>item.__observation_kind==='ma10_pending_ma20_supported'
               &&passiveRadarWatchEligible(item)).slice(0,5);
@@ -7694,6 +7781,7 @@ h1 {
       }
 
       async function loadLiveMonitor() {
+        renderScoutPanel();
         const navToken = navigationSeq;
         const requestedStage = stage;
         if (liveTimer) clearInterval(liveTimer);
@@ -8301,6 +8389,7 @@ h1 {
           button.classList.add('on');
           moneyFlowSectorViewActive = false;
           stage = targetStage;
+          renderScoutPanel();
           try { localStorage.setItem(LAST_RADAR_STAGE_KEY, stage); } catch (error) {}
           updateEntryPhase();
           $('#stockSearch').value = '';
