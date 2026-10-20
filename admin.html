@@ -4290,7 +4290,7 @@ h1 {
         const rawAction=String(row.action?.text||'').replace(/^[^\\p{L}\\p{N}]+/u,'').split('｜')[0];
         const actionText=rawAction||bucketLabel;
         const tradeContext=(row.action?.phase==='blocked'||bucketLabel.includes('避開'))?'風險警示':
-           q ? (quoteRecentForDisplay(q)?'C 當日即時成交 ':'今日前次成交（非即時） ')+String(q.quote_time||'')+'｜日K模型未重算' : '盤後模型觀察，非即時買點';
+           q ? quoteDisplayState(q,item).label+'｜'+quoteDisplayState(q,item).moment+'｜日K模型未重算' : '盤後模型觀察，非即時買點';
         const originalAction=row.action||{};
         const activeTrial=originalAction.phase==='trial'&&originalAction.trialable===true&&quoteFreshForTrial(q);
         const activeFormal=originalAction.phase==='confirmed'&&originalAction.buyable===true
@@ -4325,7 +4325,7 @@ h1 {
           <summary class="entry-mini-summary radar-compact-summary">
             <span class="entry-mini-name"><strong>${esc(id)} ${esc(item.stock_name||'')}</strong><small>${esc(signal)}</small></span>
             <span class="entry-mini-expand">展開</span>
-            <span class="entry-mini-metrics">${q?(quoteRecentForDisplay(q)?'今日即時成交':'今日前次成交'):'模型收盤（非即時）'} <b>${close>0?esc(num(close,2)):'-'}</b></span>
+            <span class="entry-mini-metrics">${esc(quoteDisplayState(q,item).label)} <b>${close>0?esc(num(close,2)):'-'}</b><small>${q?'｜'+esc(quoteDisplayState(q,item).moment):'｜S '+esc(String(item.as_of||'待更新'))}</small></span>
             ${continuationRiskMiniHtml(item)}
             <span class="radar-compact-next">🔎 ${esc(radarShortAdvice(item,safeDisplayAction))}</span>
           </summary>
@@ -4387,9 +4387,8 @@ h1 {
           const movement=existing?stockMovementHtml(item,q,'entry',safeAction)
             :'<div class="box empty">這檔追蹤紀錄仍在，尚無完整日K卡片資料；等待原排程補算。</div>';
           const detail=existing?v5MonitorCard(item,q,safeAction):'';
-          const quoteLabel=validTodayQuote(q)
-            ?(quoteRecentForDisplay(q)?'C 今日即時成交 ':'C 今日前次成交 ')+num(Number(q.price),2)
-            :'模型收盤 '+(Number.isFinite(close)&&close>0?num(close,2):'-')+'｜非即時';
+          const s=quoteDisplayState(q,item);
+          const quoteLabel=s.label+' '+(validTodayQuote(q)?num(Number(q.price),2):Number.isFinite(close)&&close>0?num(close,2):'-')+(s.today_trade?'｜'+s.moment:'');
           const next=existing?radarShortAdvice(item,{detail:note}):'等待完整日K回補';
           return '<details class="entry-mini entry-saved-mini" data-stock-key="'+esc(id)+'" data-tracking-symbol="'+esc(id)+'"'+selected+'>'
             +'<summary class="entry-mini-summary radar-compact-summary">'
@@ -4970,9 +4969,8 @@ h1 {
               const item=row.item,m=item.metrics||{},close=Number(m.close),ma20=Number(m.ma20);
               const gap=close>0&&ma20>0?(close/ma20-1)*100:null;
               const q=bestTodayQuote(row.quote,String(item.stock_id||''));
-              const quoteLabel=validTodayQuote(q)
-                ?(quoteRecentForDisplay(q)?'C 今日即時成交 ':'C 今日前次成交 ')+num(Number(q.price),2)
-                :'模型收盤 '+(close>0?num(close,2):'-')+'｜非即時';
+              const s=quoteDisplayState(q,item);
+              const quoteLabel=s.label+' '+(validTodayQuote(q)?num(Number(q.price),2):close>0?num(close,2):'-')+(s.today_trade?'｜'+s.moment:'');
               const reason=String(row.action?.detail||row.action?.text||'原進場風控尚未通過');
               const why=chaseOver(item,close)?'已超過'+chaseLimitNote(item)
                 :Number(m.current_volume_lots)<1000?'量能不足1000張'
@@ -4995,9 +4993,8 @@ h1 {
           const phaseInfo=overnightLifecycleState(item);
           const candidateQuote=bestTodayQuote(info.row?.quote,id);
           const live=validTodayQuote(candidateQuote)?candidateQuote:null;
-          const compactPrice=live
-            ?(quoteRecentForDisplay(live)?'C 今日即時成交 ':'C 今日前次成交 ')+num(Number(live.price),2)
-            :'模型收盤 '+(close>0?num(close,2):'-')+'｜非即時';
+          const s=quoteDisplayState(live,item);
+          const compactPrice=s.label+' '+(live?num(Number(live.price),2):close>0?num(close,2):'-')+(s.today_trade?'｜'+s.moment:'');
           const stageLabel=item.__passive_monitor===true?passiveWatchDescription(item).label:phaseInfo.label;
           const nextFocus=radarShortAdvice(item,{key:phaseInfo.key,
             detail:item.__passive_monitor===true?passiveWatchDescription(item).detail:phaseInfo.tomorrow});
@@ -5323,20 +5320,30 @@ h1 {
         return '<div class="volume-price-read"><span class="flow-tag '+esc(s.tone)+'">'+esc(s.tag)+'</span><span class="flow-read-note">'+esc(s.note)+'</span><small>'+esc(ratioText+'｜'+positionText)+'</small></div>';
       };
 
+      // Unified display-only C/S quote source and real trade timestamp.
       const quoteDisplayState = (quote, item = null) => {
-        const q = validTodayQuote(quote) ? quote : null;
-        if (q) {
-          const qt = String(q.quote_time || '');
-          const fresh=quoteRecentForDisplay(q);
-          const label=fresh?'C 當日即時成交'
-            :q.post_close_checked===true?'C 今日最後有效成交（非即時）'
-            :qt >= '13:30:00' ? '今日最後成交（待收盤確認）'
-            :'今日前次成交（非即時）';
-          return { label, value:Number(q.price), waiting:false, time:qt||'-', date:String(q.quote_date||''), live:fresh, today_trade:true };
+        const q=validTodayQuote(quote)?quote:null;
+        if(q){
+          const qt=String(q.quote_time||''),rawDate=String(q.quote_date||'').replace(/[^0-9]/g,'');
+          const day=rawDate.length===8?rawDate.slice(0,4)+'/'+rawDate.slice(4,6)+'/'+rawDate.slice(6,8):'日期待確認';
+          const m=qt.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+          const moment=day+' '+(m?m[1].padStart(2,'0')+':'+m[2]:'時間待確認');
+          const fresh=quoteRecentForDisplay(q),market=taipeiMarketState();
+          const sameDay=rawDate===todayQuoteDate();
+          const afterClose=market.weekday&&!market.open&&market.totalMinutes>=810;
+          const finalTrade=afterClose&&(q.post_close_checked===true||qt>='13:30:00');
+          const label=fresh?'C 今日即時成交'
+            :sameDay&&finalTrade?'C 今日最後有效成交（盤後非即時）'
+            :sameDay?'C 今日前次成交（非即時）'
+            :'C '+day+' 有效成交（非即時）';
+          return {label,value:Number(q.price),waiting:false,time:qt||'-',
+            date:rawDate,moment,live:fresh,today_trade:true};
         }
-        const fallback = Number(item?.metrics?.close);
-        const fallbackDate = String(item?.as_of || '');
-        if (Number.isFinite(fallback) && fallback > 0) return { label:'最近收盤', value:fallback, waiting:false, text:num(fallback,2), time:'非今日即時', date:fallbackDate, live:false };
+        const fallback=Number(item?.metrics?.close),fallbackDate=String(item?.as_of||'');
+        if(Number.isFinite(fallback)&&fallback>0)return {
+          label:'S 模型收盤（非即時）',value:fallback,waiting:false,text:num(fallback,2),
+          time:'非即時',date:fallbackDate,moment:'',live:false
+        };
         const market = taipeiMarketState();
         if (!market.weekday) return { label:'休市', value:null, waiting:true, text:'暫無最近成交價', time:'休市', date:'', live:false };
         if (market.totalMinutes < 540) return { label:'盤前', value:null, waiting:true, text:'暫無最近成交價', time:'盤前待機', date:'', live:false };
@@ -5389,15 +5396,12 @@ h1 {
         return p.month + '/' + p.day + ' ' + p.hour + ':' + p.minute;
       };
       const timeInfoHtml = (item, quote) => {
-        const md = timeMonthDay(item?.as_of);
-        const scan = timeRecomputed(item?.scanned_at);
-        const isToday = validTodayQuote(quote) && String(quote.quote_date || '').replace(/[^0-9]/g,'') === todayQuoteDate();
-        const qt = isToday ? String(quote.quote_time || '').match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/) : null;
-        const live = qt ? timeMonthDay(quote.quote_date) + ' ' + qt[1].padStart(2,'0') + ':' + qt[2] : '';
-        return `<div class="stock-time-info"><span class="model-time">技術模型基準：${md ? esc(md) + ' 收盤資料' : '待模型資料'}</span><span class="scan-time">系統最新重算：${esc(scan || '待重算資料')}</span><span class="quote-time">即時成交更新：${esc(live || '尚無今日有效成交時間')}</span></div>`;
+        const md=String(item?.as_of||''),scan=timeRecomputed(item?.scanned_at);
+        const state=quoteDisplayState(quote,item);
+        const moment=state.today_trade?state.moment+(state.live?'｜盤中即時':'｜非即時')
+          :'沒有有效 C 成交，顯示 S 模型收盤';
+        return `<div class="stock-time-info"><span class="model-time">技術模型基準：${esc(md||'待更新')} 完整日K</span><span class="scan-time">系統最新重算：${esc(scan||'待重算資料')}</span><span class="quote-time">C 成交時間：${esc(moment)}</span></div>`;
       };
-
-
       function card(item, options = {}) {
         const metrics = item.metrics || {};
         const displayQuote = bestTodayQuote(options.quote, item?.stock_id);
@@ -6981,8 +6985,8 @@ h1 {
         const boxTop=Number(box.top),boxBottom=Number(box.bottom);
         const recent=chaseModelReady(item)&&unifiedRadarGeneration(item);
         const life=overnightLifecycleState(item);
-        const origin=q?(quoteRecentForDisplay(q)?'C 今日即時成交':'C 今日前次成交（非即時）')
-          :'S 完整日K收盤（非即時）';
+        const priceSource=quoteDisplayState(q,item);
+        const origin=priceSource.label;
         const headline=zone==='holding'?String(action?.text||'續抱'):
           item.__passive_monitor===true
           ?String(action?.text||passiveWatchDescription(item).label)
@@ -7029,7 +7033,7 @@ h1 {
             '<div><dt>'+esc(k)+'</dt><dd>'+esc(v)+'</dd></div>').join('')+'</dl>'
           +continuationRiskFullHtml(item)
           +'<small class="radar-decision-meta">'+esc(risk)+'｜S '+esc(String(item.as_of||'待更新'))
-            +(q?'｜C '+esc(String(q.quote_time||'-')):'｜非即時成交')+'</small>'
+            +(q?'｜C 成交時間 '+esc(priceSource.moment)+'｜'+(priceSource.live?'盤中即時':'非即時'):'｜無有效 C 成交，S 模型價')+'</small>'
           +'</section>';
       };
 
@@ -7063,11 +7067,11 @@ h1 {
               <span class="holding-mini-action ${tone}">${esc(main)}</span>
               <span class="holding-mini-expand">股票動向</span>
               <span class="holding-mini-stats"><span>成本 <b>${cost>0?esc(num(cost,2)):'-'}</b></span>
-                <span>${live?'今日成交':'模型收盤'} <b>${price!=null?esc(num(price,2)):'-'}</b></span>
+                <span>${esc(quoteDisplayState(live,item).label)} <b>${price!=null?esc(num(price,2)):'-'}</b></span>
                 <span>損益 <b class="${pnl==null?'':pnl>=0?'pnl-up':'pnl-down'}">${pnl==null?'-':(pnl>=0?'+':'')+esc(num(pnl,2))+'%'}</b></span></span>
               ${holdingMa20DaysHtml(item,live)}
               ${continuationRiskMiniHtml(item)}
-              <span class="holding-mini-date">S 模型 ${esc(item.as_of||'待更新')}｜${live?'C 今日成交 '+esc(String(live.quote_time||'-')):'無今日有效成交（非即時價）'}</span>
+              <span class="holding-mini-date">S 模型 ${esc(item.as_of||'待更新')}｜${live?'C 成交時間 '+esc(quoteDisplayState(live,item).moment)+(quoteDisplayState(live,item).live?'｜盤中即時':'｜非即時'):'無有效 C 成交，非即時模型價'}</span>
             </summary>
             <div class="holding-mini-body">
               ${researchNote}
@@ -7164,8 +7168,8 @@ h1 {
           :lowBase?'🌱 底部蓄勢｜提前觀察，尚無買點'
           :risk?.kind==='incomplete'?'🟡 均線結構未齊'
           :String(launchState?.label||'🟠 發動前｜等確認');
-        const source=q?(quoteRecentForDisplay(q)?'C 當日即時成交':'今日前次成交（非即時）'):'盤後模型收盤（非即時）';
-        const quoteTime=q?'｜報價 '+String(q.quote_time||'時間待確認'):'｜非即時價';
+        const source=quoteDisplayState(q,item).label;
+        const quoteTime=q?'｜成交 '+quoteDisplayState(q,item).moment:'｜S '+String(item.as_of||'待更新');
         const greenMini=item.__passive_monitor===true||item.__observation_only===true?'':greenDipMiniHtml(item,q);
         const selected=launchExpandedIds.has(id)?' open':'';
         const detailed=item?.__passive_monitor===true
@@ -7181,7 +7185,7 @@ h1 {
             <summary class="entry-mini-summary radar-compact-summary" aria-label="${esc(id+' '+String(item?.stock_name||'')+' '+status)}">
               <span class="entry-mini-name"><strong>${esc(id)} ${esc(item?.stock_name||'')}</strong><small>${esc(status)}</small></span>
               <span class="entry-mini-expand">展開</span>
-              <span class="entry-mini-metrics">${source} <b>${price!=null&&price>0?esc(num(price,2)):'-'}</b></span>
+              <span class="entry-mini-metrics">${esc(source)} <b>${price!=null&&price>0?esc(num(price,2)):'-'}</b><small>${esc(quoteTime)}</small></span>
               ${continuationRiskMiniHtml(item)}
               <span class="radar-compact-next">🔎 ${esc(radarShortAdvice(item,{text:status}))}</span>
             </summary>

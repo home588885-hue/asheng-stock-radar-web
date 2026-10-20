@@ -180,14 +180,14 @@ test('Movement cards only display S or already-valid C trades and never grant a 
   const src=section('      const stockMovementHtml = ', '      // UI-only folding. The holdings Map remains verified by the server.');
   assert.doesNotMatch(src,/\bfetch\s*\(|getLiveQuotes\s*\(|\bsetInterval\s*\(/);
   const fn=new Function('bestTodayQuote','validTodayQuote','quoteRecentForDisplay','volumePriceState',
-    'chaseModelReady','unifiedRadarGeneration','overnightLifecycleState','chaseLimitNote','esc','num','radarShortAdvice','continuationRiskFullHtml',
+    'chaseModelReady','unifiedRadarGeneration','overnightLifecycleState','chaseLimitNote','esc','num','radarShortAdvice','continuationRiskFullHtml','quoteDisplayState',
     src+'\nreturn stockMovementHtml;')(
     q=>q,q=>!!q&&q.has_today_trade===true&&q.price>0,q=>q.fresh===true,
     ()=>({tag:'🟢 量價改善',volumeRatio:1.2}),
     x=>x?.metrics?.chase_rule_version==='2026-10-20-bias-8-12-15-v1',
     ()=>true,()=>({label:'底部整理',tomorrow:'等量價轉強'}),()=>'+12%',
     x=>String(x).replace(/&/g,'&amp;').replace(/</g,'&lt;'),
-    (x,d=1)=>Number(x).toFixed(d),(item,action)=>action?.detail||'觀察量價',()=> '');
+    (x,d=1)=>Number(x).toFixed(d),(item,action)=>action?.detail||'觀察量價',()=> '',q=>({label:q?'C 今日前次成交（非即時）':'S 完整日K收盤（非即時）',moment:'2026/10/20 13:30',live:false}));
   const item={stock_id:'1605',as_of:'2026-10-19',metrics:{
     chase_rule_version:'2026-10-20-bias-8-12-15-v1',close:100,prev_close:98,
     current_volume_lots:1100,ma10:99,ma20:97,ma60:95}};
@@ -249,8 +249,8 @@ test('Signed saved and research watch stocks share existing C quote batch',()=>{
   assert.match(live,/extras\.length&&marketBridgeReady\(\)&&cQuoteReadWindow\(\)/);
   assert.match(saved,/bestTodayQuote\(null,id\)/);
   assert.match(saved,/stockMovementHtml\(item,q,'entry'/);
-  assert.match(saved,/C 今日即時成交/);
-  assert.match(saved,/C 今日前次成交/);
+  assert.match(saved,/quoteDisplayState\(q,item\)/);
+  assert.match(saved,/s.label/);
   assert.doesNotMatch(follow,/\bfetch\s*\(|setInterval\s*\(/);
 });
 test('Tomorrow watchlist reuses valid C quotes in summary and expanded data',()=>{
@@ -260,10 +260,10 @@ test('Tomorrow watchlist reuses valid C quotes in summary and expanded data',()=
   assert.match(expanded,/stockMovementHtml\(item,validatedQuote,'entry',studyAction\)/);
   assert.match(expanded,/v5MonitorCard\(item,validatedQuote,studyAction\)/);
   assert.match(compact,/bestTodayQuote\(info\.row\?\.quote,id\)/);
-  assert.match(compact,/quoteRecentForDisplay\(live\)/);
-  assert.match(compact,/C 今日即時成交/);
-  assert.match(compact,/C 今日前次成交/);
-  assert.match(compact,/模型收盤/);
+  assert.match(compact,/quoteDisplayState\(live,item\)/);
+  assert.match(compact,/s.label/);
+  assert.match(compact,/s.moment/);
+  assert.match(compact,/close>0/);
   assert.doesNotMatch(expanded+compact,/\bfetch\s*\(|getLiveQuotes\s*\(|\bsetInterval\s*\(/);
 });
 test('Tomorrow watchlist does not repeat 4960 and 6925 in passive tracking',()=>{
@@ -363,7 +363,7 @@ test('Latest S-signed continuation warning is read-only and appears in all radar
 
 test('Expanded radar shows one clear action, next and three prices; holdings operations remain visible',()=>{
  const body=section('      const stockMovementHtml = (item, quote = null, zone =','      // UI-only folding. The holdings Map remains verified by the server.');
- for(const re of [/① 目前判斷/,/② 下一步/,/'MA10'/,/'MA20'/,/C 今日前次成交（非即時）/])
+ for(const re of [/① 目前判斷/,/② 下一步/,/'MA10'/,/'MA20'/,/priceSource.label/])
    assert.match(body,re);
  assert.doesNotMatch(body,/\bfetch\s*\(|getLiveQuotes\s*\(|setInterval\s*\(/);
  const holding=section('      const holdingMiniHtml = (item, quote = null) => {','      const holdingPlaceholderHtml =');
@@ -445,6 +445,37 @@ test('All three zones use identical two-click expanded cards with accessible tec
  assert.match(html,/const LOCKED_RULE_VERSION = '2026-10-06-ma10-20-60-v1'/);
  assert.match(html,/holdingQuoteRefreshMs: 180000/);
  assert.doesNotMatch(component,/fetch\s*\(|setInterval\s*\(|getLiveQuotes\s*\(/);
+});
+
+test('All three zones show actual C trade time, never falsely live after the close',()=>{
+ const s=section('      // Unified display-only C/S quote source','      const companyProfileState =');
+ const fn=new Function('validTodayQuote','quoteRecentForDisplay','todayQuoteDate','taipeiMarketState','num',
+  s+'return quoteDisplayState;')(
+    q=>q?.has_today_trade===true&&Number(q.price)>0,
+    q=>q?.fresh===true,()=>'20261020',()=>({weekday:true,open:false,totalMinutes:967}),
+    (n,d=2)=>Number(n).toFixed(d));
+ const item={as_of:'2026-10-19',metrics:{close:37.55}};
+ const q={has_today_trade:true,quote_date:'20261020',quote_time:'13:30:00',price:37};
+ assert.equal(fn(q,item).value,37);
+ assert.equal(fn(q,item).moment,'2026/10/20 13:30');
+ assert.equal(fn(q,item).live,false);
+ assert.match(fn(q,item).label,/今日最後有效成交（盤後非即時）/);
+ assert.match(fn({...q,quote_time:'12:20:00'},item).label,/今日前次成交（非即時）/);
+ assert.match(fn(null,item).label,/S 模型收盤（非即時）/);
+ assert.equal(fn(null,item).value,37.55);
+ const timing=section('      const timeInfoHtml = (item, quote) => {','      function card(item, options = {}) {');
+ assert.match(timing,/C 成交時間：/);
+ assert.doesNotMatch(timing,/即時成交更新：/);
+ for(const [a,b] of [
+ ['      const launchMiniHtml = (item, quote = null) => {','      const launchListHtml ='],
+ ['      const entryCompactStock = (row, bucketLabel) => {','      const entryBucketHtml='],
+ ['        const researchCard=info=>{','        // One stock per evening research panel.'],
+ ['      const holdingMiniHtml = (item, quote = null) => {','      const holdingPlaceholderHtml ='],
+ ['      const stockMovementHtml = (item, quote = null, zone =','      // UI-only folding. The holdings Map remains verified by the server.']
+ ])assert.match(section(a,b),/quoteDisplayState\(/);
+ assert.match(html,/const LOCKED_RULE_VERSION = '2026-10-06-ma10-20-60-v1'/);
+ assert.match(html,/holdingQuoteRefreshMs: 180000/);
+ assert.doesNotMatch(s,/fetch\s*\(|getLiveQuotes\s*\(|setInterval\s*\(/);
 });
 for(const g of html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi)){
   if(/\bsrc=/.test(g[1]))continue;
