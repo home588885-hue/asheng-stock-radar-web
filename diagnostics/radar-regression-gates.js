@@ -206,6 +206,51 @@ test('Movement cards only display S or already-valid C trades and never grant a 
   assert.match(fn(item,null,'entry',{phase:'confirmed',buyable:false,text:'🟢 正式買點'}),/目前不可直接買/);
   assert.match(fn(item,null,'entry',{phase:'trial',trialable:false,text:'🟠 可小量試單'}),/目前非買點/);
 });
+
+test('3062 and 4960 track support/overextension without a fabricated buy',()=>{
+  const source=section('      const passiveRadarWatchEligible=item=>{','      const displayModelWarning=item=>');
+  const held=new Map();
+  const {passiveRadarWatchEligible:eligible,passiveWatchDescription:describe}=
+    new Function('unifiedRadarGeneration','expectedSignalDataDate','holdings','num','chaseLimitNote',
+      source+'\nreturn {passiveRadarWatchEligible,passiveWatchDescription};')(
+      ()=>true,()=>'2026-10-20',held,(x,d=1)=>Number(x).toFixed(d),()=>'+12%');
+  const base={as_of:'2026-10-19',__passive_monitor:true,__observation_only:true,metrics:{
+    close:22.35,ma10:22.37,ma20:22.27,ma60:21.1,current_volume_lots:2948,avg_volume_20_lots:2714,
+    shanchuan_v2:{mother_child:{lifecycle:{state:'formed'}}},
+    entry_candle_guard:{weak_after_breakout:false}}};
+  const han={...base,stock_id:'3062',__observation_kind:'ma10_pending_ma20_supported'};
+  assert.equal(eligible(han),true);
+  assert.match(describe(han).label,/MA10 待站穩/);
+  assert.match(describe(han).label,/非買點/);
+  const mei={...base,stock_id:'4960',__observation_kind:'extended_breakout_wait_pullback',
+    metrics:{...base.metrics,close:27.8,ma10:24.44,ma20:23.88,ma60:21.79,
+      current_volume_lots:19185,avg_volume_20_lots:7000,
+      launch_sequence:{first_signal_date:'2026-10-19'}}};
+  assert.equal(eligible(mei),true);
+  assert.match(describe(mei).label,/等回踩/);
+  assert.match(describe(mei).detail,/不追價/);
+  const broken={...han,metrics:{...han.metrics,shanchuan_v2:{mother_child:{lifecycle:{state:'mother_low_broken'}}}}};
+  assert.equal(eligible(broken),false);
+  assert.equal(eligible({...han,as_of:'2026-10-13'}),false);
+  held.set('3062',{avg_cost:20});
+  assert.equal(eligible(han),false);
+});
+test('Passive lifecycle is visible in LAUNCH, ENTRY and tomorrow watchlist only',()=>{
+  const launch=section('      const launchMiniHtml = (item, quote = null) => {','      const launchListHtml =');
+  const entrySection=section('      const renderEntrySections = (rows,{quoteUpdate=false}={}) => {','      const isEntryRadarItem =');
+  const source=section('      const loadEntrySourcePair = async () => {','      async function refreshV5MonitorPool() {');
+  assert.match(html,/const nearTurnWatch=\(launchData\.observation_followups\|\|\[\]\)/);
+  assert.match(launch,/__passive_monitor===true/);
+  assert.match(html,/const breakoutFollowups=\(launchData\?\.observation_followups\|\|\[\]\)/);
+  assert.match(entrySection,/if\(item\.__passive_monitor===true\)\{/);
+  assert.match(entrySection,/b\.retained\.push\(safeRow\(row/);
+  assert.match(entrySection,/const passiveResearch=/);
+  assert.match(entrySection,/passiveResearchHtml/);
+  assert.match(source,/overnightPassiveResearch=/);
+  assert.match(html,/const activeTrial=originalAction\.phase==='trial'&&originalAction\.trialable===true/);
+  assert.match(html,/const activeFormal=originalAction\.phase==='confirmed'&&originalAction\.buyable===true/);
+  assert.doesNotMatch(source,/spring-swallow-scan-batch/);
+});
 for(const g of html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi)){
   if(/\bsrc=/.test(g[1]))continue;
   new Function(g[2]);
