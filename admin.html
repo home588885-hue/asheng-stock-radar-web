@@ -1883,10 +1883,16 @@ h1 {
         const raw = String(market || '').toLowerCase().trim();
         return ['tpex','otc','櫃','上櫃'].some(v => raw.includes(v)) ? 'otc' : 'tse';
       };
+      // Post-close foreground C snapshot only, one request per listed stock per page session.
+      const cPostCloseWindow=()=>{
+        const m=taipeiMarketState();return m.weekday&&m.totalMinutes>810&&m.totalMinutes<=1020;
+      };
+      const cQuoteReadWindow=()=>taipeiMarketState().open||cPostCloseWindow();
+      const cPostCloseQuoteAttempted=new Set();
       window.getLiveQuotes = async items => {
         // 網頁在背景或非交易時段，禁止發出新的即時行情請求。
         const candidatesViaBridge = marketBridgeReady() && ['LAUNCH','ENTRY'].includes(stage);
-        const quoteWindow = marketBridgeReady() && taipeiMarketState().open;
+        const quoteWindow = marketBridgeReady() && cQuoteReadWindow();
         // Stock quotes in these UI sections are C-only; never bill S for a fallback.
         if (document.hidden || !quoteWindow) return {
           ok:true,source:'C',quotes:[],bridge_ready:marketBridgeReady(),
@@ -1903,7 +1909,9 @@ h1 {
         // Do not spend additional Supabase requests on recently queried holdings.
         // Missing trades use only a short failure backoff; no stale price is invented.
         const now = Date.now();
+        const postClose=cPostCloseWindow();
         const pending = unique.filter(item => {
+          if(postClose)return !cPostCloseQuoteAttempted.has(item.stock_id);
           const last = liveQuoteRequestAt.get(item.stock_id) || 0;
           if (!last) return true;
           const cached = liveQuoteCache.get(item.stock_id);
@@ -1913,7 +1921,10 @@ h1 {
         const chunks = [];
         for (let i = 0; i < pending.length; i += 30) chunks.push(pending.slice(i, i + 30));
         const results = await Promise.all(chunks.map(async chunk => {
-          for (const item of chunk) liveQuoteRequestAt.set(item.stock_id, Date.now());
+          for(const item of chunk){
+            liveQuoteRequestAt.set(item.stock_id,Date.now());
+            if(postClose)cPostCloseQuoteAttempted.add(item.stock_id);
+          }
           try {
             const symbols = chunk.map(item => `${item.stock_id}:${item.market || 'tse'}`).join(',');
             return await fetchLiveQuoteChunk(symbols);
@@ -1922,8 +1933,10 @@ h1 {
         const incoming = new Map(results.flat().map(quote => [String(quote?.stock_id || ''), quote]));
         const quotes = unique.map(item => {
           const id = String(item.stock_id);
-          const quote = incoming.get(id) || null, cached = liveQuoteCache.get(id);
-          if (validTodayQuote(quote)) {
+          const source=incoming.get(id)||null;
+          const quote=validTodayQuote(source)&&postClose?{...source,post_close_checked:true}:source;
+          const cached=liveQuoteCache.get(id);
+          if(validTodayQuote(quote)){
             // Never replace a later matched trade with an older MIS response.
             if (validTodayQuote(cached) && String(cached.quote_time||'') > String(quote.quote_time||'')) {
               return {...cached,cached_last_trade:true};
@@ -2287,7 +2300,7 @@ h1 {
       };
       let cQuoteLastCheck={status:'尚未請求',at:'',returned:0,valid:0};
       const fetchLiveQuoteChunk = async symbols => {
-        if (document.hidden || !taipeiMarketState().open) return [];
+        if (document.hidden || !cQuoteReadWindow()) return [];
         const suffix = '?' + new URLSearchParams({ symbols }).toString();
         if (!marketBridgeReady()) {
           cQuoteLastCheck={status:'C Worker 健康檢查未通過',at:new Date().toISOString(),returned:0,valid:0};
@@ -5279,6 +5292,7 @@ h1 {
           const qt = String(q.quote_time || '');
           const fresh=quoteRecentForDisplay(q);
           const label=fresh?'C 當日即時成交'
+            :q.post_close_checked===true?'C 今日最後有效成交（非即時）'
             :qt >= '13:30:00' ? '今日最後成交（待收盤確認）'
             :'今日前次成交（非即時）';
           return { label, value:Number(q.price), waiting:false, time:qt||'-', date:String(q.quote_date||''), live:fresh, today_trade:true };
@@ -7078,7 +7092,7 @@ h1 {
       const launchExpandedIds = new Set();
       const launchMiniHtml = (item, quote = null) => {
         const id=String(item?.stock_id||''),m=item?.metrics||{};
-        const q=marketBridgeReady()&&validTodayQuote(quote)?quote:null;
+        const q=bestTodayQuote(marketBridgeReady()&&validTodayQuote(quote)?quote:null,id);
         const modelClose=Number(m.close);
         const price=q?Number(q.price):(Number.isFinite(modelClose)&&modelClose>0?modelClose:null);
         const ma20=Number(m.ma20);
@@ -7290,11 +7304,11 @@ h1 {
 
       async function refreshSimpleQuotes() {
         if (stage !== 'LAUNCH' || document.hidden || !liveBasePicks.length) return;
-        if (!marketBridgeReady() && taipeiMarketState().open) await configureCloudflareMarketBridge();
+        if (!marketBridgeReady() && cQuoteReadWindow()) await configureCloudflareMarketBridge();
         const renderNavToken = navigationSeq;
         const renderStage = stage;
         // 夜間日K模型固定；發動前僅沿用既有C三分鐘成交價，不盤中重算S。
-        if (LOCKED_SETTINGS.nightlySnapshotOnly && !(marketBridgeReady() && taipeiMarketState().open)) {
+        if (LOCKED_SETTINGS.nightlySnapshotOnly && !(marketBridgeReady() && cQuoteReadWindow())) {
           const rows = liveBasePicks.filter(item => launchQualityState(item).keep);
           stableListRender(rows.length ? launchListHtml(rows) : '<div class="box empty">目前沒有符合發動前條件的候選股。</div>');
           setCandidateSummary('cCount', rows.length, '目前畫面符合發動前條件');
@@ -7488,7 +7502,7 @@ h1 {
 
       async function refreshLiveQuotes() {
         if (!['LIVE', 'ENTRY'].includes(stage) || document.hidden) return;
-        if (!marketBridgeReady() && taipeiMarketState().open) await configureCloudflareMarketBridge();
+        if (!marketBridgeReady() && cQuoteReadWindow()) await configureCloudflareMarketBridge();
         const renderNavToken = navigationSeq;
         const renderStage = stage;
         if (stage === 'ENTRY' && !liveBasePicks.length) {
@@ -7499,7 +7513,7 @@ h1 {
         if (!liveBasePicks.length) {
           if (stage === 'ENTRY') {
             const extras=entryQuoteFollowups();
-            if(extras.length&&marketBridgeReady()&&taipeiMarketState().open)
+            if(extras.length&&marketBridgeReady()&&cQuoteReadWindow())
               await window.getLiveQuotes(extras.map(item=>({
                 stock_id:String(item.stock_id),market:String(item.market||'')
               })));
@@ -7512,7 +7526,7 @@ h1 {
           return;
         }
         // 進場雷達沿用盤後完整日 K；候選股盤中使用既有C報價，絕不讓S重算。
-        if (LOCKED_SETTINGS.nightlySnapshotOnly && !(marketBridgeReady() && taipeiMarketState().open)) {
+        if (LOCKED_SETTINGS.nightlySnapshotOnly && !(marketBridgeReady() && cQuoteReadWindow())) {
           if (stage === 'ENTRY') {
             const rows = liveBasePicks.map(item => ({ item, quote:null, action:item.__observation_only===true
                 ?{key:'historical_screen_only',rank:1,phase:'observe',buyable:false,trialable:false,
@@ -7538,6 +7552,14 @@ h1 {
         const finalQuoteWindow = false;
         if (!market.open && !finalQuoteWindow) {
           if (stage === 'ENTRY') {
+            // Single after-close authenticated quote read, then the original
+            // offline rendering keeps every buy/trial action disabled.
+            if(cPostCloseWindow()&&marketBridgeReady()&&typeof window.getLiveQuotes==='function'){
+              await window.getLiveQuotes([...liveBasePicks,...entryQuoteFollowups()].map(item=>({
+                stock_id:String(item.stock_id),market:String(item.market||'')
+              })));
+              if(navigationSeq!==renderNavToken||stage!==renderStage)return;
+            }
             const quoteMap = new Map(liveBasePicks.map(item=>[
               String(item.stock_id),bestTodayQuote(null,item.stock_id)
             ]).filter(pair=>validTodayQuote(pair[1])));
@@ -8088,7 +8110,7 @@ h1 {
           }
           holdingQuoteRefreshing = true;
           try {
-            const quoteOpen = !document.hidden && (marketBridgeReady() ? taipeiMarketState().open : closeWatchState().active);
+            const quoteOpen = !document.hidden && marketBridgeReady() && cQuoteReadWindow();
             if (quoteOpen) lastHoldingQuoteRequestAt = Date.now();
             const payload = quoteOpen
               ? await window.getLiveQuotes(items.map(item => ({ stock_id:String(item.stock_id), market:String(item.market || '') })))
@@ -8156,7 +8178,7 @@ h1 {
       // C 原本的三分鐘報價取樣不變。
         // Directly opening 已買進 must not wait up to 3 minutes for the first
         // Cloudflare health handshake. This does not add any recurring polling.
-        if(taipeiMarketState().open&&!marketBridgeReady())await configureCloudflareMarketBridge();
+        if(cQuoteReadWindow()&&!marketBridgeReady())await configureCloudflareMarketBridge();
         if (!holdingStillCurrent()) return;
         await render();
         if (!holdingStillCurrent()) return;

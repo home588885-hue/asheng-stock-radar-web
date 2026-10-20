@@ -246,7 +246,7 @@ test('Signed saved and research watch stocks share existing C quote batch',()=>{
     new Map([['4960',{stock_id:'4960',signed:true}],['6925',{stock_id:'6925',signed:true}]]),x=>x?.signed===true)();
   assert.deepEqual(list.map(x=>x.stock_id),['3062','4960']);
   assert.match(live,/\.\.\.liveBasePicks,\.\.\.entryQuoteFollowups\(\)/);
-  assert.match(live,/extras\.length&&marketBridgeReady\(\)&&taipeiMarketState\(\)\.open/);
+  assert.match(live,/extras\.length&&marketBridgeReady\(\)&&cQuoteReadWindow\(\)/);
   assert.match(saved,/bestTodayQuote\(null,id\)/);
   assert.match(saved,/stockMovementHtml\(item,q,'entry'/);
   assert.match(saved,/C 今日即時成交/);
@@ -377,6 +377,23 @@ test('Expanded radar shows one clear action, next and three prices; holdings ope
  assert.match(html,/CONTINUATION_RISK_DISPLAY_VERSION='2026-10-20-continuation-risk-display-v1'/);
  assert.match(section('      const entryCompactStock = (row, bucketLabel) => {','      const entryBucketHtml='),/radarDeepDetailsHtml\(v5MonitorCard/);
  assert.match(section('      const launchMiniHtml = (item, quote = null) => {','      const launchListHtml ='),/radarDeepDetailsHtml\(/);
+});
+
+test('Final C quote is fetched only in foreground once per stock and never unlocks a buy',()=>{
+ const flow=section('      // Post-close foreground C snapshot only','      const HOLDINGS_CACHE_PREFIX =');
+ assert.match(flow,/m\.totalMinutes>810&&m\.totalMinutes<=1020/);
+ assert.match(flow,/if\(postClose\)return !cPostCloseQuoteAttempted\.has\(item.stock_id\)/);
+ assert.match(flow,/cPostCloseQuoteAttempted\.add\(item.stock_id\)/);
+ assert.match(flow,/post_close_checked:true/);
+ assert.doesNotMatch(flow,/setInterval\s*\(/);
+ const chunk=section('      const fetchLiveQuoteChunk = async symbols => {','      const fetchScanStatusShared =');
+ assert.match(chunk,/!cQuoteReadWindow\(\)/);
+ assert.match(chunk,/Authorization:'Bearer '/);
+ assert.match(section('      const launchMiniHtml = (item, quote = null) => {','      const launchListHtml ='),/bestTodayQuote\(marketBridgeReady\(\)&&validTodayQuote\(quote\)\?quote:null,id\)/);
+ assert.match(section('      async function refreshLiveQuotes() {','      const loadEntrySourcePair ='),/cPostCloseWindow\(\)&&marketBridgeReady\(\)/);
+ assert.match(html,/const quoteOpen = !document.hidden && marketBridgeReady\(\) && cQuoteReadWindow\(\)/);
+ assert.match(html,/if\(!market.open\|\|market.totalMinutes<540\|\|market.totalMinutes>=800\)return false/);
+ assert.match(html,/const LOCKED_RULE_VERSION = '2026-10-06-ma10-20-60-v1'/);
 });
 for(const g of html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi)){
   if(/\bsrc=/.test(g[1]))continue;
