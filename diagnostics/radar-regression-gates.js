@@ -211,11 +211,14 @@ test('Launch, entry and tomorrow cards are brief when closed, compact when open,
   const launch=section('      const launchMiniHtml = (item, quote = null) => {','      const launchListHtml =');
   const entryCard=section('      const entryCompactStock = (row, bucketLabel) => {','      const entryBucketHtml=');
   const research=section('        const researchCard=info=>{','        // One stock per evening research panel.');
+  const retained=section('      const groupedEntrySavedWatches = visibleIds => {','      const simplifiedEntryHtml =');
   const movement=section('      const stockMovementHtml = ', '      // UI-only folding. The holdings Map remains verified by the server.');
   const wrap=section('      const radarDeepDetailsHtml=', '      // Shared stock movement panel.');
   assert.match(launch,/entry-mini-summary radar-compact-summary/);
   assert.match(entryCard,/entry-mini-summary radar-compact-summary/);
   assert.match(research,/entry-research-summary radar-compact-summary/);
+  assert.match(retained,/entry-mini-summary radar-compact-summary/);
+  assert.match(retained,/radarDeepDetailsHtml\(detail\)/);
   assert.match(launch,/radarDeepDetailsHtml\(/);
   assert.match(entryCard,/radarDeepDetailsHtml\(v5MonitorCard/);
   assert.match(html,/radarDeepDetailsHtml\(v5MonitorCard\(item,null,studyAction\)\)/);
