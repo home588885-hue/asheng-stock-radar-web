@@ -6680,6 +6680,10 @@ h1 {
         const origin=q?(quoteRecentForDisplay(q)?'C 今日即時成交':'C 今日前次成交（非即時）')
           :'S 完整日K收盤（非即時）';
         const headline=!recent?'⚪ 舊版模型待補算｜僅供觀察':
+          zone==='entry'&&action?.phase==='confirmed'&&action?.buyable!==true
+            ?'⚪ 正式買點仍待盤中驗證｜目前不可直接買':
+          zone==='entry'&&action?.phase==='trial'&&action?.trialable!==true
+            ?'🟡 小量試單條件待確認｜目前非買點':
           String(action?.text||life.label||'⚪ 等待確認');
         const reason=!recent?'新版完整日K尚未寫入，不得當作試單或正式買點':
           zone==='launch'?'發動前仍是觀察名單，展開不代表可以買進':
