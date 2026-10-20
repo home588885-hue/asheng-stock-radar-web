@@ -6664,7 +6664,7 @@ h1 {
       const stockMovementHtml = (item, quote = null, zone = 'entry', action = null) => {
         const id=String(item?.stock_id||''),m=item?.metrics||{};
         const cached=bestTodayQuote(quote,id);
-        const q=marketBridgeReady()&&validTodayQuote(cached)?cached:null;
+        const q=validTodayQuote(cached)?cached:null;
         const last=Number(m.close),price=q?Number(q.price):(last>0?last:null);
         const p0=Number(q?.prev_close)>0?Number(q.prev_close):Number(m.prev_close);
         const move=price!=null&&p0>0?(price/p0-1)*100:null;
@@ -6697,7 +6697,7 @@ h1 {
           [q?'今日漲跌':'模型日漲跌',pct(move)],
           [q?'今日成交量':'模型日成交量',lots(qty)],
           ['MA10／MA20／MA60',[ma10,ma20,ma60].map(fp).join(' / ')],
-          ['MA20正乖離',pct(gap)+'｜上限 '+chaseLimitNote(item)],
+          ['距MA20',pct(gap)+'｜防追高上限 '+chaseLimitNote(item)],
           ['20日前高',fp(high)]
         ];
         const boxLine=boxTop>0&&boxBottom>0&&boxTop>boxBottom
@@ -6729,7 +6729,7 @@ h1 {
       const holdingMiniHtml = (item, quote = null) => {
         const id=String(item.stock_id||''),m=item.metrics||{};
         const safeQuote=bestTodayQuote(validTodayQuote(quote)?quote:null,id);
-        const live=marketBridgeReady()&&validTodayQuote(safeQuote)?safeQuote:null;
+        const live=validTodayQuote(safeQuote)?safeQuote:null;
         const held=holdings.get(id)||{},cost=Number(held.avg_cost),qty=Number(held.quantity);
         const modelClose=Number(m.close),price=live?Number(live.price):(modelClose>0?modelClose:null);
         const pnl=price!=null&&cost>0?(price/cost-1)*100:null;
