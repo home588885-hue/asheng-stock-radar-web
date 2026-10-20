@@ -511,6 +511,41 @@ h1 {
   .holding-mini-summary .holding-mini-expand { display:block; grid-column:2; font-size:11px; }
 }
 
+
+/* Unified compact-first candidate cards: LAUNCH, ENTRY and next-session research.
+   HOLDING is intentionally unchanged. */
+.radar-compact-summary{gap:6px 10px!important;min-width:0}
+.entry-mini-summary.radar-compact-summary{grid-template-columns:minmax(0,1fr) auto!important}
+.radar-compact-summary .entry-mini-name small{font-size:13px;line-height:1.4}
+.radar-compact-summary .entry-mini-metrics{grid-column:1/-1;font-size:14px;line-height:1.4;margin:0}
+.radar-compact-summary .radar-compact-next{display:block;grid-column:1/-1;font-size:12px;line-height:1.45;color:#bdd5ed;overflow-wrap:anywhere}
+.entry-research-summary.radar-compact-summary{position:relative;padding-right:0}
+.entry-research-summary.radar-compact-summary .entry-research-name{display:flex;align-items:baseline;justify-content:space-between;gap:6px 10px}
+.entry-research-summary.radar-compact-summary .entry-research-name span{font-size:12px;max-width:100%;line-height:1.35}
+.radar-compact-summary .radar-compact-arrow{display:block!important;margin-top:5px;font-size:11px;color:#a7bdd7}
+.stock-motion-compact{padding:12px!important;margin:0 0 9px!important}
+.stock-motion-head{display:grid;gap:6px;min-width:0}
+.stock-motion-head b{font-size:13px;color:#bcd0e8}
+.stock-motion-head strong{font-size:17px;line-height:1.45;color:#f2f6ff;overflow-wrap:anywhere}
+.stock-motion-next{font-size:13px;line-height:1.5;color:#d6e6fa;margin:5px 0}
+.stock-motion-compact .holding-quote-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
+.stock-motion-compact .holding-quote-grid>div{min-width:0}
+.stock-motion-compact .holding-quote-grid dt{font-size:11px}
+.stock-motion-compact .holding-quote-grid dd{font-size:14px;overflow-wrap:anywhere}
+.stock-motion-compact>.model-only-note{display:block;font-size:11px;line-height:1.45;margin-top:7px}
+.radar-deep-dive{border-top:1px solid #3c536f;margin-top:8px;padding-top:7px;min-width:0}
+.radar-deep-dive>summary{cursor:pointer;list-style:none;font-size:12px;font-weight:700;color:#b5cceb;padding:9px 5px}
+.radar-deep-dive>summary::-webkit-details-marker{display:none}
+.radar-deep-dive>summary:focus-visible{outline:2px solid #93c5fd;outline-offset:2px}
+.radar-deep-body{padding:6px 0;min-width:0}
+.radar-deep-body .card{max-width:100%;min-width:0}
+@media(max-width:640px){
+ .entry-research-summary.radar-compact-summary .entry-research-name{align-items:flex-start}
+ .stock-motion-compact .holding-quote-grid{gap:4px}
+ .stock-motion-compact .holding-quote-grid dd{font-size:13px}
+ .radar-compact-summary .entry-mini-expand{grid-column:auto!important}
+}
+
 /* 進場雷達：先看重點，股票詳情按需展開。僅影響進場分類視覺。 */
 .entry-list-overview { padding:14px; border:1px solid #64748b55; border-radius:14px; background:#142039; display:grid; gap:6px; margin:8px 0 12px; }
 .entry-list-overview strong { font-size:19px; color:#e5edf9; }
@@ -4187,7 +4222,8 @@ h1 {
           detail:(originalAction.detail||'模型條件待核對')+missingText + (q
             ? '｜今日成交 '+String(q.quote_time||'-')+'；技術模型沿用完整日K'
             : '｜尚無當日有效成交，非即時買進訊號')};
-        const expanded=stockMovementHtml(item,q,'entry',safeDisplayAction)+v5MonitorCard(item,q,safeDisplayAction);
+        const expanded=stockMovementHtml(item,q,'entry',safeDisplayAction)
+          +radarDeepDetailsHtml(v5MonitorCard(item,q,safeDisplayAction));
         const survival=entrySurvivalLabel(item,originalAction);
         const patternChecklist=shanchuanPatternChecklistState(item);
         const scSummary=shanchuanState(item,q);
@@ -4196,19 +4232,18 @@ h1 {
         const greenMini=greenDipMiniHtml(item,q);
         const tonight=overnightLifecycleState(item);
         const selected=entryExpandedIds.has(id)?' open':'';
+        const signal=activeFormal?'🟢 正式買點｜當日已驗證':
+          activeTrial?'🟠 小量試單｜當日已驗證':
+          String(originalAction.text||bucketLabel||'🟡 追蹤觀察');
         return `<details class="entry-mini" data-stock-key="${esc(id)}"${selected}>
-          <summary class="entry-mini-summary">
-            <span class="entry-mini-name"><strong>${esc(id)} ${esc(item.stock_name||'')}</strong><small>${esc(actionText)}</small></span>
-            <span class="entry-mini-score">模型 ${Number.isFinite(score)?esc(num(score,0)):'-'} 分</span>
-            <span class="entry-mini-expand">股票動向</span>
-            <span class="entry-mini-metrics">${q?(quoteRecentForDisplay(q)?'C即時成交':'今日前次成交（非即時）'):'模型收盤（非即時）'} <b>${close>0?esc(num(close,2)):'-'}</b>｜距MA20 ${dist==null?'-':(dist>=0?'+':'')+esc(num(dist,1))+'%'}｜成交量 ${Number.isFinite(vol)?esc(num(vol,0))+'張':'-'}</span>
-            <span class="entry-mini-date">S 模型 ${esc(item.as_of||'待更新')}｜${tradeContext}${esc(missingText)}</span>
-            <span class="entry-mini-lifecycle">${esc(tonight.label)}｜明日：${esc(tonight.tomorrow)}</span>
-            ${greenMini}
-            ${scHeadline?'<span class="entry-mini-date">'+esc(scHeadline)+'</span>':''}
-            <span class="entry-survival-status ${survival.tone}" data-entry-survival-id="${esc(id)}" data-entry-survival-trial="${activeTrial?'1':'0'}">${esc(survival.text)}</span>
+          <summary class="entry-mini-summary radar-compact-summary">
+            <span class="entry-mini-name"><strong>${esc(id)} ${esc(item.stock_name||'')}</strong><small>${esc(signal)}</small></span>
+            <span class="entry-mini-expand">展開</span>
+            <span class="entry-mini-metrics">${q?(quoteRecentForDisplay(q)?'今日即時成交':'今日前次成交'):'模型收盤（非即時）'} <b>${close>0?esc(num(close,2)):'-'}</b></span>
+            <span class="radar-compact-next">🔎 ${esc(radarShortAdvice(item,safeDisplayAction))}</span>
           </summary>
-          <div class="entry-mini-full">${expanded}</div>
+          <div class="entry-mini-full">${expanded}${(activeTrial||activeFormal)
+            ?'<div class="entry-survival-status '+esc(survival.tone)+'" data-entry-survival-id="'+esc(id)+'" data-entry-survival-trial="'+(activeTrial?'1':'0')+'">'+esc(survival.text)+'</div>':''}</div>
         </details>`;
       };
       const entryBucketHtml=(key,title,note,rows,{open=false,tone='near',preview=5}={})=>{
@@ -4833,9 +4868,8 @@ h1 {
             detail:'明日觀察：'+phaseInfo.tomorrow+'｜'+
               String(original.detail||original.text||'依盤後模型核對現階段')};
           return '<div class="entry-research-expanded">'
-            +'<div class="entry-research-safety">📊 階段判讀與完整量價風控｜此處僅呈現盤後模型，當日試單資格仍須盤中核對</div>'
             +stockMovementHtml(item,null,'entry',studyAction)
-            +v5MonitorCard(item,null,studyAction)
+            +radarDeepDetailsHtml(v5MonitorCard(item,null,studyAction))
             +'</div>';
         };
         const riskStudyHtml=!topResearch.length&&riskStudy.length
@@ -4854,11 +4888,9 @@ h1 {
                 +'<summary class="entry-research-summary"><div class="entry-research-name"><strong>'
                 +esc(String(item.stock_id||'')+' '+String(item.stock_name||''))
                 +'</strong><span>🔴 暫不進場｜點開完整分析 ▾</span></div>'
-                +'<small>模型 '+esc(expected)+'｜分數 '+esc(String(item.score||'-'))
-                +(gap!==null?'｜距MA20 '+esc(num(gap,1))+'%':'')
-                +'｜主要阻擋：'+esc(why)+'</small>'
-                +'<small>目前階段：'+esc(overnightLifecycleState(item).label)
-                +'｜明日先看：'+esc(overnightLifecycleState(item).tomorrow)+'</small></summary>'
+                +'<small>模型收盤 '+esc(Number(m.close)>0?num(Number(m.close),2):'-')
+                +'｜主要風險：'+esc(why)+'</small>'
+                +'<small>🔎 '+esc(radarShortAdvice(item,{phase:'blocked'}))+'</small></summary>'
                 +researchExpandedCard(row,true)+'</details>';
             }).join('')+'</div>'
           :'';
@@ -4866,19 +4898,16 @@ h1 {
           const item=info.item,id=String(item.stock_id),close=Number(item.metrics?.close);
           const phaseInfo=overnightLifecycleState(item);
           const stageLabel=item.__passive_monitor===true?passiveWatchDescription(item).label:phaseInfo.label;
-          const nextFocus=item.__passive_monitor===true?passiveWatchDescription(item).detail:phaseInfo.tomorrow;
+          const nextFocus=radarShortAdvice(item,{key:phaseInfo.key,
+            detail:item.__passive_monitor===true?passiveWatchDescription(item).detail:phaseInfo.tomorrow});
           return '<details class="entry-research-stock entry-research-details" data-stock-key="'
             +esc(id)+'" data-research-kind="watch">'
-            +'<summary class="entry-research-summary"><div class="entry-research-name"><strong>'
-            +esc(id+' '+String(item.stock_name||''))+'</strong>'
-            +'<span>'+esc(stageLabel)+'｜點開完整分析 ▾</span></div>'
-            +'<small>模型 '+esc(String(item.as_of))+'｜分數 '+esc(String(item.score))
-              +'｜收盤 '+esc(num(close,2))+'｜距MA20 '+esc(num(info.gap,1))+'%｜成交 '+esc(String(info.vol))+' 張</small>'
-            +'<small>目前階段：'+esc(stageLabel)
-              +(phaseInfo.firstSeen?'｜系統最早候選紀錄 '+esc(phaseInfo.firstSeen):'')
-              +(phaseInfo.firstSignal?'｜首次突破模型日 '+esc(phaseInfo.firstSignal):'')
-              +'</small>'
-            +'<small>明日主要觀察：'+esc(nextFocus)+'</small></summary>'
+            +'<summary class="entry-research-summary radar-compact-summary">'
+            +'<div class="entry-research-name"><strong>'+esc(id+' '+String(item.stock_name||''))
+            +'</strong><span>'+esc(stageLabel)+'</span></div>'
+            +'<small>模型收盤 '+esc(close>0?num(close,2):'-')+'｜非即時</small>'
+            +'<small class="radar-compact-next">🔎 '+esc(nextFocus)+'</small>'
+            +'<span class="radar-compact-arrow">展開 ▾</span></summary>'
             +researchExpandedCard(info.row,false)+'</details>';
         };
         // One stock per evening research panel. The same extended breakout can
@@ -6776,6 +6805,27 @@ h1 {
       };
 
 
+
+      // Presentation only. The original action/risk model stays untouched.
+      const radarShortAdvice=(item,action=null)=>{
+        const m=item?.metrics||{},q=String(action?.detail||'').trim();
+        if(q&&q.length<=18)return q;
+        const phase=String(action?.phase||''),k=String(action?.key||'');
+        const close=Number(m.close),ma10=Number(m.ma10),ma20=Number(m.ma20);
+        if(item?.__observation_kind==='ma10_pending_ma20_supported')return '觀察站回MA10、守住MA20';
+        if(item?.__observation_kind==='extended_breakout_wait_pullback')return '不追高，等MA10／MA20回踩';
+        if(phase==='blocked'||k==='avoid')return '先觀察支撐，暫不進場';
+        if(phase==='confirmed'||phase==='trial')return '確認當日成交與風控';
+        if(ma20>0&&close<ma20)return '等重新站回MA20';
+        if(ma10>0&&close<ma10)return '觀察站回MA10';
+        if(ma20>0&&close>0&&chaseOver(item,close))return '乖離偏高，等回踩';
+        if(m.ma_cluster?.breakout_detected_raw===true)return '確認突破後是否守穩';
+        return '觀察量價、支撐與轉強';
+      };
+      const radarDeepDetailsHtml=html=>'<details class="radar-deep-dive">'
+        +'<summary>📋 完整數據與山川風控（需要再看）</summary>'
+        +'<div class="radar-deep-body">'+html+'</div></details>';
+
       // Shared stock movement panel. Read-only S/C snapshot, zero extra requests.
       // The status labels never override ENTRY buy permissions or holdings actions.
       const stockMovementHtml = (item, quote = null, zone = 'entry', action = null) => {
@@ -6817,31 +6867,27 @@ h1 {
         const fp=x=>Number.isFinite(x)&&x>0?num(x,2):'-';
         const pct=x=>x==null||!Number.isFinite(x)?'-':(x>=0?'+':'')+num(x,2)+'%';
         const lots=x=>Number.isFinite(x)&&x>=0?x.toLocaleString('zh-TW')+'張':'-';
+
         const fields=[
           [origin,fp(price)],
-          [q?'今日漲跌':'模型日漲跌',pct(move)],
-          [q?'今日成交量':'模型日成交量',lots(qty)],
-          ['MA10／MA20／MA60',[ma10,ma20,ma60].map(fp).join(' / ')],
-          ['距MA20',pct(gap)+'｜防追高上限 '+chaseLimitNote(item)],
-          ['20日前高',fp(high)]
+          ['距 MA20',pct(gap)],
+          [q?'今日成交量':'模型成交量',lots(qty)]
         ];
-        const boxLine=boxTop>0&&boxBottom>0&&boxTop>boxBottom
-          ?'<span>📦 20日箱頂 '+esc(fp(boxTop))+'｜箱底 '+esc(fp(boxBottom))+'</span>':'';
-        const volRatio=Number(vp?.volumeRatio);
-        return '<section class="live-banner holding-action stock-motion" data-motion-zone="'+esc(zone)+'">'
-          +'<h2>📈 股票動向｜'+(zone==='launch'?'發動前':'進場雷達')+'</h2>'
-          +'<div class="holding-main-action stock-motion-status">'+esc(headline)+'</div>'
-          +'<span>'+esc(structure)+'｜'+esc(vp?.tag||'量價待更新')
-          +(Number.isFinite(volRatio)&&vp?.volumeRatio!=null?'｜量比 '+esc(num(volRatio,2))+'x':'')+'</span>'
-          +'<span>🔎 下一步：'+esc(plan)+'</span>'
-          +(item.__observation_only===true&&String(m.shanchuan_v2?.mother_child?.lifecycle?.state||'').includes('low_broken')
-            ?'<span class="model-only-note">⚠️ 山川母子K低點已破｜列為風險研究，非試單。</span>':'')
-          +boxLine+'<small class="model-only-note">'+esc(reason)+'</small>'
+        const risk=item?.__passive_monitor===true?'追蹤觀察，非買點':
+          !recent?'舊日K僅供研究，等新版補算':
+          zone==='launch'?'發動前觀察，未確認進場':
+          action?.phase==='confirmed'&&action?.buyable!==true?'正式買點未驗證':
+          action?.phase==='trial'&&action?.trialable!==true?'小量試單未驗證':'買點仍以風控與當日有效成交為準';
+        return '<section class="live-banner holding-action stock-motion stock-motion-compact" data-motion-zone="'+esc(zone)+'">'
+          +'<div class="stock-motion-head"><b>📈 股票動向</b><strong>'+esc(headline)+'</strong></div>'
+          +'<div class="stock-motion-next">🔎 '+esc(radarShortAdvice(item,action))+'</div>'
           +'<dl class="holding-quote-grid">'+fields.map(([k,v])=>
             '<div><dt>'+esc(k)+'</dt><dd>'+esc(v)+'</dd></div>').join('')+'</dl>'
-          +'<small class="model-only-note">S 模型 '+esc(String(item.as_of||'待更新'))
-          +(q?'｜C 成交 '+esc(String(q.quote_time||'-')):'｜沒有當日有效成交，不冒充即時')
-          +'</small></section>';
+          +'<small class="model-only-note">'+esc(risk)+'｜S '+esc(String(item.as_of||'待更新'))
+          +(q?'｜C '+esc(String(q.quote_time||'-')):'｜非即時成交')+'</small>'
+          +(item.__observation_only===true&&String(m.shanchuan_v2?.mother_child?.lifecycle?.state||'').includes('low_broken')
+            ?'<small class="model-only-note">⚠️ 母子K低點已破，僅供風險複盤</small>':'')
+          +'</section>';
       };
 
       // UI-only folding. The holdings Map remains verified by the server.
@@ -6979,16 +7025,14 @@ h1 {
           :q?intradayCard(item,q):card(item);
         return `<section class="launch-mini-wrap" data-stock-id="${esc(id)}">
           <details class="entry-mini" data-stock-key="${esc(id)}"${selected}>
-            <summary class="entry-mini-summary" aria-label="${esc(id+' '+String(item?.stock_name||'')+' '+status)}">
+            <summary class="entry-mini-summary radar-compact-summary" aria-label="${esc(id+' '+String(item?.stock_name||'')+' '+status)}">
               <span class="entry-mini-name"><strong>${esc(id)} ${esc(item?.stock_name||'')}</strong><small>${esc(status)}</small></span>
-              <span class="entry-mini-score">模型 ${Number.isFinite(score)?esc(num(score,0)):'-'} 分</span>
-              <span class="entry-mini-expand">股票動向</span>
-              <span class="entry-mini-metrics">${source} <b>${price!=null&&price>0?esc(num(price,2)):'-'}</b>｜距MA20 ${gap==null?'-':(gap>=0?'+':'')+esc(num(gap,1))+'%'}｜量 ${Number.isFinite(vol)&&vol>=0?esc(num(vol,0))+'張':'-'}</span>
-              ${trial?'<span class="entry-mini-metrics" style="color:#fdba74">'+esc(trial.detail)+'</span>':''}
-              ${greenMini}
-              <span class="entry-mini-date">S 模型 ${esc(item?.as_of||'待更新')}${esc(quoteTime)}</span>
+              <span class="entry-mini-expand">展開</span>
+              <span class="entry-mini-metrics">${source} <b>${price!=null&&price>0?esc(num(price,2)):'-'}</b></span>
+              <span class="radar-compact-next">🔎 ${esc(radarShortAdvice(item,{text:status}))}</span>
             </summary>
-            <div class="entry-mini-full">${stockMovementHtml(item,q,'launch',{text:status,detail:overnightLifecycleState(item).tomorrow})}${detailed}</div>
+            <div class="entry-mini-full">${stockMovementHtml(item,q,'launch',{text:status,detail:overnightLifecycleState(item).tomorrow})}
+              ${radarDeepDetailsHtml((trial?'<div class="model-only-note">'+esc(trial.detail)+'</div>':'')+greenMini+detailed)}</div>
           </details>
         </section>`;
       };
