@@ -490,6 +490,25 @@ h1 {
 #note { overflow-anchor: none; }
 /* Visual entry radar organized by group, preserving complete detail cards. */
 
+
+/* The exact same tap-to-expand pattern across launch, entry and holdings. */
+.stock-motion { margin:0 0 9px; min-width:0; overflow-wrap:anywhere; }
+.stock-motion .stock-motion-status { font-size:20px; line-height:1.45; }
+.stock-motion .holding-quote-grid { font-variant-numeric:tabular-nums; }
+.stock-motion .holding-quote-grid dd { font-weight:750; color:#f3f7ff; }
+.entry-mini[open] > .entry-mini-summary,
+.holding-mini[open] > .holding-mini-summary { background:#23334f; }
+.entry-mini-summary:focus-visible { outline:2px solid #93c5fd; outline-offset:-3px; }
+.entry-mini .entry-mini-expand::after { content:' ▾'; }
+.entry-mini[open] .entry-mini-expand::after { content:' ▴'; }
+.entry-mini-full > .stock-motion { margin-bottom:9px; }
+@media(max-width:640px){
+  .stock-motion { padding:12px; }
+  .stock-motion .stock-motion-status { font-size:18px; }
+  .entry-mini-summary .entry-mini-expand,
+  .holding-mini-summary .holding-mini-expand { display:block; grid-column:2; font-size:11px; }
+}
+
 /* 進場雷達：先看重點，股票詳情按需展開。僅影響進場分類視覺。 */
 .entry-list-overview { padding:14px; border:1px solid #64748b55; border-radius:14px; background:#142039; display:grid; gap:6px; margin:8px 0 12px; }
 .entry-list-overview strong { font-size:19px; color:#e5edf9; }
@@ -4094,6 +4113,7 @@ h1 {
         return result('pending','⚪ 條件整理中｜等待轉強',
           '先看量能、均線和支撐是否重新達標，保留模型紀錄但不冒充買點');
       };
+      const entryExpandedIds = new Set();
       const entryCompactStock = (row, bucketLabel) => {
         const item=row.item||{}, m=item.metrics||{}, id=String(item.stock_id||'');
         const score=Number(item.score), q=marketBridgeReady()&&validTodayQuote(row.quote)?row.quote:null;
@@ -4121,7 +4141,7 @@ h1 {
           detail:(originalAction.detail||'模型條件待核對')+missingText + (q
             ? '｜今日成交 '+String(q.quote_time||'-')+'；技術模型沿用完整日K'
             : '｜尚無當日有效成交，非即時買進訊號')};
-        const expanded=v5MonitorCard(item, q, safeDisplayAction);
+        const expanded=stockMovementHtml(item,q,'entry',safeDisplayAction)+v5MonitorCard(item,q,safeDisplayAction);
         const survival=entrySurvivalLabel(item,originalAction);
         const patternChecklist=shanchuanPatternChecklistState(item);
         const scSummary=shanchuanState(item,q);
@@ -4129,7 +4149,8 @@ h1 {
           :patternChecklist.visible?patternChecklist.text:'';
         const greenMini=greenDipMiniHtml(item,q);
         const tonight=overnightLifecycleState(item);
-        return `<details class="entry-mini" data-stock-key="${esc(id)}">
+        const selected=entryExpandedIds.has(id)?' open':'';
+        return `<details class="entry-mini" data-stock-key="${esc(id)}"${selected}>
           <summary class="entry-mini-summary">
             <span class="entry-mini-name"><strong>${esc(id)} ${esc(item.stock_name||'')}</strong><small>${esc(actionText)}</small></span>
             <span class="entry-mini-score">模型 ${Number.isFinite(score)?esc(num(score,0)):'-'} 分</span>
@@ -4742,6 +4763,7 @@ h1 {
               String(original.detail||original.text||'依盤後模型核對現階段')};
           return '<div class="entry-research-expanded">'
             +'<div class="entry-research-safety">📊 階段判讀與完整量價風控｜此處僅呈現盤後模型，當日試單資格仍須盤中核對</div>'
+            +stockMovementHtml(item,null,'entry',studyAction)
             +v5MonitorCard(item,null,studyAction)
             +'</div>';
         };
@@ -6588,7 +6610,7 @@ h1 {
         const givebackAlert = giveback?.triggered && main !== '出清'
           ? '<small class="model-only-note">🛡 獲利回吐警示（'+(giveback.live?'今日有效成交':'最近完整模型')+'）：已記錄高點回落 '+esc(num(giveback.retreat,1))+'%，短線風控轉弱；'+(giveback.live?'盤中先檢查，不當作成交或收盤訊號。':'請核對持股與是否需要保護浮盈；不是自動賣出。')+'</small>'
           : '';
-        return `<section class="live-banner holding-action ${action.className}"><h2>${actionIcon} ${esc(actionDateLabel)}</h2><div class="holding-main-action">${main}</div><span>${esc(modelPrefix)}：${held}</span><span>${esc(reminder)}</span>${givebackAlert}${boxBanner}${dataCaution}<dl class="holding-quote-grid">${fields.map(([label,value]) => `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl>${holdingCloseWatchHtml(item, safeQuote)}</section>`;
+        return `<section class="live-banner holding-action ${action.className}"><h2>📈 股票動向｜${actionIcon} ${esc(actionDateLabel)}</h2><div class="holding-main-action">${main}</div><span>${esc(modelPrefix)}：${held}</span><span>${esc(reminder)}</span>${givebackAlert}${boxBanner}${dataCaution}<dl class="holding-quote-grid">${fields.map(([label,value]) => `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl>${holdingCloseWatchHtml(item, safeQuote)}</section>`;
       };
       const holdingRulesHtml = (item, quote = null, embedded = false) => {
         const { action, main, rulesTitle } = holdingDisplay(item, quote);
@@ -6623,6 +6645,65 @@ h1 {
         return embedded ? ruleBody : `<details class="card-details holding-rules-details"><summary>📋 ${rulesTitle}與持股規則</summary>${ruleBody}</details>`;
       };
 
+
+      // Shared stock movement panel. Read-only S/C snapshot, zero extra requests.
+      // The status labels never override ENTRY buy permissions or holdings actions.
+      const stockMovementHtml = (item, quote = null, zone = 'entry', action = null) => {
+        const id=String(item?.stock_id||''),m=item?.metrics||{};
+        const cached=bestTodayQuote(quote,id);
+        const q=marketBridgeReady()&&validTodayQuote(cached)?cached:null;
+        const last=Number(m.close),price=q?Number(q.price):(last>0?last:null);
+        const p0=Number(q?.prev_close)>0?Number(q.prev_close):Number(m.prev_close);
+        const move=price!=null&&p0>0?(price/p0-1)*100:null;
+        const qty=q?Number(q.volume_lots):Number(m.current_volume_lots);
+        const vp=volumePriceState(item,q);
+        const ma10=Number(m.ma10),ma20=Number(m.ma20),ma60=Number(m.ma60);
+        const gap=price!=null&&ma20>0?(price/ma20-1)*100:null;
+        const high=Number(m.high20_prev??m.recent_high20??m.ma_cluster?.breakout_price);
+        const box=m.box_strategy?.levels||{};
+        const boxTop=Number(box.top),boxBottom=Number(box.bottom);
+        const recent=chaseModelReady(item)&&unifiedRadarGeneration(item);
+        const life=overnightLifecycleState(item);
+        const origin=q?(quoteRecentForDisplay(q)?'C 今日即時成交':'C 今日前次成交（非即時）')
+          :'S 完整日K收盤（非即時）';
+        const headline=!recent?'⚪ 舊版模型待補算｜僅供觀察':
+          String(action?.text||life.label||'⚪ 等待確認');
+        const reason=!recent?'新版完整日K尚未寫入，不得當作試單或正式買點':
+          zone==='launch'?'發動前仍是觀察名單，展開不代表可以買進':
+          '進場資格另依當日有效成交、風控與存活確認，展開不會解鎖';
+        const plan=String(action?.detail||life.tomorrow||'觀察量價及MA10／MA20／MA60');
+        const structure=price==null||ma20<=0?'均線待更新':
+          price<ma20?'🔴 MA20下方｜等止跌':
+          [ma10,ma20,ma60].every(x=>x>0&&price>=x)
+            ?'🟢 站上MA10／20／60（依現有資料）':'🟡 MA20守住｜其他均線待確認';
+        const fp=x=>Number.isFinite(x)&&x>0?num(x,2):'-';
+        const pct=x=>x==null||!Number.isFinite(x)?'-':(x>=0?'+':'')+num(x,2)+'%';
+        const lots=x=>Number.isFinite(x)&&x>=0?x.toLocaleString('zh-TW')+'張':'-';
+        const fields=[
+          [origin,fp(price)],
+          [q?'今日漲跌':'模型日漲跌',pct(move)],
+          [q?'今日成交量':'模型日成交量',lots(qty)],
+          ['MA10／MA20／MA60',[ma10,ma20,ma60].map(fp).join(' / ')],
+          ['MA20正乖離',pct(gap)+'｜上限 '+chaseLimitNote(item)],
+          ['20日前高',fp(high)]
+        ];
+        const boxLine=boxTop>0&&boxBottom>0&&boxTop>boxBottom
+          ?'<span>📦 20日箱頂 '+esc(fp(boxTop))+'｜箱底 '+esc(fp(boxBottom))+'</span>':'';
+        const volRatio=Number(vp?.volumeRatio);
+        return '<section class="live-banner holding-action stock-motion" data-motion-zone="'+esc(zone)+'">'
+          +'<h2>📈 股票動向｜'+(zone==='launch'?'發動前':'進場雷達')+'</h2>'
+          +'<div class="holding-main-action stock-motion-status">'+esc(headline)+'</div>'
+          +'<span>'+esc(structure)+'｜'+esc(vp?.tag||'量價待更新')
+          +(Number.isFinite(volRatio)&&vp?.volumeRatio!=null?'｜量比 '+esc(num(volRatio,2))+'x':'')+'</span>'
+          +'<span>🔎 下一步：'+esc(plan)+'</span>'
+          +boxLine+'<small class="model-only-note">'+esc(reason)+'</small>'
+          +'<dl class="holding-quote-grid">'+fields.map(([k,v])=>
+            '<div><dt>'+esc(k)+'</dt><dd>'+esc(v)+'</dd></div>').join('')+'</dl>'
+          +'<small class="model-only-note">S 模型 '+esc(String(item.as_of||'待更新'))
+          +(q?'｜C 成交 '+esc(String(q.quote_time||'-')):'｜沒有當日有效成交，不冒充即時')
+          +'</small></section>';
+      };
+
       // UI-only folding. The holdings Map remains verified by the server.
       // The full card() and intradayCard() keep all risk rules and trading controls.
       const holdingExpandedIds = new Set();
@@ -6633,15 +6714,33 @@ h1 {
       // saved holding cost/P&L, trade buttons, expandable rules, and 12-minute
       // survival (inside holdingActionHtml). Do not duplicate those panels.
       const holdingMiniHtml = (item, quote = null) => {
-        const id=String(item.stock_id||'');
+        const id=String(item.stock_id||''),m=item.metrics||{};
         const safeQuote=bestTodayQuote(validTodayQuote(quote)?quote:null,id);
-        // Independently rescanned Shan-Chuan research must never suppress the
-        // EXISTING personal portfolio's MA20, close, cost/P&L and trade controls.
-        const researchPending=!unifiedRadarGeneration(item);
-        const researchNote=researchPending
+        const live=marketBridgeReady()&&validTodayQuote(safeQuote)?safeQuote:null;
+        const held=holdings.get(id)||{},cost=Number(held.avg_cost),qty=Number(held.quantity);
+        const modelClose=Number(m.close),price=live?Number(live.price):(modelClose>0?modelClose:null);
+        const pnl=price!=null&&cost>0?(price/cost-1)*100:null;
+        const main=String(holdingDisplay(item,live)?.main||'續抱');
+        const tone=main==='出清'?'exit':main==='減碼'?'reduce':main==='警戒'?'warn':'';
+        const selected=holdingExpandedIds.has(id)?' open':'';
+        const pending=!unifiedRadarGeneration(item);
+        const researchNote=pending
           ? '<small class="model-only-note" style="display:block;margin-bottom:6px">📚 山川新版型態待補算｜原持股MA20風控與最近完整日K照常顯示（'
               +esc(String(item.as_of||'日期待確認'))+'）</small>' : '';
-        return `<section class="holding-full-wrap" data-stock-id="${esc(id)}">${researchNote}${card(item,{quote:safeQuote})}</section>`;
+        return `<section class="holding-mini-wrap" data-stock-id="${esc(id)}">
+          <details class="holding-mini" data-stock-key="${esc(id)}"${selected}>
+            <summary class="holding-mini-summary" aria-label="${esc(id+' '+String(item.stock_name||'')+'｜點擊展開股票動向')}">
+              <span class="holding-mini-name"><strong>${esc(id)} ${esc(item.stock_name||'')}</strong><small>持有 ${qty>0?esc(qty.toLocaleString('zh-TW')):'-'} 股｜點開股票動向</small></span>
+              <span class="holding-mini-action ${tone}">${esc(main)}</span>
+              <span class="holding-mini-expand">股票動向</span>
+              <span class="holding-mini-stats"><span>成本 <b>${cost>0?esc(num(cost,2)):'-'}</b></span>
+                <span>${live?'今日成交':'模型收盤'} <b>${price!=null?esc(num(price,2)):'-'}</b></span>
+                <span>損益 <b class="${pnl==null?'':pnl>=0?'pnl-up':'pnl-down'}">${pnl==null?'-':(pnl>=0?'+':'')+esc(num(pnl,2))+'%'}</b></span></span>
+              ${holdingMa20DaysHtml(item,live)}
+              <span class="holding-mini-date">S 模型 ${esc(item.as_of||'待更新')}｜${live?'C 今日成交 '+esc(String(live.quote_time||'-')):'無今日有效成交（非即時價）'}</span>
+            </summary>
+            <div class="holding-mini-body">${researchNote}${card(item,{quote:safeQuote})}</div>
+          </details></section>`;
       };
       const holdingPlaceholderHtml = (symbol, note = '完整模型載入中…', isError = false, quote = null, displayName = '') => {
         const id=String(symbol||''),h=holdings.get(id)||{},cost=Number(h.avg_cost),qty=Number(h.quantity);
@@ -6741,7 +6840,7 @@ h1 {
               ${greenMini}
               <span class="entry-mini-date">S 模型 ${esc(item?.as_of||'待更新')}${esc(quoteTime)}</span>
             </summary>
-            <div class="entry-mini-full">${detailed}</div>
+            <div class="entry-mini-full">${stockMovementHtml(item,q,'launch',{text:status,detail:overnightLifecycleState(item).tomorrow})}${detailed}</div>
           </details>
         </section>`;
       };
@@ -7966,6 +8065,13 @@ h1 {
           if(!id)return;
           if(node.open)launchExpandedIds.add(id);
           else launchExpandedIds.delete(id);
+          return;
+        }
+        if(stage==='ENTRY'&&node.matches?.('details.entry-mini[data-stock-key],details.entry-research-details[data-stock-key]')){
+          const id=String(node.dataset.stockKey||'');
+          if(!id)return;
+          if(node.open)entryExpandedIds.add(id);
+          else entryExpandedIds.delete(id);
           return;
         }
         if(stage!=='HOLDING'||!node.matches?.('details.holding-mini[data-stock-key]'))return;
