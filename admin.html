@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>阿勝底部起漲雷達｜管理員</title>
     <meta name="theme-color" content="#0b1020" />
-    <meta name="asheng-build" content="admin-pages-v11-sold-holding-sync-20261012" />
+    <meta name="asheng-build" content="asheng-minimal-view-20261020-v1" />
     <style>
 @tailwind base;
 @tailwind components;
@@ -1215,6 +1215,37 @@ h1 {
 .shortcut-guide-figure{margin:10px 0 12px;padding:8px;border:1px solid var(--line);border-radius:12px;background:#10192a}
 .shortcut-guide-figure img{display:block;width:100%;height:auto;border-radius:10px}
 .shortcut-guide-figure figcaption{margin-top:7px;color:#aebbd0;font-size:13px;line-height:1.5}
+
+/* Single concise UI across desktop and mobile. Presentation only. */
+#app .launch-mini-wrap,#app .holding-mini-wrap{margin:7px 0}
+#app .entry-mini,#app .holding-mini{border-radius:11px}
+#app .radar-compact-summary,#app .holding-mini-summary{padding:11px 12px;gap:5px 10px}
+#app .radar-compact-summary .entry-mini-name strong,#app .holding-mini-summary .holding-mini-name strong{font-size:18px;line-height:1.35}
+#app .radar-compact-summary .entry-mini-name small{font-size:13px;line-height:1.4;color:#c7d6ed}
+#app .radar-compact-summary .entry-mini-metrics{font-size:14px;line-height:1.45}
+#app .radar-compact-summary .entry-mini-metrics small{display:inline;color:#a9bed6;font-size:12px}
+#app .radar-compact-summary .radar-compact-next{font-size:12px;line-height:1.4;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
+#app .entry-bucket-head{padding:10px 12px}
+#app .entry-bucket-headline b{font-size:16px}
+#app .entry-bucket-headline small{font-size:12px}
+#app .entry-bucket-count{font-size:13px;padding:4px 8px}
+#app .entry-bucket-body{gap:7px;padding:0 9px 10px}
+#app .holding-mini-summary .holding-mini-stats{font-size:14px;line-height:1.45;gap:5px 12px}
+#app .holding-mini-summary .holding-mini-status{grid-column:1/-1;font-size:12px;color:#c3d4ea;line-height:1.45}
+#app .holding-mini-summary .holding-mini-date{font-size:11px;line-height:1.45}
+#app .holding-mini > summary .holding-ma20-days{min-height:0}
+#scoutPanel{margin:9px 0;padding:10px 12px}
+#scoutPanel summary{font-size:14px;line-height:1.5}
+#scoutPanel .radar-scout-history{margin:8px 0 0;padding:7px 8px;border-radius:9px;background:#17253b;border:1px solid #385073}
+@media(max-width:640px){
+#app .radar-compact-summary,#app .holding-mini-summary{padding:10px;gap:4px 8px}
+#app .radar-compact-summary .entry-mini-name strong,#app .holding-mini-summary .holding-mini-name strong{font-size:17px}
+#app .holding-mini-summary .holding-mini-stats{grid-template-columns:repeat(3,minmax(0,1fr));font-size:12px;gap:5px}
+#app .holding-mini-stats > span:last-child{grid-column:auto}
+#app .holding-mini-summary .holding-mini-stats b{font-size:15px}
+#app .entry-bucket-headline small{display:none}
+}
+
 </style>
   
     <link rel="manifest" href="./admin.webmanifest">
@@ -2122,7 +2153,7 @@ h1 {
       const renderScoutPanel=()=>{
         const panel=document.getElementById('scoutPanel');
         if(!panel)return;
-        if(!['LAUNCH','ENTRY'].includes(stage)){panel.hidden=true;return;}
+        if(stage!=='LAUNCH'){panel.hidden=true;return;}
         const day=expectedSignalDataDate();
         const records=[...scoutHistory.values()].filter(x=>!holdings.has(String(x.stock_id||'')));
         if(!records.length){panel.hidden=true;return;}
@@ -2146,8 +2177,9 @@ h1 {
           +'🌱 第一根前哨 '+active.length+' 檔｜📋 過熱／失效 '+archive.length+' 檔（展開）</summary>'
           +'<p style="font-size:12px;margin:8px 0">山川箱型／母子K與均線轉強的研究觀察；不是橘色或綠色買點。'
           +'未更新日K只能等待補算。跨日紀錄與相同登入帳號的手機、電腦同步；不額外重算S或抓C報價。</p>'
-          +(active.length?'<strong>持續觀察</strong>'+active.map(itemHtml).join(''):'')
-          +(archive.length?'<div style="font-weight:650;margin-top:10px">過熱／失效紀錄（禁止以此買進）</div>'+archive.map(itemHtml).join(''):'')
+          +(active.length?'<strong>持續觀察</strong>'+active.slice(0,6).map(itemHtml).join(''):'')
+          +(active.length>6?'<details class="radar-scout-history"><summary>其餘追蹤 '+(active.length-6)+' 檔</summary>'+active.slice(6).map(itemHtml).join('')+'</details>':'')
+          +(archive.length?'<details class="radar-scout-history"><summary>過熱／失效 '+archive.length+' 檔（歷史）</summary>'+archive.map(itemHtml).join('')+'</details>':'')
           +'</details>';
         if(panel.innerHTML!==html)panel.innerHTML=html;
         panel.hidden=false;
@@ -4445,18 +4477,18 @@ h1 {
           :patternChecklist.visible?patternChecklist.text:'';
         const tonight=overnightLifecycleState(item);
         const selected=entryExpandedIds.has(id)?' open':'';
-        const signal=activeFormal?'🟢 正式買點｜當日已驗證':
-          activeTrial?'🟠 小量試單｜當日已驗證':
+        const signal=activeFormal?'🟢 正式買點（當日驗證）':
+          activeTrial?'🟠 可小量試單（當日驗證）':
           String(originalAction.text||bucketLabel||'🟡 追蹤觀察');
+        const glanceSignal=(activeFormal||activeTrial)?signal:String(signal).split('｜')[0].trim();
         return `<details class="entry-mini" data-stock-key="${esc(id)}"${selected}>
           <summary class="entry-mini-summary radar-compact-summary">
-            <span class="entry-mini-name"><strong>${esc(id)} ${esc(item.stock_name||'')}</strong><small>${esc(signal)}</small></span>
+            <span class="entry-mini-name"><strong>${esc(id)} ${esc(item.stock_name||'')}</strong><small>${esc(glanceSignal)}</small></span>
             <span class="entry-mini-expand">展開</span>
             <span class="entry-mini-metrics">${esc(quoteDisplayState(q,item).label)} <b>${close>0?esc(num(close,2)):'-'}</b><small>${q?'｜'+esc(quoteDisplayState(q,item).moment):'｜S '+esc(String(item.as_of||'待更新'))}</small></span>
-            ${continuationRiskMiniHtml(item)}
-            <span class="radar-compact-next">🔎 ${esc(radarShortAdvice(item,safeDisplayAction))}</span>
+            <span class="radar-compact-next">下一步：${esc(radarShortAdvice(item,safeDisplayAction))}</span>
           </summary>
-          <div class="entry-mini-full">${expanded}${(activeTrial||activeFormal)
+          <div class="entry-mini-full">${continuationRiskMiniHtml(item)}${expanded}${(activeTrial||activeFormal)
             ?'<div class="entry-survival-status '+esc(survival.tone)+'" data-entry-survival-id="'+esc(id)+'" data-entry-survival-trial="'+(activeTrial?'1':'0')+'">'+esc(survival.text)+'</div>':''}</div>
         </details>`;
       };
@@ -4483,7 +4515,8 @@ h1 {
       const compactEntryGroupHtml = (key,title,note,entries,{open=false,extraHtml='',extraCount=0,alwaysShow=false}={}) => {
         const total=entries.length+extraCount;
         if(!total&&!alwaysShow)return '';
-        const preview=entries.slice(0,10),extra=entries.slice(10);
+        const maxVisible=key==='today'?5:key==='tracking'?6:4;
+        const preview=entries.slice(0,maxVisible),extra=entries.slice(maxVisible);
         const cards=arr=>arr.map(e=>entryCompactStock(e.row,e.label)).join('');
         const body=cards(preview)+(extra.length
           ?'<details class="entry-extra"><summary>展開其餘 '+extra.length+' 檔</summary>'+cards(extra)+'</details>':'')
@@ -4580,17 +4613,17 @@ h1 {
         const persistent=groupedEntrySavedWatches(shown);
         const groups=[
           compactEntryGroupHtml('today','🎯 今日進場機會',
-            '綠色／盤中橘色須當日確認；明日觀察不代表買點',today,{open:true,alwaysShow:true}),
+            '只有當日確認才可試單或買進',today,{open:true,alwaysShow:true}),
           compactEntryGroupHtml('tracking','📌 持續追蹤與等待回踩',
-            '包含前次新版留存 '+(labels.retainedRows||[]).length+' 檔、跨日保留 '+persistent.savedCount+' 檔（待補算 '+persistent.pendingCount+'）',
+            '第一根、回踩及跨日觀察（非新買點）',
             watch,{open:true,extraHtml:persistent.savedHtml,extraCount:persistent.savedCount,alwaysShow:true}),
           compactEntryGroupHtml('risk','⚠️ 暫不適合進場',
-            '位置偏高、條件未齊與風控警戒；不列可買訊號',
+            '暫不新買、等回踩或重新確認',
             risk,{open:false,extraHtml:persistent.riskyHtml,extraCount:persistent.riskyCount,alwaysShow:true})
         ];
         if(persistent.archivedCount)groups.push(
           compactEntryGroupHtml('history','🗂️ 最近失效追蹤',
-            '已失效紀錄只供複盤，不與待補算混在一起',
+            '僅供回顧，不列買點',
             [],{open:false,extraHtml:persistent.archivedHtml,extraCount:persistent.archivedCount}));
         return groups.join('');
       };
@@ -7051,19 +7084,20 @@ h1 {
         return `<section class="holding-mini-wrap" data-stock-id="${esc(id)}">
           <details class="holding-mini" data-stock-key="${esc(id)}"${selected}>
             <summary class="holding-mini-summary" aria-label="${esc(id+' '+String(item.stock_name||'')+'｜點擊展開股票動向')}">
-              <span class="holding-mini-name"><strong>${esc(id)} ${esc(item.stock_name||'')}</strong><small>持有 ${qty>0?esc(qty.toLocaleString('zh-TW')):'-'} 股｜點開股票動向</small></span>
+              <span class="holding-mini-name"><strong>${esc(id)} ${esc(item.stock_name||'')}</strong><small>持有 ${qty>0?esc(qty.toLocaleString('zh-TW')):'-'} 股</small></span>
               <span class="holding-mini-action ${tone}">${esc(actionLabel)}</span>
-              <span class="holding-mini-expand">股票動向</span>
+              <span class="holding-mini-expand">詳情</span>
               <span class="holding-mini-stats"><span>成本 <b>${cost>0?esc(num(cost,2)):'-'}</b></span>
                 <span>${esc(quoteDisplayState(live,item).label)} <b>${price!=null?esc(num(price,2)):'-'}</b></span>
                 <span>損益 <b class="${holdingPnlClass(pnl)}">${pnl==null?'-':(pnl>0?'+':'')+esc(num(pnl,2))+'%'}</b></span></span>
-              <span class="holding-mini-status">帳面狀態：${esc(positionStatus+protectionDetail+positionDetail)}</span>
+              <span class="holding-mini-status">${esc(positionStatus)}</span>
               ${holdingMa20DaysHtml(item,live)}
-              ${continuationRiskMiniHtml(item)}
               <span class="holding-mini-date">S 模型 ${esc(item.as_of||'待更新')}｜${live?'C 成交時間 '+esc(quoteDisplayState(live,item).moment)+(quoteDisplayState(live,item).live?'｜盤中即時':'｜非即時'):'無有效 C 成交，非即時模型價'}</span>
             </summary>
             <div class="holding-mini-body">
               ${researchNote}
+              <div class="holding-mini-status">${esc(positionStatus+protectionDetail+positionDetail)}</div>
+              ${continuationRiskMiniHtml(item)}
               ${stockMovementHtml(item,live,'holding',{text:actionLabel,detail:decision.reminder})}
               ${holdingCloseWatchHtml(item,live)}
               <div class="holding-quick-controls">
@@ -7167,6 +7201,7 @@ h1 {
           :lowBase?'🌱 底部蓄勢｜提前觀察，尚無買點'
           :risk?.kind==='incomplete'?'🟡 均線結構未齊'
           :String(launchState?.label||'🟠 發動前｜等確認');
+        const glanceStatus=String(status).split('｜')[0].trim();
         const source=quoteDisplayState(q,item).label;
         const quoteTime=q?'｜成交 '+quoteDisplayState(q,item).moment:'｜S '+String(item.as_of||'待更新');
         const selected=launchExpandedIds.has(id)?' open':'';
@@ -7181,13 +7216,12 @@ h1 {
         return `<section class="launch-mini-wrap" data-stock-id="${esc(id)}">
           <details class="entry-mini" data-stock-key="${esc(id)}"${selected}>
             <summary class="entry-mini-summary radar-compact-summary" aria-label="${esc(id+' '+String(item?.stock_name||'')+' '+status)}">
-              <span class="entry-mini-name"><strong>${esc(id)} ${esc(item?.stock_name||'')}</strong><small>${esc(status)}</small></span>
+              <span class="entry-mini-name"><strong>${esc(id)} ${esc(item?.stock_name||'')}</strong><small>${esc(glanceStatus)}</small></span>
               <span class="entry-mini-expand">展開</span>
               <span class="entry-mini-metrics">${esc(source)} <b>${price!=null&&price>0?esc(num(price,2)):'-'}</b><small>${esc(quoteTime)}</small></span>
-              ${continuationRiskMiniHtml(item)}
-              <span class="radar-compact-next">🔎 ${esc(radarShortAdvice(item,{text:status}))}</span>
+              <span class="radar-compact-next">下一步：${esc(radarShortAdvice(item,{text:status}))}</span>
             </summary>
-            <div class="entry-mini-full">${stockMovementHtml(item,q,'launch',{text:status,detail:overnightLifecycleState(item).tomorrow})}
+            <div class="entry-mini-full">${continuationRiskMiniHtml(item)}${stockMovementHtml(item,q,'launch',{text:status,detail:overnightLifecycleState(item).tomorrow})}
               ${radarDeepDetailsHtml((trial?'<div class="model-only-note">'+esc(trial.detail)+'</div>':'')+detailed)}</div>
           </details>
         </section>`;
