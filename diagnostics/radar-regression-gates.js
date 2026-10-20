@@ -168,7 +168,7 @@ test('Three zones and saved cross-day stocks have individual expandable movement
   assert.match(holding,/holdingMa20DaysHtml\(item,live\)/);
   assert.match(holding,/card\(item,\{quote:safeQuote\}\)/);
   assert.match(saved,/details class="entry-mini entry-saved-mini" data-stock-key/);
-  assert.match(saved,/stockMovementHtml\(item,null,'entry'/);
+  assert.match(saved,/stockMovementHtml\(item,q,'entry'/);
   assert.match(html,/const entryExpandedIds = new Set\(\)/);
   assert.match(html,/entryExpandedIds\.add\(id\)/);
   assert.match(html,/holdingExpandedIds\.add\(id\)/);
@@ -234,6 +234,24 @@ test('Launch, entry and tomorrow cards are brief when closed, compact when open,
   const holding=section('      const holdingMiniHtml = (item, quote = null) => {','      const holdingPlaceholderHtml =');
   assert.match(holding,/holdingMini-stats|holding-mini-stats/);
   assert.match(holding,/holdingMa20DaysHtml\(item,live\)/);
+});
+test('Signed saved and research watch stocks share existing C quote batch',()=>{
+  const follow=section('      const entryQuoteFollowups = () => {','      const bestTodayQuote =');
+  const saved=section('      const groupedEntrySavedWatches = visibleIds => {','      const simplifiedEntryHtml =');
+  const live=section('      async function refreshLiveQuotes() {','      const loadEntrySourcePair =');
+  const f=new Function('stage','holdings','overnightPassiveResearch','passiveRadarWatchEligible',
+    'pullbackWatch','pullbackWatchSnapshots','unifiedRadarGeneration',follow+'return entryQuoteFollowups;');
+  const list=f('ENTRY',new Map(),[{stock_id:'3062',signed:true}],()=>true,
+    new Map([['4960',{stock_id:'4960',active:true}],['6925',{stock_id:'6925',active:false}]]),
+    new Map([['4960',{stock_id:'4960',signed:true}],['6925',{stock_id:'6925',signed:true}]]),x=>x?.signed===true)();
+  assert.deepEqual(list.map(x=>x.stock_id),['3062','4960']);
+  assert.match(live,/\.\.\.liveBasePicks,\.\.\.entryQuoteFollowups\(\)/);
+  assert.match(live,/extras\.length&&marketBridgeReady\(\)&&taipeiMarketState\(\)\.open/);
+  assert.match(saved,/bestTodayQuote\(null,id\)/);
+  assert.match(saved,/stockMovementHtml\(item,q,'entry'/);
+  assert.match(saved,/C 今日即時成交/);
+  assert.match(saved,/C 今日前次成交/);
+  assert.doesNotMatch(follow,/\bfetch\s*\(|setInterval\s*\(/);
 });
 test('Tomorrow watchlist reuses valid C quotes in summary and expanded data',()=>{
   const expanded=section('        const researchExpandedCard = (row,blocked=false) => {','        const riskStudyHtml=');

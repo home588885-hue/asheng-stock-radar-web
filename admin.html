@@ -1824,13 +1824,30 @@ h1 {
           localStorage.setItem(LIVE_QUOTE_CACHE_PREFIX + quoteSessionDate(), JSON.stringify([...liveQuoteCache.entries()]));
         } catch (error) {}
       };
+      // Quote existing authenticated saved watches and signed S research observations.
+      // This only expands C quote targets. No additional S reads or buy signals.
+      const entryQuoteFollowups = () => {
+        if(stage!=='ENTRY')return [];
+        const byId=new Map();
+        const add=item=>{
+          const id=String(item?.stock_id||'');
+          if(id&&!holdings.has(id)&&unifiedRadarGeneration(item))byId.set(id,item);
+        };
+        for(const item of overnightPassiveResearch)
+          if(passiveRadarWatchEligible(item))add(item);
+        for(const watch of pullbackWatch.values())
+          if(watch?.active===true)add(pullbackWatchSnapshots.get(String(watch.stock_id||'')));
+        return [...byId.values()];
+      };
       const bestTodayQuote = (quote, stockId = '') => {
         const id = String(stockId || quote?.stock_id || '');
         // Cloudflare may quote ONLY the current S-model picks of the active radar
         // section plus the admin's own saved holdings. It NEVER creates new picks.
         const isModelSelected = marketBridgeReady()
           && ['LAUNCH','ENTRY'].includes(stage)
-          && liveBasePicks.some(item => String(item?.stock_id || '') === id);
+          && (liveBasePicks.some(item => String(item?.stock_id || '') === id)
+            || (stage==='ENTRY'&&entryQuoteFollowups()
+              .some(item=>String(item.stock_id||'')===id)));
         if (!holdings.has(id) && !isModelSelected) return null;
         if (validTodayQuote(quote)) return quote;
         const cached = liveQuoteCache.get(id);
@@ -4296,15 +4313,19 @@ h1 {
           const safeAction={key:'retained_watch',phase:'observe',buyable:false,trialable:false,
             text:label,detail:note};
           const existing=!!item&&Number.isFinite(close)&&close>0;
-          const movement=existing?stockMovementHtml(item,null,'entry',safeAction)
+          const q=bestTodayQuote(null,id);
+          const movement=existing?stockMovementHtml(item,q,'entry',safeAction)
             :'<div class="box empty">這檔追蹤紀錄仍在，尚無完整日K卡片資料；等待原排程補算。</div>';
-          const detail=existing?v5MonitorCard(item,null,safeAction):'';
+          const detail=existing?v5MonitorCard(item,q,safeAction):'';
+          const quoteLabel=validTodayQuote(q)
+            ?(quoteRecentForDisplay(q)?'C 今日即時成交 ':'C 今日前次成交 ')+num(Number(q.price),2)
+            :'模型收盤 '+(Number.isFinite(close)&&close>0?num(close,2):'-')+'｜非即時';
           const next=existing?radarShortAdvice(item,{detail:note}):'等待完整日K回補';
           return '<details class="entry-mini entry-saved-mini" data-stock-key="'+esc(id)+'" data-tracking-symbol="'+esc(id)+'"'+selected+'>'
             +'<summary class="entry-mini-summary radar-compact-summary">'
             +'<span class="entry-mini-name"><strong>'+esc(id+' '+name)+'</strong><small>'+esc(label)+'</small></span>'
             +'<span class="entry-mini-expand">展開</span>'
-            +'<span class="entry-mini-metrics">模型收盤 <b>'+(Number.isFinite(close)&&close>0?esc(num(close,2)):'-')+'</b>｜'+esc(day)+'</span>'
+            +'<span class="entry-mini-metrics">'+esc(quoteLabel)+'｜S '+esc(day)+'</span>'
             +'<span class="radar-compact-next">🔎 '+esc(next)+'</span></summary>'
             +'<div class="entry-mini-full">'+movement+(detail?radarDeepDetailsHtml(detail):'')+'</div></details>';
         };
@@ -4877,6 +4898,10 @@ h1 {
             +riskStudy.map(row=>{
               const item=row.item,m=item.metrics||{},close=Number(m.close),ma20=Number(m.ma20);
               const gap=close>0&&ma20>0?(close/ma20-1)*100:null;
+              const q=bestTodayQuote(row.quote,String(item.stock_id||''));
+              const quoteLabel=validTodayQuote(q)
+                ?(quoteRecentForDisplay(q)?'C 今日即時成交 ':'C 今日前次成交 ')+num(Number(q.price),2)
+                :'模型收盤 '+(close>0?num(close,2):'-')+'｜非即時';
               const reason=String(row.action?.detail||row.action?.text||'原進場風控尚未通過');
               const why=chaseOver(item,close)?'已超過'+chaseLimitNote(item)
                 :Number(m.current_volume_lots)<1000?'量能不足1000張'
@@ -4888,8 +4913,7 @@ h1 {
                 +'<summary class="entry-research-summary"><div class="entry-research-name"><strong>'
                 +esc(String(item.stock_id||'')+' '+String(item.stock_name||''))
                 +'</strong><span>🔴 暫不進場｜點開完整分析 ▾</span></div>'
-                +'<small>模型收盤 '+esc(Number(m.close)>0?num(Number(m.close),2):'-')
-                +'｜主要風險：'+esc(why)+'</small>'
+                +'<small>'+esc(quoteLabel)+'｜主要風險：'+esc(why)+'</small>'
                 +'<small>🔎 '+esc(radarShortAdvice(item,{phase:'blocked'}))+'</small></summary>'
                 +researchExpandedCard(row,true)+'</details>';
             }).join('')+'</div>'
@@ -7409,6 +7433,12 @@ h1 {
         }
         if (!liveBasePicks.length) {
           if (stage === 'ENTRY') {
+            const extras=entryQuoteFollowups();
+            if(extras.length&&marketBridgeReady()&&taipeiMarketState().open)
+              await window.getLiveQuotes(extras.map(item=>({
+                stock_id:String(item.stock_id),market:String(item.market||'')
+              })));
+            if(navigationSeq!==renderNavToken||stage!==renderStage)return;
             stableListRender(simplifiedEntryHtml()
               +'<div class="box empty">今日新版候選尚在補算，已保存追蹤在上方第二區；不可把昨日訊號當今天試單。</div>',{force:true});
             $('#note').textContent = '只顯示新版山川候選；待原夜間掃描陸續補算，不能把尚未重算當成零訊號。';
@@ -7475,7 +7505,11 @@ h1 {
         }
         try {
           if (typeof window.getLiveQuotes !== 'function') throw new Error('live_client_not_ready');
-          const payload = await window.getLiveQuotes(liveBasePicks.map(item => ({ stock_id: String(item.stock_id), market: String(item.market || '') })));
+          const quoteItems=stage==='ENTRY'
+            ?[...liveBasePicks,...entryQuoteFollowups()]:liveBasePicks;
+          const payload = await window.getLiveQuotes(quoteItems.map(item=>({
+            stock_id:String(item.stock_id),market:String(item.market||'')
+          })));
           if (navigationSeq !== renderNavToken || stage !== renderStage) return;
           if (!payload?.ok) throw new Error('live_quote_failed');
           const quoteMap = new Map((payload.quotes || []).map(quote => [String(quote.stock_id || ''), quote]));
@@ -7703,6 +7737,7 @@ h1 {
                 return;
               }
               const savedCount=groupedEntrySavedWatches(new Set()).savedCount;
+              await refreshLiveQuotes();
               stableListRender(simplifiedEntryHtml()
                 + '<div class="box empty">⚪ 新版候選來源暫時無法讀取。'
                 + (savedCount ? '已保存的跨日追蹤在上方第二區，待本交易日新版模型補算；不算買點。'
@@ -7711,6 +7746,10 @@ h1 {
               $('#note').textContent = '🎯 進場雷達｜已保存的跨日追蹤獨立顯示；完整日K尚未更新，不能當今日試單。';
               setCandidateSummary('bCount', null, '模型來源暫時無法讀取');
               livePoolTimer = null;
+              if(savedCount)liveTimer=setInterval(()=>{
+                if(stage==='ENTRY'&&!document.hidden&&taipeiMarketState().open)
+                  refreshLiveQuotes();
+              },180000);
               return;
             }
             let nextPool = applyEntryEodCache(await mergePullbackWatchItems(buildEntryPool(v5Data?.picks || [], launchData?.picks || [])))
