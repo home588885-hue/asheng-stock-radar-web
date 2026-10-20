@@ -207,6 +207,24 @@ test('Movement cards only display S or already-valid C trades and never grant a 
   assert.match(fn(item,null,'entry',{phase:'trial',trialable:false,text:'🟠 可小量試單'}),/目前非買點/);
 });
 
+test('Tomorrow watchlist does not repeat 4960 and 6925 in passive tracking',()=>{
+  const part=section('        const dedupeEveningResearch=(candidateRows,alreadyShown=[])=>{',
+    '        const primaryResearchRows=[');
+  const dedupe=new Function('const dedupeEveningResearch=(candidateRows,alreadyShown=[])=>{'
+    +part.split('const dedupeEveningResearch=(candidateRows,alreadyShown=[])=>{')[1]
+    +'return dedupeEveningResearch;')();
+  const stock=id=>({item:{stock_id:id}});
+  const existing=[stock('4960'),stock('6925')];
+  const supplementary=[stock('4960'),stock('6925'),stock('3062'),stock('3062'),stock('1319')];
+  const result=dedupe(supplementary,existing).map(row=>row.item.stock_id);
+  assert.deepEqual(result,['3062','1319']);
+  assert.match(html,/const primaryResearchRows=\[/);
+  assert.match(html,/\.values\(\)\],primaryResearchRows\)\.slice\(0,8\)/);
+  // Same stock still appears in primary "已發動等回踩" and is not deleted
+  // from the source model or persistent tracking.
+  assert.match(html,/const strongFollowups=rows\.filter/);
+  assert.match(html,/const passiveResearch=dedupeEveningResearch/);
+});
 test('3062 and 4960 track support/overextension without a fabricated buy',()=>{
   const source=section('      const passiveRadarWatchEligible=item=>{','      const displayModelWarning=item=>');
   const held=new Map();
