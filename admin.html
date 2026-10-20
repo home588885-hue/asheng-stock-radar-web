@@ -1694,6 +1694,34 @@ h1 {
         bottomStartMas: Object.freeze(['MA10','MA20','MA60']),
         selectionMas: Object.freeze(['MA10','MA20','MA60'])
       });
+
+      // 2026-10-20: one MA20 positive BIAS rule for new entries and add-ons.
+      // TW50 list reflects the 2026-09-21 index review. Do not guess
+      // small-cap from TPEX exchange, turnover or industry.
+      const CHASE_RULE_VERSION='2026-10-20-bias-8-12-15-v1';
+      const CHASE_TW50_20260921=new Set(
+        '2330 2454 2308 2317 3711 2383 2303 3037 2891 2881 2345 2882 1303 2327 3017 2887 2382 2885 2360 2059 6669 2886 2884 3231 2408 2344 2357 2301 2412 2890 2883 3008 2880 2892 3665 1216 3443 3653 7769 4958 2368 2395 6446 2449 5880 8046 2603 4904 3045 6505'.split(' '));
+      const chaseTier=item=>{
+        const id=String(item?.stock_id||'').trim();
+        if(CHASE_TW50_20260921.has(id))return {name:'大型權值股',limit:8,source:'臺灣50（2026-09-21）'};
+        const verified=String(item?.metrics?.verified_cap_tier||'').toLowerCase();
+        if(verified==='large')return {name:'大型權值股',limit:8,source:'已確認市值分類'};
+        if(verified==='small_spike')return {name:'中小型飆股',limit:15,source:'已確認市值／強勢分類'};
+        return {name:'一般／強勢主流股',limit:12,source:'尚無完整市值資料，採一般上限'};
+      };
+      const chaseRisk=(item,price=null)=>{
+        const tier=chaseTier(item),ma20=Number(item?.metrics?.ma20);
+        const close=price==null?Number(item?.metrics?.close):Number(price);
+        const valid=Number.isFinite(close)&&close>0&&Number.isFinite(ma20)&&ma20>0;
+        const bias=valid?(close/ma20-1)*100:null;
+        return {...tier,bias,valid,pass:valid&&bias<=tier.limit+1e-9,over:valid&&bias>tier.limit+1e-9};
+      };
+      const chasePass=(item,price=null)=>chaseRisk(item,price).pass;
+      const chaseOver=(item,price=null)=>chaseRisk(item,price).over;
+      const chaseLimitNote=item=>{
+        const tier=chaseTier(item);
+        return tier.name+' MA20正乖離上限 +'+tier.limit+'%';
+      };
       const isLockedRulePayload = data => data?.rule_version === LOCKED_RULE_VERSION && data?.rule_locked === true;
       const isLockedAnalyzerPayload = data => data?.selection_rule_version === LOCKED_RULE_VERSION && data?.selection_rule_locked === true;
       const todayQuoteDate = () => new Intl.DateTimeFormat('en-CA', {timeZone:'Asia/Taipei',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date()).replace(/[^0-9]/g,'');
@@ -2580,7 +2608,7 @@ h1 {
         return b.confirmed===true && b.warm_green_pass===true
           && mc.above_all_mas===true && (mc.all_rising!==true||g.main_bull===false)
           && score>=80 && pos>=0 && pos<=35
-          && price>ma20 && ma20>0 && (price/ma20-1)*100<=5
+          && price>ma20 && ma20>0 && chasePass(item,price)
           && vol>=1000 && avg>=500 && vol/avg>=.8 && vol/avg<=1.8
           && k>=35 && k<=80 && k>=d
           && Number.isFinite(macd)&&Number.isFinite(prior)&&macd>prior
@@ -2605,7 +2633,7 @@ h1 {
           && m.v5?.entry_confirmed!==true
           && (days===null||!Number.isFinite(days)||days<0)
           && score>=75 && pos>=0 && pos<=35
-          && price>0 && ma20>0 && price>=ma20 && (price/ma20-1)*100<=5
+          && price>0 && ma20>0 && price>=ma20 && chasePass(item,price)
           && vol>=1000 && avg>=500 && vol/avg>=0.6 && vol/avg<=2.2
           && k>=35 && k<=75 && k>=d
           && Number.isFinite(hist)&&Number.isFinite(prev)&&hist>prev
@@ -2651,7 +2679,7 @@ h1 {
           ||m.holding_management?.strong_breakdown===true
           ||mc.all_rising!==true||![close,ma10,ma20,ma60,avg,vol,pos,k].every(Number.isFinite)
           ||Math.min(close,ma10,ma20,ma60,avg)<=0
-          ||close<ma60||close<ma20*.985||close>ma20*1.05
+          ||close<ma60||close<ma20*.985||!chasePass(item,close)
           ||avg<500||vol<1000||pos<0||pos>=80||k<30||k>80)return null;
         const ten=close/ma10>=.985&&close/ma10<=1.025;
         const twenty=close/ma20>=.985&&close/ma20<=1.025;
@@ -2673,7 +2701,7 @@ h1 {
           ||Math.min(price,open,prevClose,ma10,ma20,ma60)<=0
           ||price<=Math.max(open,prevClose)
           ||price<Math.max(ma10,ma20,ma60)
-          ||price/ma20>1.05||vol<1000||pace<.9
+          ||!chasePass(item,price)||vol<1000||pace<.9
           ||high<=0||price<high*.985)return null;
         return {text:'🟡 '+watch.line+' 回踩收復已核對｜等待正式策略驗證',
           detail:'今日已站回昨日開收盤與 MA10／20／60，量速約 '+num(pace,2)
@@ -2700,7 +2728,7 @@ h1 {
         if(risk&&risk.kind!=='incomplete')return null;
         if(price<=prevOpen||price<=prevClose||price<=openToday
           || price<Math.max(ma10,ma20,ma60)
-          || (price/ma20-1)*100>5
+          || !chasePass(item,price)
           || (Number.isFinite(high)&&high>0&&price<high*.985)
           || vol<1000||pace===null||pace<.9)return null;
         return {
@@ -2865,7 +2893,7 @@ h1 {
         const ratio=avg20>0&&daily!=null
           ? (live?daily/(avg20*marketFraction(quote.quote_time)):daily/avg20):null;
         const structure=mc.all_rising===true&&mc.above_all_mas===true
-          &&price>0&&ma20>0&&price>=ma20&&price/ma20<=1.05
+          &&price>0&&ma20>0&&price>=ma20&&chasePass(item,price)
           &&pos!=null&&pos<=45&&m.entry_candle_guard?.weak_after_breakout!==true;
         const liquidity=daily!=null&&daily>=1000&&avg20!=null&&avg20>=500
           &&ratio!=null&&ratio>=1.2;
@@ -2969,10 +2997,10 @@ h1 {
           detail:'MA10／20／60主要多頭條件尚未成立，暫不新買；不等於趨勢已破壞',
           keep_candidate:true,buyable:false,trialable:false
         };
-        if(gap!=null&&gap>5 || Number.isFinite(pos)&&pos>=85) return {
+        if(chaseOver(item,price) || Number.isFinite(pos)&&pos>=85) return {
           kind:'position',key:'wait',rank:10,className:'wait',
           text:'🔵 趨勢仍在｜位置偏高等回踩',
-          detail:(gap!=null&&gap>5?'距MA20 +'+num(gap,1)+'% 已超過新進場5%上限':'1年位階 '+num(pos,1)+'%')
+          detail:(chaseOver(item,price)?'距MA20 +'+num(gap,1)+'%，已超過'+chaseLimitNote(item):'1年位階 '+num(pos,1)+'%')
             +'｜不宜追價不等於股票不能繼續漲，等回踩再核對',keep_candidate:true,buyable:false,trialable:false
         };
         if((Number.isFinite(k)&&Number.isFinite(d)&&k>80&&k<d)
@@ -3080,7 +3108,7 @@ h1 {
         const v5Version = String(metrics.model?.version || '').startsWith('2026-09-21-v5');
         const v5EntryConfirmed = v5Version && String(item.as_of || '') === expectedSignalDataDate() && v5.entry_confirmed === true;
         const highWinSweet = v5EntryConfirmed && currentVolume >= 1000 && avg20Volume >= 500 && dayVolumeRatio >= 1.2 && dayVolumeRatio <= 1.8 && Number.isFinite(dailyK) && dailyK <= 90;
-        const highWinLate = highWinSweet && (hasRisk || (Number.isFinite(position1y) && position1y >= 85) || (deviation20 != null && deviation20 > 10));
+        const highWinLate = highWinSweet && (hasRisk || (Number.isFinite(position1y) && position1y >= 85) || chaseOver(item,close));
         if (highWinLate) return { className: 'wait', text: '⭐ 高勝率條件成立｜位置已高・等回踩，不追' };
         if (highWinSweet) return { className: 'highwin', text: '🟢 正式買點｜高勝率確認・可分批進場' };
         const launchSeq = metrics.launch_sequence || maCluster.launch_sequence || {};
@@ -3101,38 +3129,38 @@ h1 {
         if (sell) return { className: 'sell', text: '🔴 收盤弱勢確認｜持有者考慮退出' };
         if (v5.entry_confirmed === true && !v5EntryConfirmed) return { className: 'wait', text: '🟡 進場條件確認中｜待最新資料' };
         if (v5EntryConfirmed) {
-          const v5Late = hasRisk || (Number.isFinite(position1y) && position1y >= 85) || (deviation20 != null && deviation20 > 10);
+          const v5Late = hasRisk || (Number.isFinite(position1y) && position1y >= 85) || chaseOver(item,close);
           if (v5Late) return { className: 'wait', text: v5.precision_confirmed === true ? '💎 高品質條件成立｜位置已高・等回踩' : '🟡 進場條件成立｜位置已高・等回踩' };
           return { className: 'v5buy', text: v5.precision_confirmed === true ? '💎 高品質確認｜可分批進場' : '🟢 條件完成｜可分批進場' };
         }
         const reduce = holderRelevant && (hasRisk || (Number.isFinite(dailyK) && dailyK >= 80 && ((Number.isFinite(monthlyK) && monthlyK >= 65) || (Number.isFinite(position1y) && position1y >= 85))));
         if (reduce) return { className: 'reduce', text: '🟠 持有者｜考慮減碼' };
-        const firstBreakoutBase = metrics.first_breakout20 === true && currentVolume >= 1000 && dayVolumeRatio >= 1.3 && chipFollow && revenueOkay && qualityOkay && deviation20 != null && deviation20 <= 12 && !hasRisk;
+        const firstBreakoutBase = metrics.first_breakout20 === true && currentVolume >= 1000 && dayVolumeRatio >= 1.3 && chipFollow && revenueOkay && qualityOkay && chasePass(item,close) && !hasRisk;
         if (firstBreakoutBase && !freshData) return { className: 'wait', text: '🟡 首根起漲候選｜待新版最新資料' };
         if (firstBreakoutBase && !historyReliable) return { className: 'wait', text: `🟡 首根起漲候選｜歷史樣本不足 n=${sample}` };
         if (firstBreakoutBase && !historyPass) return { className: 'wait', text: '🟡 首根突破成立｜10日歷史優勢不足' };
         if (firstBreakoutBase) return { className: 'first', text: '🎯 首根起漲｜突破前高・量籌同步・發動提醒' };
-        const pullbackBase = priorB && pullbackRebreak && currentVolume >= 1000 && chipFollow && revenueOkay && qualityOkay && combinedScore >= 70 && deviation20 != null && deviation20 <= 12 && Number.isFinite(ma20) && close >= ma20 && dailyK > dailyD && weeklyK >= 30 && weeklyK <= 75 && monthlyK < 65 && ratio >= 0.8 && ratio <= 1.8 && !hasRisk;
+        const pullbackBase = priorB && pullbackRebreak && currentVolume >= 1000 && chipFollow && revenueOkay && qualityOkay && combinedScore >= 70 && chasePass(item,close) && Number.isFinite(ma20) && close >= ma20 && dailyK > dailyD && weeklyK >= 30 && weeklyK <= 75 && monthlyK < 65 && ratio >= 0.8 && ratio <= 1.8 && !hasRisk;
         if (pullbackBase && !freshData) return { className: 'wait', text: '🟡 回測確認候選｜待新版最新資料' };
         if (pullbackBase && !historyReliable) return { className: 'wait', text: `🟡 回測確認候選｜歷史樣本不足 n=${sample}` };
         if (pullbackBase && !historyPass) return { className: 'wait', text: `🟡 回測結構成立｜10日歷史優勢不足` };
         if (pullbackBase) return { className: 'wait', text: '🟡 舊版回測再轉強｜觀察，不列正式進場' };
-        const preBreakout = (item.stage === 'A' || item.stage === 'B') && !priorB && metrics.breakout20 !== true && Number.isFinite(recentHigh20) && recentHigh20 > 0 && distanceToHigh != null && distanceToHigh >= -3 && distanceToHigh < 0 && currentVolume >= 1000 && chipFollow && deviation20 != null && deviation20 <= 10 && dailyK >= dailyD && !hasRisk;
+        const preBreakout = (item.stage === 'A' || item.stage === 'B') && !priorB && metrics.breakout20 !== true && Number.isFinite(recentHigh20) && recentHigh20 > 0 && distanceToHigh != null && distanceToHigh >= -3 && distanceToHigh < 0 && currentVolume >= 1000 && chipFollow && chasePass(item,close) && dailyK >= dailyD && !hasRisk;
         if (preBreakout) return { className: 'scout', text: `🛰️ 攻擊前哨｜距前高 ${num(Math.abs(distanceToHigh), 1)}%・籌碼跟上` };
-        const buy = item.stage === 'C' && freshData && historyPass && qualityOkay && priorB && cScore >= 75 && ratio >= 1.05 && ratio <= 1.5 && weeklyK >= 40 && weeklyK <= 70 && monthlyK >= 20 && monthlyK <= 50 && rate >= 60 && sample >= 10 && Number.isFinite(avgReturn10) && avgReturn10 > 0 && deviation20 != null && deviation20 <= 12 && !hasRisk;
+        const buy = item.stage === 'C' && freshData && historyPass && qualityOkay && priorB && cScore >= 75 && ratio >= 1.05 && ratio <= 1.5 && weeklyK >= 40 && weeklyK <= 70 && monthlyK >= 20 && monthlyK <= 50 && rate >= 60 && sample >= 10 && Number.isFinite(avgReturn10) && avgReturn10 > 0 && chasePass(item,close) && !hasRisk;
         if (buy) return { className: 'wait', text: '🟡 舊版高確認條件｜觀察，不列正式進場' };
-        const add = item.stage === 'C' && priorB && cScore >= 70 && ratio >= 0.9 && ratio <= 1.6 && weeklyK >= 30 && weeklyK <= 75 && monthlyK >= 15 && monthlyK <= 55 && rate >= 55 && sample >= 6 && deviation20 != null && deviation20 <= 12 && !hasRisk;
+        const add = item.stage === 'C' && priorB && cScore >= 70 && ratio >= 0.9 && ratio <= 1.6 && weeklyK >= 30 && weeklyK <= 75 && monthlyK >= 15 && monthlyK <= 55 && rate >= 55 && sample >= 6 && chasePass(item,close) && !hasRisk;
         if (add) return { className: 'add', text: qualityOkay ? '🟣 回踩再攻候選｜品質通過｜待確認突破' : '🟣 回踩再攻條件｜品質待確認' };
-        const earlyC = item.stage === 'C' && priorB && cScore >= 70 && bScore >= 85 && metrics.breakout20 === true && sample < 6 && playbookScore >= 60 && chipScore >= 65 && combinedScore >= 70 && position1y <= 30 && ratio >= 1 && ratio <= 1.6 && dailyK > dailyD && dailyK < 85 && weeklyK >= 35 && weeklyK <= 70 && monthlyK >= 10 && monthlyK < 50 && Number.isFinite(close) && Number.isFinite(ma20) && ma20 > 0 && close >= ma20 && close <= ma20 * 1.12 && !hasRisk;
+        const earlyC = item.stage === 'C' && priorB && cScore >= 70 && bScore >= 85 && metrics.breakout20 === true && sample < 6 && playbookScore >= 60 && chipScore >= 65 && combinedScore >= 70 && position1y <= 30 && ratio >= 1 && ratio <= 1.6 && dailyK > dailyD && dailyK < 85 && weeklyK >= 35 && weeklyK <= 70 && monthlyK >= 10 && monthlyK < 50 && Number.isFinite(close) && Number.isFinite(ma20) && ma20 > 0 && close >= ma20 && chasePass(item,close) && !hasRisk;
         if (earlyC) return { className: 'early', text: '⚡ C 先手｜結構已轉強，回測樣本不足' };
-        const position = item.stage === 'B' && bScore >= 75 && ratio >= 1.05 && ratio <= 1.5 && dailyK > dailyD && dailyK < 80 && weeklyK >= 30 && weeklyK <= 70 && monthlyK >= 0 && monthlyK < 50 && rate >= 55 && sample >= 6 && deviation20 != null && deviation20 <= 12 && !hasRisk;
+        const position = item.stage === 'B' && bScore >= 75 && ratio >= 1.05 && ratio <= 1.5 && dailyK > dailyD && dailyK < 80 && weeklyK >= 30 && weeklyK <= 70 && monthlyK >= 0 && monthlyK < 50 && rate >= 55 && sample >= 6 && chasePass(item,close) && !hasRisk;
         if (position) return { className: 'position', text: qualityOkay ? '🔵 趨勢轉強候選｜品質通過｜待回測確認' : '🔵 趨勢轉強條件｜品質待確認' };
         const attackExtension = Number.isFinite(close) && Number.isFinite(ma20) && ma20 > 0 ? close / ma20 - 1 : Infinity;
-        const attack = item.stage === 'B' && bScore >= 75 && lowExplosiveLaunch && playbookScore >= 70 && chipScore >= 60 && combinedScore >= 70 && position1y <= 35 && ratio >= 1.5 && ratio <= 2.5 && dailyK > dailyD && dailyK < 80 && weeklyK >= 30 && weeklyK <= 70 && monthlyK >= 0 && monthlyK < 50 && attackExtension >= 0 && attackExtension <= 0.12 && !hasRisk;
+        const attack = item.stage === 'B' && bScore >= 75 && lowExplosiveLaunch && playbookScore >= 70 && chipScore >= 60 && combinedScore >= 70 && position1y <= 35 && ratio >= 1.5 && ratio <= 2.5 && dailyK > dailyD && dailyK < 80 && weeklyK >= 30 && weeklyK <= 70 && monthlyK >= 0 && monthlyK < 50 && attackExtension >= 0 && chasePass(item,close) && !hasRisk;
         if (attack) return { className: 'attack', text: '🔥 攻擊型觀察｜初段轉強，不直接建倉' };
-        const scout = item.stage === 'A' && aScore >= 83 && position1y <= 25 && ratio >= 1 && ratio <= 1.9 && dailyK > dailyD && dailyK < 80 && weeklyK >= 25 && weeklyK <= 65 && monthlyK >= 0 && monthlyK < 40 && Number.isFinite(close) && Number.isFinite(ma20) && Number.isFinite(ma60) && ma20 > 0 && ma60 > 0 && close >= ma20 * 0.99 && close <= ma20 * 1.05 && close >= ma60 * 0.97 && !hasRisk;
+        const scout = item.stage === 'A' && aScore >= 83 && position1y <= 25 && ratio >= 1 && ratio <= 1.9 && dailyK > dailyD && dailyK < 80 && weeklyK >= 25 && weeklyK <= 65 && monthlyK >= 0 && monthlyK < 40 && Number.isFinite(close) && Number.isFinite(ma20) && Number.isFinite(ma60) && ma20 > 0 && ma60 > 0 && close >= ma20 * 0.99 && chasePass(item,close) && close >= ma60 * 0.97 && !hasRisk;
         if (scout) return { className: 'scout', text: '🛰️ 攻擊前哨｜低檔蓄勢，等突破確認' };
-        if (deviation20 != null && deviation20 > 12) return { className: 'wait', text: `⚠️ 20日線乖離 +${num(deviation20)}%｜等拉回` };
+        if (chaseOver(item,close)) return { className: 'wait', text: `⚠️ 20日線乖離 +${num(deviation20)}%｜等拉回` };
         const reentry = priorB && pullbackRebreak && Number.isFinite(close) && Number.isFinite(ma20) && Number.isFinite(dailyK) && Number.isFinite(dailyD) && Number.isFinite(weeklyK) && Number.isFinite(monthlyK) && close >= ma20 && dailyK > dailyD && weeklyK >= 30 && weeklyK <= 75 && monthlyK < 65 && !hasRisk;
         if (reentry) return { className: 'reentry', text: '♻️ 修復中｜暫不追，等重新轉強' };
         if (item.stage === 'C' && !qualityOkay) return { className: 'wait', text: '🟡 回踩再攻條件｜品質待確認' };
@@ -3325,7 +3353,7 @@ h1 {
         const ext20 = Number.isFinite(price) && Number.isFinite(ma20) && ma20 > 0 ? (price / ma20 - 1) * 100 : null;
         const riskText = (item?.cautions || []).map(value => String(value)).join('｜');
         const kdHighWeak = Number.isFinite(dailyK) && Number.isFinite(dailyD) && dailyK > 80 && dailyK < dailyD;
-        const hardLate = (Number.isFinite(pos1y) && pos1y >= 85) || (ext20 != null && ext20 > 10) || kdHighWeak || (riskText.includes('短線爆量') && Number.isFinite(pos1y) && pos1y >= 70);
+        const hardLate = (Number.isFinite(pos1y) && pos1y >= 85) || chaseOver(item,price) || kdHighWeak || (riskText.includes('短線爆量') && Number.isFinite(pos1y) && pos1y >= 70);
         const fresh = signalDataFresh(item);
         const formal = fresh && v5.entry_confirmed === true;
         const bottom = metrics.bottom_start || {};
@@ -3368,7 +3396,7 @@ h1 {
           && Number.isFinite(breakoutPrice) && breakoutPrice > 0
           && price > breakoutPrice
           && Number.isFinite(distance) && distance > 0 && distance <= 3
-          && ext20 != null && ext20 <= 8
+          && chasePass(item,price)
           && Number.isFinite(pos1y) && pos1y <= 80
           && dayReturnPct != null && dayReturnPct >= 0 && dayReturnPct <= 8
           && Number.isFinite(qOpen) && price >= qOpen * .995;
@@ -3391,7 +3419,7 @@ h1 {
           && !rawFirst
           && Number.isFinite(dailyK) && dailyK >= 35 && (dailyK <= 80 || (dailyK <= 95 && Number.isFinite(dailyD) && dailyK >= dailyD))
           && Number.isFinite(pos1y) && pos1y <= 80
-          && ext20 != null && ext20 <= 10
+          && chasePass(item,price)
           && storedVolume >= 1000 && avg20Volume >= 500
           && Number.isFinite(storedDayVolumeRatio) && storedDayVolumeRatio >= .6 && storedDayVolumeRatio <= 1.8;
 
@@ -3400,7 +3428,7 @@ h1 {
           && price > breakoutPrice
           && currentVolume >= liveMinVolume
           && Number.isFinite(livePace) && livePace >= 1
-          && ext20 != null && ext20 <= 10 && !hardLate;
+          && chasePass(item,price) && !hardLate;
 
         const candidateIntent = launchSeq.second_buy_candidate === true || preLaunch || liveBreak || firstOkay || formal || bottomConfirmedForEntry || earlyLaunchDetected;
         if (hardLate && candidateIntent) {
@@ -3418,7 +3446,7 @@ h1 {
           return { key:'pre', rank:28, className:'early', text:'🟠 盤中起漲預警｜第一時間盯', detail:launchType+'｜'+why+'｜先列最前面追蹤，量價一通過即升藍燈', intraday_early_watch:true };
         }
         if (bottomConfirmedForEntry && !hardLate) return { key:'bottom', rank:35, className:'scout', text:'🔥 底部起漲型態確認｜進場檢查', detail:'型態已成立，轉入進場雷達；仍需即時量價與存活確認，尚不等於正式買點' };
-        if ((rawFirst && !firstOkay) || (Number.isFinite(launchDays) && launchDays >= 1 && launchDays <= 5 && ext20 != null && ext20 > 8)) {
+        if ((rawFirst && !firstOkay) || (Number.isFinite(launchDays) && launchDays >= 1 && launchDays <= 5 && ext20 != null && chaseOver(item,price))) {
           return { key:'wait', rank:10, className:'scout', text:'🔵 等回踩買點', detail:`已發動或位置偏高｜等回踩 ${Number.isFinite(ma20)?'MA20 '+num(ma20,2):'支撐'} 守住再評估` };
         }
         if (liveBreak || firstOkay || formal) {
@@ -3601,7 +3629,7 @@ h1 {
           &&Number(m.current_volume_lots)>=1000&&Number(m.avg_volume_20_lots)>=500
           &&mc.all_rising===true&&mc.above_all_mas===true
           &&[close,ma10,ma20,ma60].every(n=>Number.isFinite(n)&&n>0)
-          &&close>=Math.max(ma10,ma20,ma60)&&(close/ma20-1)*100<=5
+          &&close>=Math.max(ma10,ma20,ma60)&&chasePass(item,close)
           &&Number.isFinite(pos)&&pos<80&&Number.isFinite(k)&&k<=80
           &&g.main_bull!==false&&g.weak_after_breakout!==true
           &&g.macd_weak!==true&&g.kd_high_weak!==true
@@ -3636,7 +3664,7 @@ h1 {
         const gap=ma20>0&&price>0?(price/ma20-1)*100:null;
         const weak=g.weak_after_breakout===true||g.macd_weak===true
           ||g.kd_high_weak===true||m.holding_management?.strong_breakdown===true;
-        const invalid=weak||gap==null||gap>5||gap< -1.5
+        const invalid=weak||gap==null||chaseOver(item,price)||gap< -1.5
           ||!(lots>=1000)||!(avg>=500)||Number(m.position_1y_pct)>=85
           ||(!firstBar&&g.version==='2026-10-06-kbar-ma10-20-60-v3'
             &&g.main_bull===false);
@@ -3917,7 +3945,7 @@ h1 {
         const gap=price>0&&ma20>0?(price/ma20-1)*100:null;
         const position=Number(m.position_1y_pct),lots=Number(quote?.volume_lots);
         const eligible=fresh&&String(item?.as_of||'')===expectedSignalDataDate()
-          &&masOkay&&gap!=null&&gap<=5
+          &&masOkay&&chasePass(item,price)
           &&Number.isFinite(position)&&position<85&&lots>=1000;
         const formal=eligible&&formalEntryValidation.enabled&&m.v5?.entry_confirmed===true;
         if(formal)return {...baseAction,phase:'confirmed',buyable:true,trialable:false,
@@ -3943,7 +3971,7 @@ h1 {
           trialable:true,key:'box_breakout_trial',className:'trial',rank:Math.max(95,Number(baseAction.rank||0)),
           live_quote_verified:true,text:'🟠 山川箱型突破｜小量試單',
           detail:'固定箱頂 '+num(boxTop,2)+'｜箱底 '+num(boxBottom,2)
-            +'｜量速 '+num(boxPace,2)+'x｜MA20乖離≤5%、籌碼與原風控已核對；'
+            +'｜量速 '+num(boxPace,2)+'x｜'+chaseLimitNote(item)+'、籌碼與原風控已核對；'
             +'僅小量試單，非綠色正式買點'};
         const firstBarTrial=eligible&&baseAction.key==='breakout'
           &&baseAction.intraday_early_launch===true;
@@ -4038,9 +4066,9 @@ h1 {
         if(m.holding_management?.strong_breakdown===true ||g.weak_after_breakout===true
           ||(ma20>0&&close<ma20&&g.main_bull===false))
           return result('weak','🔴 結構轉弱｜等重新轉強','確認是否重新站回MA20、突破壓力；未重建前先排除');
-        if(trendOk&&startSeen&&gap!==null&&gap>5)
+        if(trendOk&&startSeen&&chaseOver(item,close))
           return result('extended','🚀 起漲後續｜高乖離等回踩',
-            '保留追蹤；等乖離回到MA20＋5%內、回踩MA10／20守住並重新放量，不追高');
+            '保留追蹤；等乖離回到'+chaseLimitNote(item)+'內、回踩MA10／20守住並重新放量，不追高');
         if(trendOk&&startSeen&&Number.isInteger(days)&&days>=1&&days<=5)
           return result('continuation','🚀 起漲延續｜觀察續強',
             '觀察MA10守住、量價續強，或回踩MA20後再轉強；不得只因連漲就追價');
@@ -4077,7 +4105,7 @@ h1 {
         if(v5.chip_pass===false)missing.push('V5籌碼');
         if(v5.avg20_liquidity_pass===false)missing.push('20日均量');
         if(m.entry_candle_guard?.main_bull===false)missing.push('MA10／20／60結構');
-        if(dist!=null&&dist>5)missing.push('距MA20超過5%');
+        if(chaseOver(item,close))missing.push('距MA20超過'+chaseLimitNote(item));
         const missingText=missing.length?'｜未達：'+missing.slice(0,4).join('、'):'';
         const safeDisplayAction={...originalAction,buyable:activeFormal,trialable:activeTrial,
           text:bucketLabel.includes('避開')?(originalAction.text||'🔴 風險警戒'):originalAction.text||'🟡 模型候選',
@@ -4253,7 +4281,7 @@ h1 {
           const pos = Number(m.position_1y_pct), k = Number(m.daily_k), lots = Number(m.current_volume_lots);
           const strong = action.active_launch_fallback !== true && Number(item.score) >= 75
             && lots >= 1000 && mc.all_rising === true && mc.above_all_mas === true
-            && close > 0 && ma20 > 0 && close >= ma20 && (close / ma20 - 1) * 100 <= 5
+            && close > 0 && ma20 > 0 && close >= ma20 && chasePass(item,close)
             && Number.isFinite(pos) && pos < 80 && Number.isFinite(k) && k <= 80;
           if (!strong) continue;
           const previous = buyNoticeState.seen[id];
@@ -4477,7 +4505,7 @@ h1 {
             &&Number(row.item?.score)>=75&&Number(m.current_volume_lots)>=1000
             &&Number(m.avg_volume_20_lots)>=500
             &&mc.all_rising===true&&mc.above_all_mas===true
-            &&close>0&&ma20>0&&close>=ma20&&(close/ma20-1)*100<=5
+            &&close>0&&ma20>0&&close>=ma20&&chasePass(row.item,close)
             &&Number.isFinite(pos)&&pos<80&&Number.isFinite(k)&&k<=80;
         };
         // EOD starter is a preparation shelf, not an orange trade confirmation.
@@ -4517,14 +4545,14 @@ h1 {
           const price=Number(q?.price??m.close),ma20=Number(m.ma20);
           const gap=price>0&&ma20>0?(price/ma20-1)*100:null;
           const pos=Number(m.position_1y_pct),k=Number(m.daily_k),d=Number(m.daily_d);
-          const high=(Number.isFinite(pos)&&pos>=85)||(gap!=null&&gap>5)
+          const high=(Number.isFinite(pos)&&pos>=85)||chaseOver(item,price)
             ||(Number.isFinite(k)&&k>80)
             ||(item.cautions||[]).some(x=>String(x).includes('日KD偏高'))
             ||detail.includes('位置過高')||risk?.kind==='position';
           if(high){
             const reasons=[];
             if(Number.isFinite(pos)&&pos>=85)reasons.push('1年位階 '+num(pos,1)+'%');
-            if(gap!=null&&gap>5)reasons.push('距MA20 +'+num(gap,1)+'%（5%上限）');
+            if(chaseOver(item,price))reasons.push('距MA20 +'+num(gap,1)+'%（'+chaseLimitNote(item)+'）');
             if(Number.isFinite(k)&&k>80)reasons.push('KD K '+num(k,1)+(Number.isFinite(d)?'／D '+num(d,1):''));
             b.high.push(safeRow(row,{text:'🔵 位置偏高｜等回踩',
               detail:(reasons.join('｜')||'位置風險')+'｜不追價，等回踩確認'}));
@@ -4650,7 +4678,7 @@ h1 {
           const disqualified=['mother_low_broken','child_low_broken','invalid','broken'].includes(mother);
           if(!id||researchSeen.has(id)||holdings.has(id)||!unifiedRadarGeneration(item)
             ||String(item.as_of||'')!==expected
-            ||!Number.isFinite(gap)||gap>5||gap<(-3)
+            ||!Number.isFinite(gap)||chaseOver(item,close)||gap<(-3)
             ||!Number.isFinite(vol)||vol<1000
             ||Number(item.score)<62
             ||disqualified
@@ -4714,7 +4742,7 @@ h1 {
               const item=row.item,m=item.metrics||{},close=Number(m.close),ma20=Number(m.ma20);
               const gap=close>0&&ma20>0?(close/ma20-1)*100:null;
               const reason=String(row.action?.detail||row.action?.text||'原進場風控尚未通過');
-              const why=gap!==null&&gap>5?'已超過MA20 +5%不追高'
+              const why=chaseOver(item,close)?'已超過'+chaseLimitNote(item)
                 :Number(m.current_volume_lots)<1000?'量能不足1000張'
                 :String(m.shanchuan_v2?.mother_child?.lifecycle?.state||'').includes('low_broken')
                   ?'山川母子K低點跌破'
@@ -4771,7 +4799,7 @@ h1 {
             :'')
           +(!topResearch.length&&!strongFollowups.length?riskStudyHtml:'')
           +'<small class="entry-research-meta">以上是 '+esc(expected)
-          +' 的完成日K，起漲階段≠現在可以下單；隔天以原本5%乖離、量價與C有效成交確認試單。'
+          +' 的完成日K，起漲階段≠現在可以下單；隔天以新版 +8%／+12%／+15% 分級乖離上限、量價與C有效成交確認試單。'
           +'｜本輪候選 '+rows.length+' 檔，未掃到的股票不算淘汰。</small>'
           +'</section>';
         const actionableCount=starterRows.length+completedRows.length;
@@ -4874,7 +4902,7 @@ h1 {
         if(d.first_bar_today===true)
           return {keep:false,rank:0,className:'box-promoted',label:'📦 山川第一根已轉進場雷達'};
         const gap20=Number(m.ma20)>0?(Number(m.close)/Number(m.ma20)-1)*100:null;
-        if(d.ready_watch===true&&gap20!=null&&gap20<=5
+        if(d.ready_watch===true&&gap20!=null&&chasePass(item,Number(m.close))
           &&m.v5?.entry_confirmed!==true
           &&!['ACTIVE','ENTRY'].includes(String(m.scan_intelligence?.effective_lifecycle||''))
           &&!['formal_candidate','starter'].includes(String(m.trade_lifecycle?.entry?.state||''))
@@ -4919,7 +4947,7 @@ h1 {
         }
 
         // 發動前是「低位等發動」，高位階／過熱／離月線太遠都不該留。
-        if ((Number.isFinite(pos1y)&&pos1y>=85) || (ext20!=null&&ext20>10) || (Number.isFinite(k)&&k>80)) {
+        if ((Number.isFinite(pos1y)&&pos1y>=85) || chaseOver(item,price) || (Number.isFinite(k)&&k>80)) {
           return { keep:false, rank:0, className:'high', label:'🔵 位置偏高｜不列發動前' };
         }
 
@@ -4934,7 +4962,7 @@ h1 {
           &&mc.all_rising===true&&mc.above_all_mas===true
           &&Number(item?.score)>=75&&Number(m.current_volume_lots)>=1000
           &&Number(m.avg_volume_20_lots)>=500
-          &&ma20>0&&ext20!=null&&ext20>=-1.5&&ext20<=5
+          &&ma20>0&&ext20!=null&&ext20>=-1.5&&chasePass(item,price)
           &&Number.isFinite(pos1y)&&pos1y<=35){
           return {keep:true,rank:65,className:'bottom-base',label:'🌱 低位底部整理｜待量價'};
         }
@@ -5171,7 +5199,7 @@ h1 {
         const playbookHtml = playbook ? `<div class="metrics"><span class="pill">📚 綜合判斷 ${Number(playbook.score || 0)}｜${esc(playbook.label || '中性觀察')}</span>${(playbook.signals || []).slice(0, 4).map(text => `<span class="pill">${esc(memberFacingText(text))}</span>`).join('')}${(playbook.warnings || []).slice(0, 3).map(text => `<span class="pill">${esc(memberFacingText(text))}</span>`).join('')}</div>` : ((item.stage === 'B' || item.stage === 'C') ? '<div class="metrics"><span class="pill">📚 綜合判斷｜待更新</span></div>' : '');
         const combinedScore = Number(chip?.combined_score ?? item.score ?? 0);
         const deviation20 = Number.isFinite(close) && Number.isFinite(Number(metrics.ma20)) && Number(metrics.ma20) > 0 ? (close / Number(metrics.ma20) - 1) * 100 : null;
-        const deviationWarningHtml = deviation20 != null && deviation20 > 12 ? `<div class="risk-summary">⚠️ 20日線乖離過大 +${num(deviation20)}%｜避免追價</div>` : '';
+        const deviationWarningHtml = chaseOver(item,close) ? `<div class="risk-summary">⚠️ 20日線乖離過大 +${num(deviation20)}%｜避免追價</div>` : '';
         const riskSummary = cautionList.length ? `<div class="risk-summary">⚠️ ${esc(cautionList[0])}${cautionList.length > 1 ? ` ＋${cautionList.length - 1}項` : ''}</div>` : '';
         const sc=shanchuanState(item, displayQuote);
         // Only show Shan-Chuan research panels on holdings after its NEW research
@@ -5525,7 +5553,7 @@ h1 {
         const pct = Number.isFinite(price) && Number.isFinite(prev) && prev > 0 ? (price / prev - 1) * 100 : null;
         const ext20 = Number.isFinite(price) && Number.isFinite(ma20) && ma20 > 0 ? (price / ma20 - 1) * 100 : null;
         const pace = avg20 > 0 ? volume / (avg20 * marketFraction(quote?.quote_time)) : null;
-        const tooLate = (Number.isFinite(upper) && upper > 0 && price >= upper * 0.985) || (pct != null && pct >= 8) || (ext20 != null && ext20 >= 12);
+        const tooLate = (Number.isFinite(upper) && upper > 0 && price >= upper * 0.985) || (pct != null && pct >= 8) || chaseOver(item,price);
         const bt = metrics.backtest || {};
         const historySample = Number(bt.sample_size || 0);
         const minHistorySample = Number(bt.min_reliable_sample || 6);
@@ -5533,8 +5561,8 @@ h1 {
         const historyAvg10 = Number(bt.avg_return_10d_pct);
         const liveHistoryPass = historySample >= minHistorySample && Number.isFinite(historyRate) && historyRate >= 50 && Number.isFinite(historyAvg10) && historyAvg10 > 0;
         const firstBreakout = !tooLate && signalDataFresh(item) && liveHistoryPass && metrics.breakout20 !== true && Number.isFinite(recentHigh20) && recentHigh20 > 0 && price > recentHigh20 && volume >= 1000 && pace != null && pace >= 1.3 && chipFollow && pct != null && pct >= 0.5 && pct <= 7.5 && price >= open * 0.995 && ext20 != null && ext20 <= 12;
-        const launch = !tooLate && pct != null && pct >= 1 && pct <= 7.5 && pace != null && pace >= 1.3 && volume >= 1000 && price >= open * 0.995 && ext20 != null && ext20 >= -1 && ext20 <= 10;
-        const warm = !tooLate && pct != null && pct >= 0.3 && pace != null && pace >= 1 && price >= open * 0.99 && ext20 != null && ext20 <= 10;
+        const launch = !tooLate && pct != null && pct >= 1 && pct <= 7.5 && pace != null && pace >= 1.3 && volume >= 1000 && price >= open * 0.995 && ext20 != null && ext20 >= -1 && chasePass(item,price);
+        const warm = !tooLate && pct != null && pct >= 0.3 && pace != null && pace >= 1 && price >= open * 0.99 && chasePass(item,price);
         const rawLiveFirst = signalDataFresh(item) && metrics.breakout20 !== true && Number.isFinite(recentHigh20) && recentHigh20 > 0 && price > recentHigh20 && volume >= 1000 && pace != null && pace >= 1 && price >= open * 0.995;
         if (rawLiveFirst && tooLate) return { rank: 7, className: 'live-wait', text: '🔵 第一根已發動｜等回踩買點', pct, pace, price, volume, ext20, recentHigh20 };
         if (tooLate) return { rank: 1, className: 'live-wait', text: '🔵 已發動｜等回踩買點', pct, pace, price, volume, ext20, recentHigh20 };
@@ -5572,7 +5600,7 @@ h1 {
           const pace = Number(live?.pace);
           const green = Number.isFinite(price) && Number.isFinite(open) && price >= open;
           const liveDay = bottom.current_base === true ? 1 : Number(bottom.recent_base_days || 0) + 1;
-          if (green && Number.isFinite(pace) && pace >= .8 && pace <= 1.8 && ext20 != null && ext20 <= 10 && liveDay >= 1 && liveDay <= 3) {
+          if (green && Number.isFinite(pace) && pace >= .8 && pace <= 1.8 && chasePass(item,price) && liveDay >= 1 && liveDay <= 3) {
             return { rank: 5, className: 'v5-trigger', title: '🔥 底部起漲｜盤中候選', detail: `底部型態後第 ${liveDay} 日｜盤中紅K｜預估量速 ${num(pace, 2)}x｜距MA20 ${ext20 >= 0 ? '+' : ''}${num(ext20, 1)}%`, extra: '盤中量速是即時近似，收盤後日量落在0.8～1.8倍才升級為底部起漲確認' };
           }
         }
@@ -5758,7 +5786,7 @@ h1 {
         if (hm.strong_breakdown === true || hm.exit_ready === true || hm.effective_prev_low_break === true || Number(hm.below_ma20_days || 0)>0) return blocked('持股已有風險警戒，不加碼');
         if (plan.pnl < 0) return blocked('仍在成本下方，避免攤平虧損');
         if (plan.pnl >= 12 || plan.takeTwenty) return blocked('獲利位置偏高或已進入分批停利區，不追價');
-        if (!(priceGap >= 0 && priceGap <= 5)) return blocked('距 MA20 超過5%或價格位置不佳，等回踩');
+        if (!(priceGap >= 0 && chasePass(item,price))) return blocked('距MA20超過'+chaseLimitNote(item)+'或價格位置不佳，等回踩');
         const avg20 = Number(metrics.avg_volume_20_lots || 0);
         const lots = live ? Number(quote?.volume_lots) : Number(metrics.current_volume_lots);
         const ratio = live && avg20 > 0
@@ -5891,7 +5919,7 @@ h1 {
         }else if(reasonWeak){
           tone='avoid';label='🟠 賣壓動能轉弱｜先等止跌';
           next='KD／MACD或K棒尚未修復，即使靠近MA20也不抄底';
-        }else if(gap!=null&&gap>5){
+        }else if(chaseOver(item,price)){
           tone='observe';label='🔵 距MA20仍遠｜不追價';
           next='等待回踩MA10／MA20，不因今天下跌便提前進場';
         }else if(nearSupport&&liquidity){
@@ -6012,7 +6040,7 @@ h1 {
         if(pnl<0||pnl>=12||hm.exit_ready===true||hm.strong_breakdown===true
           ||hm.effective_prev_low_break===true||Number(hm.below_ma20_days||0)>0
           ||ma20<ma60||ma10<ma20*.995||p<Math.max(ma10,ma20,ma60)
-          ||p/ma20>1.05||p<box.top
+          ||!chasePass(item,p)||p<box.top
           ||!(ratio>=.8&&ratio<=2&&k>=25&&k<=85)
           ||Number(m.current_volume_lots)<1000||Number(m.avg_volume_20_lots)<500
           ||!(Number(m.chip?.score)>=60))return null;
@@ -6078,7 +6106,7 @@ h1 {
           const livePriceTurn = Number.isFinite(price) && Number.isFinite(Number(quote?.open)) ? price > Number(quote.open) : hm.price_turn === true;
           const addReady = hm.add_ready === true || (quote && touched20Live && liveVolumeFollow && livePriceTurn);
           const strongAddTrigger = Number(hm.strong_add_trigger || v5.rebreak_trigger_price || recentHigh);
-          const strongAddReady = hm.strong_add_ready === true || (quote && Number.isFinite(strongAddTrigger) && strongAddTrigger > 0 && price >= strongAddTrigger * 1.003 && allAbove && Number.isFinite(ext20) && ext20 >= 0 && ext20 <= 8 && volume >= 1000 && avg20Volume >= 500 && Number.isFinite(liveVolumeRatio) && liveVolumeRatio >= 1.0 && liveVolumeRatio <= 2.2 && Number.isFinite(dailyK) && dailyK <= 85 && livePriceTurn);
+          const strongAddReady = hm.strong_add_ready === true || (quote && Number.isFinite(strongAddTrigger) && strongAddTrigger > 0 && price >= strongAddTrigger * 1.003 && allAbove && Number.isFinite(ext20) && ext20 >= 0 && chasePass(item,price) && volume >= 1000 && avg20Volume >= 500 && Number.isFinite(liveVolumeRatio) && liveVolumeRatio >= 1.0 && liveVolumeRatio <= 2.2 && Number.isFinite(dailyK) && dailyK <= 85 && livePriceTurn);
           const livePrevLowBreak = quote && Number.isFinite(prevLow) && prevLow>0 && price < prevLow*.996;
           if(boxHolding?.exitReady)return {
             className:'live-late',title:'🔴 出清股票｜箱底連續3日失守',
@@ -6908,7 +6936,7 @@ h1 {
               const ext20=Number.isFinite(price)&&ma20>0 ? (price/ma20-1)*100 : null;
               const bottomBase=m?.bottom_start?.current_base===true;
 
-              if ((Number.isFinite(pos)&&pos>=85) || (Number.isFinite(k)&&k>80) || (ext20!=null&&ext20>10)) return false;
+              if ((Number.isFinite(pos)&&pos>=85) || (Number.isFinite(k)&&k>80) || chaseOver(item,price)) return false;
               if (!bottomBase && [ma10,ma20,ma60].every(v=>Number.isFinite(v)&&v>0) && price < Math.max(ma10,ma20,ma60)) return false;
               // 已在發動前抓到的股票，盤中碰到／突破20日前高時先保留，
               // 直到進場雷達正式接手；避免出現「發動前消失、進場雷達又尚未收進」的真空區。
@@ -6962,7 +6990,7 @@ h1 {
         const highWinSweet = formal && storedCurrentVolume >= 1000 && storedAvg20Volume >= 500 && storedDayVolumeRatio >= 1.2 && storedDayVolumeRatio <= 1.8 && Number.isFinite(storedDailyK) && storedDailyK <= 90;
         const monitorK = Number(metrics.daily_k), monitorD = Number(metrics.daily_d);
         const monitorKdWeak = Number.isFinite(monitorK) && Number.isFinite(monitorD) && monitorK > 80 && monitorK < monitorD;
-        const highWinLate = highWinSweet && ((Number.isFinite(Number(metrics.position_1y_pct)) && Number(metrics.position_1y_pct) >= 85) || (Number.isFinite(Number(metrics.close)) && Number.isFinite(Number(metrics.ma20)) && Number(metrics.ma20) > 0 && (Number(metrics.close) / Number(metrics.ma20) - 1) * 100 > 10) || (item.cautions || []).some(value => String(value).includes('短線爆量')) || monitorKdWeak);
+        const highWinLate = highWinSweet && ((Number.isFinite(Number(metrics.position_1y_pct)) && Number(metrics.position_1y_pct) >= 85) || (Number.isFinite(Number(metrics.close)) && Number.isFinite(Number(metrics.ma20)) && Number(metrics.ma20) > 0 && chaseOver(item,Number(metrics.close))) || (item.cautions || []).some(value => String(value).includes('短線爆量')) || monitorKdWeak);
         if (highWinLate) return { rank: 9, className: 'live-late', text: '⭐ 高勝率條件成立｜位置已高・等回踩，不追', price, volume, trigger, distance, proximity: 5, missing: [], highWinLate: true, dayVolumeRatio: storedDayVolumeRatio, dailyK: storedDailyK };
         if (highWinSweet) return { rank: 13, className: 'highwin', text: '🟢 正式買點｜高勝率確認・可分批進場', price, volume, trigger, distance, proximity: 5, missing: [], highWin: true, dayVolumeRatio: storedDayVolumeRatio, dailyK: storedDailyK };
         const maCluster = metrics.ma_cluster || {};
@@ -6987,13 +7015,13 @@ h1 {
         const cautions = (item.cautions || []).map(value => String(value));
         const liveK = Number(metrics.daily_k), liveD = Number(metrics.daily_d);
         const liveKdWeak = Number.isFinite(liveK) && Number.isFinite(liveD) && liveK > 80 && liveK < liveD;
-        const lateRisk = (Number.isFinite(position1y) && position1y >= 85) || (ext20 != null && ext20 > 10) || cautions.some(value => value.includes('距年線過遠') || value.includes('短線爆量')) || liveKdWeak;
+        const lateRisk = (Number.isFinite(position1y) && position1y >= 85) || chaseOver(item,price) || cautions.some(value => value.includes('距年線過遠') || value.includes('短線爆量')) || liveKdWeak;
         const recentHigh20 = Number(metrics.recent_high20);
         const distanceToHigh20 = Number.isFinite(price) && Number.isFinite(recentHigh20) && recentHigh20 > 0 ? (price / recentHigh20 - 1) * 100 : null;
         const chip = metrics.chip || {};
         const inst = chip.institutional || {};
         const chipFollow = Number(chip.score || 0) >= 60 && (Number(inst.net_5d || 0) > 0 || Number(inst.positive_days_5d || 0) >= 3);
-        const preStarter = fresh && !lateRisk && metrics.breakout20 !== true && distanceToHigh20 != null && distanceToHigh20 >= -5 && distanceToHigh20 < 0 && volume >= 1000 && chipFollow && ext20 != null && ext20 <= 10;
+        const preStarter = fresh && !lateRisk && metrics.breakout20 !== true && distanceToHigh20 != null && distanceToHigh20 >= -5 && distanceToHigh20 < 0 && volume >= 1000 && chipFollow && chasePass(item,price);
         if (liveStarter) return { rank: 10, className: 'live-first', text: '🎯 起漲觸發｜過前高・量籌同步・可小量試單', price, volume, trigger: recentHigh20, distance: distanceToHigh20, proximity: 5, missing: [], starter: true };
         if (closeStarter) return { rank: 9, className: 'live-first', text: '🎯 起漲確認｜首根突破・量籌同步・分批第一筆', price, volume, trigger: recentHigh20, distance: distanceToHigh20, proximity: 5, missing: [], starter: true };
         if (preStarter) return { rank: 8, className: 'live-warm', text: '🛰️ 起漲前哨｜接近20日前高・籌碼跟上', price, volume, trigger: recentHigh20, distance: distanceToHigh20, proximity: 4, missing: [], preStarter: true };
@@ -7748,7 +7776,7 @@ h1 {
         const liveBreakout=observedBox?.prepared===true&&validTodayQuote(observedQuote)
           &&Number(observedQuote.price)>observedBoxTop*1.003
           &&Number(model?.metrics?.ma20)>0
-          &&Number(observedQuote.price)/Number(model.metrics.ma20)<=1.05;
+          &&chasePass(model,Number(observedQuote.price));
         const confirmedBox=observedBox?.breakout_today===true
           &&observedBox?.anchor?.breakout_date===String(model?.as_of||'')
           &&(!observedQuote||Number(observedQuote.price)>observedBoxTop*1.003);
