@@ -155,6 +155,55 @@ test('New +8/+12/+15 chase tiers pass precise BIAS boundaries, never fake a miss
   assert.doesNotMatch(html,/新進場5%上限|隔天以原本5%乖離|距 MA20 超過 5%/);
   assert.match(html,/selectionMas: Object.freeze\(\['MA10','MA20','MA60'\]\)/);
 });
+test('Three zones and saved cross-day stocks have individual expandable movement cards',()=>{
+  const launch=section('      const launchMiniHtml = (item, quote = null) => {','      const launchListHtml =');
+  const entryStock=section('      const entryCompactStock = (row, bucketLabel) => {','      const entryBucketHtml=');
+  const holding=section('      const holdingMiniHtml = (item, quote = null) => {','      const holdingPlaceholderHtml =');
+  const saved=section('      const groupedEntrySavedWatches = visibleIds => {','      const simplifiedEntryHtml =');
+  assert.match(launch,/details class="entry-mini" data-stock-key/);
+  assert.match(launch,/stockMovementHtml\(item,q,'launch'/);
+  assert.match(entryStock,/details class="entry-mini" data-stock-key/);
+  assert.match(entryStock,/stockMovementHtml\(item,q,'entry'/);
+  assert.match(holding,/details class="holding-mini" data-stock-key/);
+  assert.match(holding,/holdingMa20DaysHtml\(item,live\)/);
+  assert.match(holding,/card\(item,\{quote:safeQuote\}\)/);
+  assert.match(saved,/details class="entry-mini entry-saved-mini" data-stock-key/);
+  assert.match(saved,/stockMovementHtml\(item,null,'entry'/);
+  assert.match(html,/const entryExpandedIds = new Set\(\)/);
+  assert.match(html,/entryExpandedIds\.add\(id\)/);
+  assert.match(html,/holdingExpandedIds\.add\(id\)/);
+  assert.match(html,/launchExpandedIds\.add\(id\)/);
+  assert.match(html,/\.stock-motion .stock-motion-status/);
+  assert.match(html,/@media\(max-width:640px\)\{[\s\S]*?\.stock-motion/);
+});
+test('Movement cards only display S or already-valid C trades and never grant a buy',()=>{
+  const src=section('      const stockMovementHtml = ', '      // UI-only folding. The holdings Map remains verified by the server.');
+  assert.doesNotMatch(src,/\bfetch\s*\(|getLiveQuotes\s*\(|\bsetInterval\s*\(/);
+  const fn=new Function('bestTodayQuote','validTodayQuote','quoteRecentForDisplay','volumePriceState',
+    'chaseModelReady','unifiedRadarGeneration','overnightLifecycleState','chaseLimitNote','esc','num',
+    src+'\nreturn stockMovementHtml;')(
+    q=>q,q=>!!q&&q.has_today_trade===true&&q.price>0,q=>q.fresh===true,
+    ()=>({tag:'🟢 量價改善',volumeRatio:1.2}),
+    x=>x?.metrics?.chase_rule_version==='2026-10-20-bias-8-12-15-v1',
+    ()=>true,()=>({label:'底部整理',tomorrow:'等量價轉強'}),()=>'+12%',
+    x=>String(x).replace(/&/g,'&amp;').replace(/</g,'&lt;'),
+    (x,d=1)=>Number(x).toFixed(d));
+  const item={stock_id:'1605',as_of:'2026-10-19',metrics:{
+    chase_rule_version:'2026-10-20-bias-8-12-15-v1',close:100,prev_close:98,
+    current_volume_lots:1100,ma10:99,ma20:97,ma60:95}};
+  const saved=fn(item,null,'launch',{text:'🌱 發動前',detail:'等突破'});
+  assert.match(saved,/S 完整日K收盤（非即時）/);
+  assert.match(saved,/100\.00/);
+  assert.match(saved,/等突破/);
+  assert.doesNotMatch(saved,/C 今日即時成交/);
+  const live=fn(item,{has_today_trade:true,price:103,prev_close:100,volume_lots:1800,
+    quote_time:'10:30:00',fresh:false},'entry',{text:'🟡 等回踩',detail:'觀察MA20'});
+  assert.match(live,/C 今日前次成交（非即時）/);
+  assert.match(live,/103\.00/);
+  assert.match(live,/觀察MA20/);
+  const legacy={...item,metrics:{...item.metrics,chase_rule_version:'old'}};
+  assert.match(fn(legacy,null,'entry',{}),/舊版模型待補算/);
+});
 for(const g of html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi)){
   if(/\bsrc=/.test(g[1]))continue;
   new Function(g[2]);
