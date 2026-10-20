@@ -5953,7 +5953,11 @@ h1 {
           :maxGain>=6.999999?2
           :maxGain>=4.999999?0:null;
         const armed=floorGainPct!==null;
-        const floorPrice=armed?cost*(1+floorGainPct/100):null;
+        // Round protection reference UP to cents so the visible two-decimal
+        // price and its trigger agree (e.g. 11.596 -> 11.60, not 11.55).
+        // This is an alert reference, NOT a tradable TWSE tick or broker order.
+        const floorPrice=armed
+          ?Math.ceil(cost*(1+floorGainPct/100)*100-1e-8)/100:null;
         const tolerance=Math.max(cost,1)*1e-10;
         return {armed,triggered:armed&&price<=floorPrice+tolerance,
           floorGainPct,floorPrice,highestPrice:peak,live:!!liveQuote,
