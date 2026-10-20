@@ -6000,17 +6000,29 @@ h1 {
           &&price>=ma5&&price<=ma5*1.04;
         const ma10Retest=lowValid&&low>=ma10*.985&&low<=ma10*1.01
           &&price>=ma5&&price<=ma10*1.06;
+        // S provides the signed price level only. Cost/amount/exit guards stay here.
+        // A WATCH crosses on a new C session; a CONFIRMED breakout is an EOD signal.
+        const second=hm.second_platform||{};
         const secondLevel=Number(hm.strong_add_trigger);
-        const secondBreakout=secondLevel>0&&secondLevel>Number(holding.avg_cost)*1.03
-          &&price>=secondLevel*1.003
-          &&(live||hm.strong_add_ready===true)
-          &&Number(m.daily_k)<=85;
+        const secondFresh=hm.policy_version==='2026-10-20-hard5-break5-full10-ma5ma10-v3'
+          &&String(second.as_of||'')===modelDay&&modelDay===expectedSignalDataDate()
+          &&Number(second.platform_days)>=3&&Number(second.platform_days)<=8
+          &&String(second.first_breakout_date||'')<modelDay;
+        const secondTrigger=secondFresh&&secondLevel>0
+          &&Math.abs(Number(second.trigger)-secondLevel)<=Math.max(.02,secondLevel*.0001);
+        const secondBreakout=secondTrigger
+          &&(live?second.status==='watch'
+            :second.status==='confirmed'&&hm.strong_add_setup_ready===true)
+          &&price>=secondLevel*1.003&&price<=secondLevel*1.04
+          &&ma20>0&&price<=ma20*1.05
+          &&Number.isFinite(Number(m.daily_k))&&Number(m.daily_k)<=85;
         if (!ma5Retest&&!ma10Retest&&!secondBreakout) return null;
         const base=Number(rec.baseQty||qty);
         const suggestedQty=Math.floor(Math.min(base*.5,base*plan.cost*.5/price));
         if (!(suggestedQty>0)) return blocked('原始部位過小，50%加碼上限不足一股');
         return {eligible:true,live,kind:secondBreakout?'第二平台放量突破':ma5Retest?'MA5回測放量轉強':'MA10回測放量轉強',
-          pnl:plan.pnl,price,ratio,referenceDate:plan.observationDate,suggestedQty};
+          pnl:plan.pnl,price,ratio,referenceDate:plan.observationDate,suggestedQty,
+          secondTrigger:secondBreakout?secondLevel:null};
       };
       // Clear yesterday's short-term warning only with a verified next-day C trade.
       // Pure UI decision, never touches MA20 exits, holdings, or S/C quotas.
@@ -6227,7 +6239,8 @@ h1 {
           if (addPlan?.eligible) return {
             className:addPlan.live?'live-wait':'live-launch',
             title:addPlan.live?'🟡 加碼觀察｜等待收盤確認':'🟢 可加碼｜'+addPlan.kind,
-            detail:addPlan.kind+'｜成本獲利 '+num(addPlan.pnl,1)+'%｜量比 '+num(addPlan.ratio,2)+'x',
+            detail:addPlan.kind+(addPlan.secondTrigger?'｜突破價 '+num(addPlan.secondTrigger,2):'')
+              +'｜成本獲利 '+num(addPlan.pnl,1)+'%｜量比 '+num(addPlan.ratio,2)+'x',
             extra:(addPlan.live?'僅盤中候選；待完整日K確認。':'依 '+addPlan.referenceDate+' 模型評估。')+' 僅考慮追加一筆，參考上限約 '+Number(addPlan.suggestedQty).toLocaleString('zh-TW')+' 股（本裝置觀察基準）；不得攤平或追價，非自動下單'
           };
           if (addPlan && !addPlan.eligible) return { className:'live-wait', title:'🔵 加碼暫緩｜維持既有持股', detail:addPlan.reason, extra:'原持股仍依MA20、停損與獲利保護規則管理，不因加碼條件未過就自動賣出' };
@@ -6755,6 +6768,15 @@ h1 {
         const positionStatus=risk?.stopHard
           ?(risk.confirmed?'已達-5%硬停損':'-5%停損價格待核對')
           :pnl==null?'資料待確認':pnl<0?'虧損警戒中':high?.armed?'保本中':'獲利中';
+        const platform=m.holding_management?.second_platform||{};
+        const platformVisible=pnl!=null&&pnl>=3&&pnl<10
+          &&m.holding_management?.policy_version==='2026-10-20-hard5-break5-full10-ma5ma10-v3'
+          &&platform.as_of===String(item.as_of||'').slice(0,10)
+          &&platform.as_of===expectedSignalDataDate()
+          &&Number(platform.trigger)>0&&['watch','confirmed'].includes(platform.status);
+        const positionDetail=platformVisible
+          ?'｜第二平台 '+num(Number(platform.trigger),2)+(platform.status==='watch'?' 待突破':' 放量已突破')
+          :'';
         const decision=holdingDisplay(item,live);
         const main=String(decision?.main||'續抱');
         const stopAlert=risk?.stopHard===true;
@@ -6774,7 +6796,7 @@ h1 {
               <span class="holding-mini-stats"><span>成本 <b>${cost>0?esc(num(cost,2)):'-'}</b></span>
                 <span>${esc(quoteDisplayState(live,item).label)} <b>${price!=null?esc(num(price,2)):'-'}</b></span>
                 <span>損益 <b class="${pnl==null?'':pnl>=0?'pnl-up':'pnl-down'}">${pnl==null?'-':(pnl>=0?'+':'')+esc(num(pnl,2))+'%'}</b></span></span>
-              <span class="holding-mini-status">帳面狀態：${esc(positionStatus)}</span>
+              <span class="holding-mini-status">帳面狀態：${esc(positionStatus+positionDetail)}</span>
               ${holdingMa20DaysHtml(item,live)}
               ${continuationRiskMiniHtml(item)}
               <span class="holding-mini-date">S 模型 ${esc(item.as_of||'待更新')}｜${live?'C 成交時間 '+esc(quoteDisplayState(live,item).moment)+(quoteDisplayState(live,item).live?'｜盤中即時':'｜非即時'):'無有效 C 成交，非即時模型價'}</span>
