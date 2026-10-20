@@ -6738,6 +6738,8 @@ h1 {
           +'<span>'+esc(structure)+'｜'+esc(vp?.tag||'量價待更新')
           +(Number.isFinite(volRatio)&&vp?.volumeRatio!=null?'｜量比 '+esc(num(volRatio,2))+'x':'')+'</span>'
           +'<span>🔎 下一步：'+esc(plan)+'</span>'
+          +(item.__observation_only===true&&String(m.shanchuan_v2?.mother_child?.lifecycle?.state||'').includes('low_broken')
+            ?'<span class="model-only-note">⚠️ 山川母子K低點已破｜列為風險研究，非試單。</span>':'')
           +boxLine+'<small class="model-only-note">'+esc(reason)+'</small>'
           +'<dl class="holding-quote-grid">'+fields.map(([k,v])=>
             '<div><dt>'+esc(k)+'</dt><dd>'+esc(v)+'</dd></div>').join('')+'</dl>'
@@ -7365,6 +7367,19 @@ h1 {
           $('#note').textContent = `看盤模式｜${ranked.length} 檔候選｜約30秒更新一次。只有開啟此頁才抓盤中報價。`;
         } catch (error) {
           if (navigationSeq !== renderNavToken || stage !== renderStage) return;
+          if(stage==='ENTRY'&&liveBasePicks.length){
+            // Keep existing observation cards readable when C temporarily fails.
+            const rows=liveBasePicks.map(item=>({item,quote:null,
+              action:item.__observation_only===true
+                ?{key:'historical_screen_only',phase:'observe',stale_model:true,
+                  buyable:false,trialable:false,text:'⚪ 舊日K初選｜待新版確認',detail:'即時報價未取得，僅供觀察'}
+                :entrySnapshotState(item,simpleActionState(item),null)
+            })).filter(row=>row.action);
+            const view=renderEntrySections(rows);
+            $('#note').textContent='⚠️ C 報價暫時無法讀取｜仍保留 '+view.displayedTotal
+              +' 檔完整日K觀察；全部不是盤中買點。';
+            return;
+          }
           $('#list').innerHTML = '<div class="box empty error">盤中報價暫時無法讀取，昨日候選與背景掃描仍正常；稍後會自動再試。</div>';
           $('#note').textContent = '看盤報價來源暫時無法讀取，不影響 LINE、持股與背景掃描。';
         }
