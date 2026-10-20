@@ -5252,7 +5252,7 @@ h1 {
         const holdingTodayHtml = holding ? holdingActionHtml(item, displayQuote) : '';
         const holdingDipHtml = holding ? holdingDipReviewHtml(item,displayQuote) : '';
         const holdingGreenHtml = holding ? holdingGreenDipWatchHtml(item,displayQuote) : '';
-        const candidateGreenHtml = holding ? '' : greenDipWatchHtml(item,displayQuote);
+        const candidateGreenHtml = holding||options.historicalObservation ? '' : greenDipWatchHtml(item,displayQuote);
         const chip = metrics.chip;
         const chipHtml = chip ? `<div class="metrics"><span class="pill">🧩 籌碼 ${Number(chip.score)}｜${esc(chip.label || '')}</span><span class="pill">技術＋籌碼 ${Number(chip.combined_score ?? item.score ?? 0)}</span>${(chip.notes || []).map(note => `<span class="pill">${esc(memberFacingText(note))}</span>`).join('')}</div>` : ((item.stage === 'B' || item.stage === 'C') ? '<div class="meta">🧩 籌碼資料待下一次重掃更新</div>' : '');
         const liquidityKnown = metrics.current_volume_lots != null || metrics.avg_volume_20_lots != null;
@@ -5332,7 +5332,7 @@ h1 {
         const detailBody = `<div class="detail-body">${hiddenModelHtml}${v5Html}${chipHtml}${holding ? '' : liquidityHtml}${playbookHtml}<div class="metrics"><span class="pill">3年位階 ${num(metrics.position_3y_pct)}%</span><span class="pill">週K ${num(metrics.weekly_k)}｜${gradeText(weeklyKGrade(metrics.weekly_k))}</span><span class="pill">月K ${num(metrics.monthly_k)}｜${gradeText(monthlyKGrade(metrics.monthly_k))}</span><span class="pill">${backtestSignal(item)}</span>${metrics.backtest ? `<span class="pill">5日 ${num(metrics.backtest.win_rate_5d_pct)}%</span><span class="pill">20日 ${num(metrics.backtest.win_rate_20d_pct)}%</span>` : ''}</div><div class="why">${reasons}</div>${cautions ? `<div class="warn">${cautions}</div>` : ''}</div>`;
         const detailHtml = options.compactHolding && holding ? detailBody : `<details class="card-details"><summary>完整判斷與數據</summary>${detailBody}</details>`;
         const actionHtml = options.hideSignal ? '' : `<div class="trade-signal ${signal.className}">${esc(memberFacingText(signal.text))}<small style="display:block;margin-top:4px;font-weight:500">${esc(memberFacingText(signal.detail || ''))}</small></div>`;
-        return `<article class="card" data-stock-id="${esc(item.stock_id)}"><div class="top"><div><div class="name">${esc(item.stock_id)} ${esc(item.stock_name)}</div><div class="meta">${esc(item.market)}${item.industry ? '・' + esc(item.industry) : ''}${timeInfoStages() ? '' : '｜資料日 ' + esc(item.as_of || '-')}</div></div><div class="badge ${esc(item.stage)}">模型 ${Number(item.score || 0)}分</div></div>${companyProfileHtml(item)}${activeLaunchVisibleHtml}${volumePriceHtml(item, displayQuote)}${researchPanel}${pullbackWatchHtml(item, displayQuote)}${candidateGreenHtml}${holding ? (options.compactHolding ? '' : holdingTodayHtml + holdingGreenHtml + holdingDipHtml) : actionHtml + quickHtml + deviationWarningHtml + riskSummary}${holdingHtml}${options.compactHolding && holding ? `<details class="card-details holding-combined"><summary>完整判斷與技術數據</summary>${holdingStatusHtml}${detailHtml}</details>` : holdingStatusHtml+detailHtml}${timeInfoStages() ? timeInfoHtml(item, displayQuote) : '<div class="time">背景模型掃描：' + updated + '</div>'}</article>`;
+        return `<article class="card" data-stock-id="${esc(item.stock_id)}"><div class="top"><div><div class="name">${esc(item.stock_id)} ${esc(item.stock_name)}</div><div class="meta">${esc(item.market)}${item.industry ? '・' + esc(item.industry) : ''}${timeInfoStages() ? '' : '｜資料日 ' + esc(item.as_of || '-')}</div></div><div class="badge ${esc(item.stage)}">模型 ${Number(item.score || 0)}分</div></div>${companyProfileHtml(item)}${activeLaunchVisibleHtml}${volumePriceHtml(item, displayQuote)}${researchPanel}${options.historicalObservation?'':pullbackWatchHtml(item, displayQuote)}${candidateGreenHtml}${holding ? (options.compactHolding ? '' : holdingTodayHtml + holdingGreenHtml + holdingDipHtml) : actionHtml + quickHtml + deviationWarningHtml + riskSummary}${holdingHtml}${options.compactHolding && holding ? `<details class="card-details holding-combined"><summary>完整判斷與技術數據</summary>${holdingStatusHtml}${detailHtml}</details>` : holdingStatusHtml+detailHtml}${timeInfoStages() ? timeInfoHtml(item, displayQuote) : '<div class="time">背景模型掃描：' + updated + '</div>'}</article>`;
       }
 
       // Explain an empty launch list using *the actual API result and this
@@ -5536,10 +5536,10 @@ h1 {
           });
           const launchTally = stage === 'LAUNCH' ? launchCandidateExplanation(data, rankedPicks) : null;
           if (stage === 'LAUNCH') {
-            const actionRows = rankedPicks.filter(item=>!displayModelWarning(item))
+            const actionRows = rankedPicks.filter(item=>item.__observation_only!==true&&!displayModelWarning(item))
             .map(item => ({item,action:simpleActionState(item)})).filter(row=>row.action);
             updateBuySignalNotice(actionRows);
-            const activeCount = rankedPicks.filter(isActiveLaunchItem).length;
+            const activeCount = rankedPicks.filter(item=>item.__observation_only!==true&&isActiveLaunchItem(item)).length;
             const pre = actionRows.filter(row=>!isActiveLaunchItem(row.item)&&row.action.key==='pre').length;
             const breakout = actionRows.filter(row=>!isActiveLaunchItem(row.item)&&row.action.key==='breakout').length;
             const add = actionRows.filter(row=>!isActiveLaunchItem(row.item)&&row.action.key==='add').length;
@@ -6856,7 +6856,7 @@ h1 {
         const early=earlyTurnWatchState(item);
         const lowBase=lowBaseWatchState(item);
         const pullback=ma10PullbackWatchState(item);
-        const trial=ma10PullbackTrialState(item,q);
+        const trial=item.__observation_only===true?null:ma10PullbackTrialState(item,q);
         const status=item?.__observation_only===true?'⚪ 舊日K初選｜等新版補算（非買點）'
           :displayModelWarning(item)?displayModelWarning(item)
           :risk?.kind==='hard'?String(risk.text||'🔴 盤中風險｜暫不新買')
@@ -6870,11 +6870,11 @@ h1 {
           :String(launchState?.label||'🟠 發動前｜等確認');
         const source=q?(quoteRecentForDisplay(q)?'C 當日即時成交':'今日前次成交（非即時）'):'盤後模型收盤（非即時）';
         const quoteTime=q?'｜報價 '+String(q.quote_time||'時間待確認'):'｜非即時價';
-        const greenMini=greenDipMiniHtml(item,q);
+        const greenMini=item.__observation_only===true?'':greenDipMiniHtml(item,q);
         const selected=launchExpandedIds.has(id)?' open':'';
         const detailed=item?.__observation_only===true
           ?'<div class="model-only-note">⚪ 僅供觀察：尚未完成新版分級乖離驗證，不可依舊模型試單。</div>'
-            +card(item,{hideSignal:true,quote:q})
+            +card(item,{hideSignal:true,historicalObservation:true,quote:q})
           :displayModelWarning(item)?card(item,{hideSignal:true,quote:q})
           :q?intradayCard(item,q):card(item);
         return `<section class="launch-mini-wrap" data-stock-id="${esc(id)}">
