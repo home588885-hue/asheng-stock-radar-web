@@ -180,14 +180,14 @@ test('Movement cards only display S or already-valid C trades and never grant a 
   const src=section('      const stockMovementHtml = ', '      // UI-only folding. The holdings Map remains verified by the server.');
   assert.doesNotMatch(src,/\bfetch\s*\(|getLiveQuotes\s*\(|\bsetInterval\s*\(/);
   const fn=new Function('bestTodayQuote','validTodayQuote','quoteRecentForDisplay','volumePriceState',
-    'chaseModelReady','unifiedRadarGeneration','overnightLifecycleState','chaseLimitNote','esc','num',
+    'chaseModelReady','unifiedRadarGeneration','overnightLifecycleState','chaseLimitNote','esc','num','radarShortAdvice',
     src+'\nreturn stockMovementHtml;')(
     q=>q,q=>!!q&&q.has_today_trade===true&&q.price>0,q=>q.fresh===true,
     ()=>({tag:'🟢 量價改善',volumeRatio:1.2}),
     x=>x?.metrics?.chase_rule_version==='2026-10-20-bias-8-12-15-v1',
     ()=>true,()=>({label:'底部整理',tomorrow:'等量價轉強'}),()=>'+12%',
     x=>String(x).replace(/&/g,'&amp;').replace(/</g,'&lt;'),
-    (x,d=1)=>Number(x).toFixed(d));
+    (x,d=1)=>Number(x).toFixed(d),(item,action)=>action?.detail||'觀察量價');
   const item={stock_id:'1605',as_of:'2026-10-19',metrics:{
     chase_rule_version:'2026-10-20-bias-8-12-15-v1',close:100,prev_close:98,
     current_volume_lots:1100,ma10:99,ma20:97,ma60:95}};
@@ -207,6 +207,31 @@ test('Movement cards only display S or already-valid C trades and never grant a 
   assert.match(fn(item,null,'entry',{phase:'trial',trialable:false,text:'🟠 可小量試單'}),/目前非買點/);
 });
 
+test('Launch, entry and tomorrow cards are brief when closed, compact when open, detailed only on demand',()=>{
+  const launch=section('      const launchMiniHtml = (item, quote = null) => {','      const launchListHtml =');
+  const entryCard=section('      const entryCompactStock = (row, bucketLabel) => {','      const entryBucketHtml=');
+  const research=section('        const researchCard=info=>{','        // One stock per evening research panel.');
+  const movement=section('      const stockMovementHtml = ', '      // UI-only folding. The holdings Map remains verified by the server.');
+  const wrap=section('      const radarDeepDetailsHtml=', '      // Shared stock movement panel.');
+  assert.match(launch,/entry-mini-summary radar-compact-summary/);
+  assert.match(entryCard,/entry-mini-summary radar-compact-summary/);
+  assert.match(research,/entry-research-summary radar-compact-summary/);
+  assert.match(launch,/radarDeepDetailsHtml\(/);
+  assert.match(entryCard,/radarDeepDetailsHtml\(v5MonitorCard/);
+  assert.match(html,/radarDeepDetailsHtml\(v5MonitorCard\(item,null,studyAction\)\)/);
+  assert.match(wrap,/details class="radar-deep-dive"/);
+  assert.match(movement,/stock-motion-compact/);
+  assert.doesNotMatch(movement,/20日前高/);
+  assert.doesNotMatch(movement,/量比 \+/);
+  assert.doesNotMatch(entryCard,/<span class="entry-mini-score">/);
+  assert.doesNotMatch(launch,/<span class="entry-mini-score">/);
+  assert.doesNotMatch(research,/'分數 '/);
+  assert.match(html,/\.radar-compact-summary/);
+  // User's previously approved holdings layout is outside these refactors.
+  const holding=section('      const holdingMiniHtml = (item, quote = null) => {','      const holdingPlaceholderHtml =');
+  assert.match(holding,/holdingMini-stats|holding-mini-stats/);
+  assert.match(holding,/holdingMa20DaysHtml\(item,live\)/);
+});
 test('Tomorrow watchlist does not repeat 4960 and 6925 in passive tracking',()=>{
   const part=section('        const dedupeEveningResearch=(candidateRows,alreadyShown=[])=>{',
     '        const primaryResearchRows=[');
