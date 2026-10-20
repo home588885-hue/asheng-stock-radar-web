@@ -2056,19 +2056,69 @@ h1 {
 
       // First-bar Shan-Chuan research shelf. Reuse the existing S snapshot
       // response only; no new S/C calls, scan, trader signal, or holdings write.
-      const SCOUT_HISTORY_KEY='asheng-shanchuan-scout-v1-'+portfolioId;
-      const readScoutHistory=()=>{
+
+      // Current production-only Shan-Chuan scout cloud sync: the SAME account
+      // on mobile and desktop shares a persistent RLS-isolated observation list.
+      // No S scan, analyzer call, quote request, new timer or trading-rule edit.
+      const SCOUT_CLOUD_TABLE='asheng_scout_cloud_watch_v1';
+      const SCOUT_LEGACY_KEY='asheng-shanchuan-scout-v1-'+portfolioId;
+      const scoutFromLegacy=()=>{
         try{
-          const data=JSON.parse(localStorage.getItem(SCOUT_HISTORY_KEY)||'[]');
+          const data=JSON.parse(localStorage.getItem(SCOUT_LEGACY_KEY)||'[]');
           if(!Array.isArray(data))return new Map();
           return new Map(data.filter(x=>x&&/^\d{4}-\d{2}-\d{2}$/.test(String(x.as_of||''))
             &&/^[0-9A-Z.-]{2,12}$/.test(String(x.stock_id||''))
             &&['prelaunch','first_bar','followup','overheated','invalid'].includes(x.state)
             &&Date.now()-Date.parse(String(x.as_of)+'T00:00:00Z')<14*86400000)
-            .slice(0,36).map(x=>[String(x.stock_id),x]));
+            .slice(0,36).map(x=>[String(x.stock_id),{...x,scanned_at:String(x.scanned_at||'')}]));
         }catch{return new Map();}
       };
-      let scoutHistory=readScoutHistory();
+      let scoutHistory=scoutFromLegacy();
+      const scoutPending=new Map(scoutHistory);
+      let scoutCloudReady=false;
+      let scoutCloudReadPromise=null;
+      let scoutCloudWritePromise=null;
+      let scoutLastReadAt=0;
+      const scoutNewer=(x,y)=>{
+        if(!y)return true;
+        const d=String(x.as_of||'').localeCompare(String(y.as_of||''));
+        if(d!==0)return d>0;
+        return String(x.scanned_at||'')>String(y.scanned_at||'');
+      };
+      const scoutFromCloud=x=>({
+        stock_id:String(x.stock_id||''),stock_name:String(x.stock_name||'').slice(0,64),
+        as_of:String(x.as_of||''),scanned_at:String(x.scanned_at||''),
+        state:String(x.state||''),label:String(x.label||''),
+        reason:String(x.reason||''),first_bar_date:String(x.first_bar_date||''),
+        seen_as_of:String(x.seen_as_of||x.as_of||''),
+        close:x.close_price==null?null:Number(x.close_price),
+        bias:x.ma20_bias_pct==null?null:Number(x.ma20_bias_pct),
+        score:Number(x.score)||0
+      });
+      const scoutToCloud=x=>({
+        user_id:portfolioId,stock_id:x.stock_id,stock_name:x.stock_name,
+        as_of:x.as_of,scanned_at:x.scanned_at||null,state:x.state,
+        label:x.label,reason:x.reason,
+        first_bar_date:x.first_bar_date||null,seen_as_of:x.seen_as_of||x.as_of,
+        close_price:x.close,ma20_bias_pct:x.bias,score:x.score,
+        source_version:'2026-10-20-shanchuan-v1'
+      });
+      const scoutCleanHistory=()=>{
+        const cutoff=Date.now()-14*86400000;
+        for(const [id,x] of scoutHistory){
+          const t=Date.parse(String(x.as_of||'')+'T00:00:00Z');
+          if(holdings.has(id)||!Number.isFinite(t)||t<cutoff){
+            scoutHistory.delete(id);scoutPending.delete(id);
+          }
+        }
+        if(scoutHistory.size>36){
+          const keep=[...scoutHistory.values()]
+            .sort((a,b)=>String(b.as_of).localeCompare(String(a.as_of))||b.score-a.score)
+            .slice(0,36);
+          const keepIds=new Set(keep.map(x=>x.stock_id));
+          for(const id of scoutHistory.keys())if(!keepIds.has(id)){scoutHistory.delete(id);scoutPending.delete(id);}
+        }
+      };
       const renderScoutPanel=()=>{
         const panel=document.getElementById('scoutPanel');
         if(!panel)return;
@@ -2095,12 +2145,67 @@ h1 {
         const html='<details'+(open?' open':'')+'><summary style="cursor:pointer;font-weight:650">'
           +'🌱 第一根前哨 '+active.length+' 檔｜📋 過熱／失效 '+archive.length+' 檔（展開）</summary>'
           +'<p style="font-size:12px;margin:8px 0">山川箱型／母子K與均線轉強的研究觀察；不是橘色或綠色買點。'
-          +'未更新日K只能等待補算。跨日歷史保存在此瀏覽器，不額外抓S或C。</p>'
+          +'未更新日K只能等待補算。跨日紀錄與相同登入帳號的手機、電腦同步；不額外重算S或抓C報價。</p>'
           +(active.length?'<strong>持續觀察</strong>'+active.map(itemHtml).join(''):'')
           +(archive.length?'<div style="font-weight:650;margin-top:10px">過熱／失效紀錄（禁止以此買進）</div>'+archive.map(itemHtml).join(''):'')
           +'</details>';
         if(panel.innerHTML!==html)panel.innerHTML=html;
         panel.hidden=false;
+      };
+
+      const flushScoutCloud=async()=>{
+        if(!scoutCloudReady||scoutCloudWritePromise||!scoutPending.size)return;
+        scoutCloudWritePromise=(async()=>{
+          while(scoutPending.size){
+            const batch=[...scoutPending.values()].slice(0,36);
+            const {data,error}=await authClient.from(SCOUT_CLOUD_TABLE)
+              .upsert(batch.map(scoutToCloud),{onConflict:'user_id,stock_id'})
+              .select('stock_id,stock_name,as_of,scanned_at,state,label,reason,first_bar_date,seen_as_of,close_price,ma20_bias_pct,score,source_version');
+            if(error){console.warn('scout_cloud_save_failed',error.code||'unknown');break;}
+            const saved=new Map((data||[]).filter(x=>x.source_version==='2026-10-20-shanchuan-v1')
+              .map(x=>[String(x.stock_id),scoutFromCloud(x)]));
+            for(const row of batch){
+              if(scoutPending.get(row.stock_id)===row)scoutPending.delete(row.stock_id);
+              const server=saved.get(row.stock_id);
+              if(server&&scoutNewer(server,scoutHistory.get(row.stock_id)))
+                scoutHistory.set(row.stock_id,server);
+            }
+            try{localStorage.removeItem(SCOUT_LEGACY_KEY);}catch{}
+          }
+          scoutCleanHistory();
+          renderScoutPanel();
+        })();
+        try{await scoutCloudWritePromise;}finally{scoutCloudWritePromise=null;}
+      };
+      const refreshScoutCloud=async(force=false)=>{
+        if(!['LAUNCH','ENTRY'].includes(stage))return;
+        if(scoutCloudReadPromise)return scoutCloudReadPromise;
+        if(!force&&scoutCloudReady&&Date.now()-scoutLastReadAt<90000)return;
+        scoutCloudReadPromise=(async()=>{
+          const cutoff=new Date(Date.now()-14*86400000).toISOString().slice(0,10);
+          const {data,error}=await authClient.from(SCOUT_CLOUD_TABLE)
+            .select('stock_id,stock_name,as_of,scanned_at,state,label,reason,first_bar_date,seen_as_of,close_price,ma20_bias_pct,score,source_version')
+            .eq('user_id',portfolioId).gte('as_of',cutoff)
+            .order('as_of',{ascending:false}).limit(120);
+          if(error){console.warn('scout_cloud_read_failed',error.code||'unknown');return;}
+          for(const x of (data||[])){
+            if(x.source_version!=='2026-10-20-shanchuan-v1')continue;
+            const server=scoutFromCloud(x),local=scoutHistory.get(server.stock_id);
+            // Prefer the cloud record on an equal scan. Never overwrite a
+            // newer in-flight S snapshot with an older browser/cloud copy.
+            if(!local||!scoutNewer(local,server)){
+              scoutHistory.set(server.stock_id,server);
+              scoutPending.delete(server.stock_id);
+            }
+          }
+          scoutCleanHistory();
+          scoutCloudReady=true;
+          scoutLastReadAt=Date.now();
+          renderScoutPanel();
+          if(scoutPending.size)await flushScoutCloud();
+          else{try{localStorage.removeItem(SCOUT_LEGACY_KEY);}catch{}}
+        })();
+        try{await scoutCloudReadPromise;}finally{scoutCloudReadPromise=null;}
       };
       const ingestScoutObservations=rows=>{
         if(!Array.isArray(rows))return;
@@ -2111,30 +2216,23 @@ h1 {
           if(!/^[0-9A-Z.-]{2,12}$/.test(id)||!/^\d{4}-\d{2}-\d{2}$/.test(day)
             ||!['prelaunch','first_bar','followup','overheated','invalid'].includes(state))continue;
           const prev=scoutHistory.get(id);
-          if(prev&&String(prev.as_of)>day)continue;
-          const row={stock_id:id,stock_name:String(x.stock_name||id).slice(0,64),
-            as_of:day,state,label:String(x.__scout_label||'').slice(0,90),
+          const incoming={stock_id:id,stock_name:String(x.stock_name||id).slice(0,64),
+            as_of:day,scanned_at:String(x.scanned_at||''),state,
+            label:String(x.__scout_label||'').slice(0,90),
             reason:String(x.__scout_reason||'').slice(0,240),
             first_bar_date:String(x.__scout_first_date||prev?.first_bar_date||'').slice(0,10),
             seen_as_of:String(prev?.seen_as_of||day),close:Number(x.close)||null,
             bias:Number.isFinite(Number(x.__scout_bias20))?Number(x.__scout_bias20):null,
             score:Number(x.score)||0};
-          if(JSON.stringify(prev)!==JSON.stringify(row)){scoutHistory.set(id,row);changed=true;}
-        }
-        // Missing coverage never silently invalidates or removes the old watch.
-        for(const [id,row] of scoutHistory){
-          const age=Date.now()-Date.parse(String(row.as_of)+'T00:00:00Z');
-          if(holdings.has(id)||!Number.isFinite(age)||age>=14*86400000){
-            scoutHistory.delete(id);changed=true;
+          if(prev&&scoutNewer(prev,incoming))continue;
+          if(JSON.stringify(prev)!==JSON.stringify(incoming)){
+            scoutHistory.set(id,incoming);scoutPending.set(id,incoming);changed=true;
           }
         }
-        if(changed){
-          const data=[...scoutHistory.values()]
-            .sort((a,b)=>String(b.as_of).localeCompare(String(a.as_of))||b.score-a.score).slice(0,36);
-          scoutHistory=new Map(data.map(x=>[x.stock_id,x]));
-          try{localStorage.setItem(SCOUT_HISTORY_KEY,JSON.stringify(data));}catch{}
-        }
-        renderScoutPanel();
+        scoutCleanHistory();
+        if(changed)renderScoutPanel();
+        if(scoutCloudReady){void flushScoutCloud();}
+        else{void refreshScoutCloud();}
       };
       const ENTRY_QUOTE_REFRESH_MS = LOCKED_SETTINGS.entryQuoteRefreshMs;
       const ENTRY_POOL_REFRESH_MS = LOCKED_SETTINGS.entryPoolRefreshMs;
@@ -5628,6 +5726,7 @@ h1 {
       };
       async function load() {
         renderScoutPanel();
+        void refreshScoutCloud();
         // Single active routes. Legacy inline ENTRY/LIVE/HOLDING branches below
         // are no longer reachable; only the current shared snapshot/quote path runs.
         if(stage==='ENTRY'||stage==='LIVE')return loadLiveMonitor();
@@ -7782,6 +7881,7 @@ h1 {
 
       async function loadLiveMonitor() {
         renderScoutPanel();
+        void refreshScoutCloud();
         const navToken = navigationSeq;
         const requestedStage = stage;
         if (liveTimer) clearInterval(liveTimer);
@@ -8390,6 +8490,7 @@ h1 {
           moneyFlowSectorViewActive = false;
           stage = targetStage;
           renderScoutPanel();
+          void refreshScoutCloud();
           try { localStorage.setItem(LAST_RADAR_STAGE_KEY, stage); } catch (error) {}
           updateEntryPhase();
           $('#stockSearch').value = '';
