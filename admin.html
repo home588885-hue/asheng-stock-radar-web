@@ -495,6 +495,8 @@ h1 {
 .stock-motion { margin:0 0 9px; min-width:0; overflow-wrap:anywhere; }
 .stock-motion .stock-motion-status { font-size:20px; line-height:1.45; }
 .stock-motion .holding-quote-grid { font-variant-numeric:tabular-nums; }
+.entry-saved-mini.entry-mini { display:block; }
+.entry-saved-mini > .entry-mini-summary { display:grid; }
 .stock-motion .holding-quote-grid dd { font-weight:750; color:#f3f7ff; }
 .entry-mini[open] > .entry-mini-summary,
 .holding-mini[open] > .holding-mini-summary { background:#23334f; }
@@ -4154,7 +4156,7 @@ h1 {
           <summary class="entry-mini-summary">
             <span class="entry-mini-name"><strong>${esc(id)} ${esc(item.stock_name||'')}</strong><small>${esc(actionText)}</small></span>
             <span class="entry-mini-score">模型 ${Number.isFinite(score)?esc(num(score,0)):'-'} 分</span>
-            <span class="entry-mini-expand">詳情 ▾</span>
+            <span class="entry-mini-expand">股票動向</span>
             <span class="entry-mini-metrics">${q?(quoteRecentForDisplay(q)?'C即時成交':'今日前次成交（非即時）'):'模型收盤（非即時）'} <b>${close>0?esc(num(close,2)):'-'}</b>｜距MA20 ${dist==null?'-':(dist>=0?'+':'')+esc(num(dist,1))+'%'}｜成交量 ${Number.isFinite(vol)?esc(num(vol,0))+'張':'-'}</span>
             <span class="entry-mini-date">S 模型 ${esc(item.as_of||'待更新')}｜${tradeContext}${esc(missingText)}</span>
             <span class="entry-mini-lifecycle">${esc(tonight.label)}｜明日：${esc(tonight.tomorrow)}</span>
@@ -4210,12 +4212,25 @@ h1 {
           const day=String(item?.as_of||w.first_as_of||'待補算');
           const close=Number(item?.metrics?.close),ma20=Number(item?.metrics?.ma20);
           const first=String(w.first_as_of||'未記錄');
-          return '<div class="entry-mini entry-saved-mini" data-tracking-symbol="'+esc(id)+'">'
-            +'<div class="entry-saved-name"><strong>'+esc(id+' '+name)+'</strong><span>'+esc(label)+'</span></div>'
-            +'<small>首次追蹤 '+esc(first)+'｜模型 '+esc(day)
+
+          const selected=entryExpandedIds.has(id)?' open':'';
+          const safeAction={key:'retained_watch',phase:'observe',buyable:false,trialable:false,
+            text:label,detail:note};
+          const existing=!!item&&Number.isFinite(close)&&close>0;
+          const movement=existing?stockMovementHtml(item,null,'entry',safeAction)
+            :'<div class="box empty">這檔追蹤紀錄仍在，尚無完整日K卡片資料；等待原排程補算。</div>';
+          const detail=existing?(chaseModelReady(item)
+            ?v5MonitorCard(item,null,safeAction)
+            :card(item,{actionOverride:safeAction})):'';
+          return '<details class="entry-mini entry-saved-mini" data-stock-key="'+esc(id)+'" data-tracking-symbol="'+esc(id)+'"'+selected+'>'
+            +'<summary class="entry-mini-summary">'
+            +'<span class="entry-mini-name"><strong>'+esc(id+' '+name)+'</strong><small>'+esc(label)+'</small></span>'
+            +'<span class="entry-mini-expand">股票動向</span>'
+            +'<span class="entry-mini-date">首次追蹤 '+esc(first)+'｜S 模型 '+esc(day)
             +(Number.isFinite(close)&&close>0?'｜收盤 '+esc(num(close,2)):'')
-            +(Number.isFinite(ma20)&&ma20>0?'｜距MA20 '+esc(num((close/ma20-1)*100,1))+'%':'')+'</small>'
-            +'<small>'+esc(note)+'</small></div>';
+            +(Number.isFinite(ma20)&&ma20>0&&close>0?'｜距MA20 '+esc(num((close/ma20-1)*100,1))+'%':'')+'</span>'
+            +'<span class="entry-mini-lifecycle">'+esc(note)+'</span></summary>'
+            +'<div class="entry-mini-full">'+movement+detail+'</div></details>';
         };
         let pendingCount=0;
         watches.forEach(w=>{
@@ -6834,7 +6849,7 @@ h1 {
             <summary class="entry-mini-summary" aria-label="${esc(id+' '+String(item?.stock_name||'')+' '+status)}">
               <span class="entry-mini-name"><strong>${esc(id)} ${esc(item?.stock_name||'')}</strong><small>${esc(status)}</small></span>
               <span class="entry-mini-score">模型 ${Number.isFinite(score)?esc(num(score,0)):'-'} 分</span>
-              <span class="entry-mini-expand">詳情</span>
+              <span class="entry-mini-expand">股票動向</span>
               <span class="entry-mini-metrics">${source} <b>${price!=null&&price>0?esc(num(price,2)):'-'}</b>｜距MA20 ${gap==null?'-':(gap>=0?'+':'')+esc(num(gap,1))+'%'}｜量 ${Number.isFinite(vol)&&vol>=0?esc(num(vol,0))+'張':'-'}</span>
               ${trial?'<span class="entry-mini-metrics" style="color:#fdba74">'+esc(trial.detail)+'</span>':''}
               ${greenMini}
