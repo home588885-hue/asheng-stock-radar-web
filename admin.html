@@ -4881,14 +4881,32 @@ h1 {
             +'<small>明日主要觀察：'+esc(nextFocus)+'</small></summary>'
             +researchExpandedCard(info.row,false)+'</details>';
         };
-        const passiveResearch=[...new Map([
+        // One stock per evening research panel. The same extended breakout can
+        // qualify for both "已發動等回踩" and passive lifecycle tracking;
+        // keep it in the stronger primary group instead of duplicating its card.
+        // Presentation only: no effect on the signed candidate/risk/watch pools.
+        const dedupeEveningResearch=(candidateRows,alreadyShown=[])=>{
+          const seen=new Set(alreadyShown.map(x=>String(x?.item?.stock_id||'')).filter(Boolean));
+          const unique=[];
+          for(const row of candidateRows){
+            const id=String(row?.item?.stock_id||'');
+            if(!id||seen.has(id))continue;
+            seen.add(id);
+            unique.push(row);
+          }
+          return unique;
+        };
+        const primaryResearchRows=[
+          ...topResearch.map(x=>x.row),...strongFollowups
+        ];
+        const passiveResearch=dedupeEveningResearch([...new Map([
           ...retainedRows.filter(row=>row?.item?.__passive_monitor===true),
           ...overnightPassiveResearch.filter(item=>passiveRadarWatchEligible(item)
             &&!rows.some(row=>String(row.item?.stock_id||'')===String(item.stock_id||'')))
             .map(item=>({item,quote:null,action:{key:'passive_watch',phase:'observe',
               buyable:false,trialable:false,...passiveWatchDescription(item),
               text:passiveWatchDescription(item).label}}))
-        ].map(row=>[String(row.item?.stock_id||''),row])).values()].slice(0,8);
+        ].map(row=>[String(row.item?.stock_id||''),row])).values()],primaryResearchRows).slice(0,8);
         const passiveResearchHtml=passiveResearch.length
           ?'<div class="entry-research-hint"><b>🧭 型態追蹤｜MA10待轉強／突破等回踩｜'
               +passiveResearch.length+' 檔（非買點）</b></div>'
