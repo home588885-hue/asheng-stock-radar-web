@@ -4570,6 +4570,12 @@ h1 {
           const item=row.item||{},m=item.metrics||{},a=row.action||{};
           const date=String(item.as_of||''),q=validTodayQuote(row.quote)?row.quote:null;
           row={...row,quote:q};
+          if(item.__observation_only===true){
+            b.retained.push(safeRow(row,{key:'historical_screen_only',phase:'observe',
+              stale_model:true,rank:1,text:'⚪ 舊日K初選｜待新版確認（非買點）',
+              detail:'模型 '+date+'｜僅按量能、均線及MA20分級乖離先列觀察；新版未補算不可試單或買進'}));
+            return;
+          }
           // Old model never becomes a new launch, high-priority, or risk assessment.
           if(date!==expected||a.stale_model===true){
             const old={key:'wait',phase:'observe',stale_model:true,className:'wait',
@@ -7262,7 +7268,10 @@ h1 {
         // 進場雷達沿用盤後完整日 K；候選股盤中使用既有C報價，絕不讓S重算。
         if (LOCKED_SETTINGS.nightlySnapshotOnly && !(marketBridgeReady() && taipeiMarketState().open)) {
           if (stage === 'ENTRY') {
-            const rows = liveBasePicks.map(item => ({ item, quote:null, action:simpleActionState(item) }))
+            const rows = liveBasePicks.map(item => ({ item, quote:null, action:item.__observation_only===true
+                ?{key:'historical_screen_only',rank:1,phase:'observe',buyable:false,trialable:false,
+                  text:'⚪ 舊日K初選｜待新版',detail:'先觀察不可買'}
+                :simpleActionState(item) }))
               .filter(row => row.action)
               .map(row => ({...row,action:{...row.action,phase:'candidate',buyable:false,trialable:false}}))
               .sort((a,b)=>b.action.rank-a.action.rank);
@@ -7469,8 +7478,14 @@ h1 {
             nextPool=readEntryPoolCache().filter(item=>
               String(item.as_of||'')<expectedSignalDataDate());
           }
+          // Old source snapshots are independent research observations, never persisted as signed picks.
+          const observed=(launchData?.observation_entry||[])
+            .filter(item=>observationModelForDisplay(item)&&item.__observation_zone==='entry'
+              &&!holdings.has(String(item.stock_id||''))).slice(0,10);
+          const ids=new Set(nextPool.map(item=>String(item.stock_id||'')));
+          nextPool=[...nextPool,...observed.filter(item=>!ids.has(String(item.stock_id||'')))];
           liveBasePicks = nextPool;
-          if (nextPool.length) writeEntryPoolCache(nextPool);
+          if(nextPool.some(recentModelForDisplay))writeEntryPoolCache(nextPool.filter(recentModelForDisplay));
           // Do not destroy the last verified cache on a transient empty response.
           lastEntryPoolRefreshAt = Date.now();
           await refreshLiveQuotes();
@@ -7529,8 +7544,14 @@ h1 {
               nextPool=readEntryPoolCache().filter(item=>
                 String(item.as_of||'')<expectedSignalDataDate());
             }
+            // Old source snapshots are independent research observations, never persisted as signed picks.
+            const observed=(launchData?.observation_entry||[])
+              .filter(item=>observationModelForDisplay(item)&&item.__observation_zone==='entry'
+                &&!holdings.has(String(item.stock_id||''))).slice(0,10);
+            const ids=new Set(nextPool.map(item=>String(item.stock_id||'')));
+            nextPool=[...nextPool,...observed.filter(item=>!ids.has(String(item.stock_id||'')))];
             liveBasePicks = nextPool;
-            if(nextPool.length)writeEntryPoolCache(nextPool);
+            if(nextPool.some(recentModelForDisplay))writeEntryPoolCache(nextPool.filter(recentModelForDisplay));
             // Never erase last signed-v2 cache merely because a query returns zero.
             if (launchData) {
               applyGlobalHeaderSummary(launchData);
