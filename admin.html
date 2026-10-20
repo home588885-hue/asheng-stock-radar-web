@@ -2431,6 +2431,17 @@ h1 {
         const days=(Date.parse(expected+'T00:00:00Z')-Date.parse(asOf+'T00:00:00Z'))/86400000;
         return Number.isFinite(days)&&days>=0&&days<=5;
       };
+
+      // Earlier complete-day model: read-only observation, never a fresh buy.
+      const observationModelForDisplay=item=>{
+        if(item?.__observation_only!==true||chaseModelReady(item)||!unifiedRadarGeneration(item))return false;
+        const d=String(item.as_of||''),now=expectedSignalDataDate();
+        if(!/^\d{4}-\d{2}-\d{2}$/.test(d))return false;
+        const days=(Date.parse(now+'T00:00:00Z')-Date.parse(d+'T00:00:00Z'))/86400000;
+        return Number.isFinite(days)&&days>=0&&days<=5
+          &&['launch','entry'].includes(String(item.__observation_zone||''))
+          &&Number(item.metrics?.close)>0&&Number(item.metrics?.ma20)>0;
+      };
       const displayModelWarning=item=>String(item?.as_of||'')===expectedSignalDataDate()
         ?'':'📅 前次完整日K '+String(item?.as_of||'未知')+'｜盤後待補算（非買點）';
       // Shared status for LAUNCH / ENTRY / HOLDING. Uses the picks response,
@@ -4926,9 +4937,13 @@ h1 {
       const isActiveLaunchItem = item =>
         modelLaunchPhase(item)==='ACTIVE' && !holdings.has(String(item?.stock_id||''));
       const launchQualityState = item => {
-        if(!chaseModelReady(item))return {keep:false,rank:0,className:'wait',label:'⚪ 舊版待補算'};
         // Personal holdings are managed exclusively in 已買進.
         if (holdings.has(String(item?.stock_id||''))) return {keep:false,rank:0,className:'held',label:'📌 已買進'};
+        if(item?.__observation_only===true)return observationModelForDisplay(item)
+          &&item.__observation_zone==='launch'
+          ?{keep:true,rank:1,className:'pending-rescan',label:'⚪ 舊日K初選｜等新版補算（非買點）'}
+          :{keep:false,rank:0,className:'pending-rescan',label:'⚪ 觀察未通過'};
+        if(!chaseModelReady(item))return {keep:false,rank:0,className:'wait',label:'⚪ 舊版待補算'};
         const m=item?.metrics||{};
         const bottom=m.bottom_start||{};
         const mc=m.ma_cluster||{};
@@ -5382,6 +5397,8 @@ h1 {
             applyGlobalHeaderSummary(launchData);
             lastLaunchModelReadAt = Date.now();
             let launchPicks = (launchData.picks || []).filter(recentModelForDisplay);
+            const launchObservation=(launchData.observation_launch||[])
+              .filter(item=>observationModelForDisplay(item)&&item.__observation_zone==='launch');
           // A partial EOD model refresh/temporarily empty source cannot wipe
           // the latest verified watch list. Retained rows remain observation only.
           if(!launchPicks.length &&
@@ -5399,7 +5416,8 @@ h1 {
             const counts = launchData.stage_counts || {};
             data = {
               ...launchData,
-              picks: launchPicks,
+              picks: [...launchPicks,...launchObservation],
+              observation_count:launchObservation.length,
               quality_total: qualifiedTotal,
               quality_hidden: hiddenByTransport,
               combined_counts: {
@@ -5469,8 +5487,9 @@ h1 {
           if (stage === 'LAUNCH') {
             setTimeout(async () => {
               try {
-                await loadCandleGuards(allPicks, 12);
-                await syncPullbackWatchPool(allPicks);
+                const signedOnly=allPicks.filter(item=>item.__observation_only!==true);
+                await loadCandleGuards(signedOnly, 12);
+                await syncPullbackWatchPool(signedOnly);
                 if (navigationSeq === navToken && stage === requestedStage && liveBasePicks.length) refreshSimpleQuotes();
               } catch (error) {}
             }, 0);
@@ -6830,7 +6849,8 @@ h1 {
         const lowBase=lowBaseWatchState(item);
         const pullback=ma10PullbackWatchState(item);
         const trial=ma10PullbackTrialState(item,q);
-        const status=displayModelWarning(item)?displayModelWarning(item)
+        const status=item?.__observation_only===true?'⚪ 舊日K初選｜等新版補算（非買點）'
+          :displayModelWarning(item)?displayModelWarning(item)
           :risk?.kind==='hard'?String(risk.text||'🔴 盤中風險｜暫不新買')
           :risk?.kind==='momentum'?String(risk.text||'🟡 短線轉弱｜等重新轉強')
           :risk?.kind==='position'?String(risk.text||'🔵 位置偏高｜等回踩')
@@ -6844,7 +6864,10 @@ h1 {
         const quoteTime=q?'｜報價 '+String(q.quote_time||'時間待確認'):'｜非即時價';
         const greenMini=greenDipMiniHtml(item,q);
         const selected=launchExpandedIds.has(id)?' open':'';
-        const detailed=displayModelWarning(item)?card(item,{hideSignal:true,quote:q})
+        const detailed=item?.__observation_only===true
+          ?'<div class="model-only-note">⚪ 僅供觀察：尚未完成新版分級乖離驗證，不可依舊模型試單。</div>'
+            +card(item,{hideSignal:true,quote:q})
+          :displayModelWarning(item)?card(item,{hideSignal:true,quote:q})
           :q?intradayCard(item,q):card(item);
         return `<section class="launch-mini-wrap" data-stock-id="${esc(id)}">
           <details class="entry-mini" data-stock-key="${esc(id)}"${selected}>
@@ -7052,7 +7075,8 @@ h1 {
             .filter(row => {
               const item=row.item, q=validTodayQuote(row.quote) ? row.quote : null;
               if (!launchQualityState(item).keep) return false;
-              // The same S-active model candidate stays visible when C price breaks out.
+              if(item?.__observation_only===true)return true;
+               // The same S-active model candidate stays visible when C price breaks out.
               if (isActiveLaunchItem(item)) return true;
               if (!q) return true;
               const m=item?.metrics||{}, mc=m.ma_cluster||{};
