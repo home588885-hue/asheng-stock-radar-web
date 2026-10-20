@@ -1716,6 +1716,8 @@ h1 {
         const bias=valid?(close/ma20-1)*100:null;
         return {...tier,bias,valid,pass:valid&&bias<=tier.limit+1e-9,over:valid&&bias>tier.limit+1e-9};
       };
+      const chaseModelReady=item=>String(item?.metrics?.chase_rule_version||'')===CHASE_RULE_VERSION
+        &&String(item?.metrics?.chase_risk?.version||'')===CHASE_RULE_VERSION;
       const chasePass=(item,price=null)=>chaseRisk(item,price).pass;
       const chaseOver=(item,price=null)=>chaseRisk(item,price).over;
       const chaseLimitNote=item=>{
@@ -2402,7 +2404,7 @@ h1 {
       // up to 5 calendar days across weekends and until next night's S update.
       // NEVER use this for live trial, formal buy or the existing holdings rules.
       const recentModelForDisplay=item=>{
-        if(!unifiedRadarGeneration(item))return false;
+        if(!unifiedRadarGeneration(item)||!chaseModelReady(item))return false;
         const asOf=String(item?.as_of||''),expected=expectedSignalDataDate();
         if(!/^\d{4}-\d{2}-\d{2}$/.test(asOf))return false;
         const days=(Date.parse(expected+'T00:00:00Z')-Date.parse(asOf+'T00:00:00Z'))/86400000;
@@ -2976,6 +2978,9 @@ h1 {
           detail:details.join('｜')+'｜只參考現有法人籌碼；不解鎖🟢正式買點或自動下單'};
       };
       const newEntryRiskGate = (item, quote = null) => {
+        if(!chaseModelReady(item))return {kind:'hard',key:'legacy_chase_guard',
+          phase:'blocked',className:'wait',text:'⚪ 舊版防追高模型｜僅供觀察',
+          detail:'需新版 +8%／+12%／+15% 完整日K重新掃描，舊模型不能判定新買進'};
         const m=item?.metrics||{}, g=m.entry_candle_guard||{}, hm=m.holding_management||{};
         const intraday=liveSelloffRisk(item,quote);
         if(intraday)return intraday;
@@ -3618,7 +3623,7 @@ h1 {
       // intraday trial. Persist this independently so opening-day
       // reclassification cannot silently erase last night's watch candidates.
       const eodStarterWatchEligible = item => {
-        if(!item||holdings.has(String(item.stock_id||''))||!unifiedRadarGeneration(item)
+        if(!item||holdings.has(String(item.stock_id||''))||!unifiedRadarGeneration(item)||!chaseModelReady(item)
           ||String(item.as_of||'')!==expectedSignalDataDate())return false;
         const m=item.metrics||{},mc=m.ma_cluster||{},g=m.entry_candle_guard||{};
         const close=Number(m.close),ma10=Number(m.ma10),ma20=Number(m.ma20),ma60=Number(m.ma60);
@@ -3918,6 +3923,10 @@ h1 {
         });
       };
       const entrySnapshotState = (item, baseAction, quote = null) => {
+        if(!chaseModelReady(item))return {key:'legacy_chase_observe',rank:0,
+          phase:'observe',className:'wait',stale_model:true,buyable:false,trialable:false,
+          text:'⚪ 舊版防追高｜僅保留觀察',
+          detail:'舊完整日K尚未按新版分級乖離重新計算，不能視為今日橘色試單或綠色買點'};
         const modelFresh=String(item?.as_of||'')===expectedSignalDataDate();
         const recovery=modelFresh?maPullbackReclaimWatchState(item):null;
         const originalMa10Watch=modelFresh&&ma10PullbackWatchState(item);
@@ -4882,6 +4891,7 @@ h1 {
       const isActiveLaunchItem = item =>
         modelLaunchPhase(item)==='ACTIVE' && !holdings.has(String(item?.stock_id||''));
       const launchQualityState = item => {
+        if(!chaseModelReady(item))return {keep:false,rank:0,className:'wait',label:'⚪ 舊版待補算'};
         // Personal holdings are managed exclusively in 已買進.
         if (holdings.has(String(item?.stock_id||''))) return {keep:false,rank:0,className:'held',label:'📌 已買進'};
         const m=item?.metrics||{};
