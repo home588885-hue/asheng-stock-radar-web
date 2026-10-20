@@ -4219,9 +4219,7 @@ h1 {
           const existing=!!item&&Number.isFinite(close)&&close>0;
           const movement=existing?stockMovementHtml(item,null,'entry',safeAction)
             :'<div class="box empty">這檔追蹤紀錄仍在，尚無完整日K卡片資料；等待原排程補算。</div>';
-          const detail=existing?(chaseModelReady(item)
-            ?v5MonitorCard(item,null,safeAction)
-            :card(item,{actionOverride:safeAction})):'';
+          const detail=existing?v5MonitorCard(item,null,safeAction):'';
           return '<details class="entry-mini entry-saved-mini" data-stock-key="'+esc(id)+'" data-tracking-symbol="'+esc(id)+'"'+selected+'>'
             +'<summary class="entry-mini-summary">'
             +'<span class="entry-mini-name"><strong>'+esc(id+' '+name)+'</strong><small>'+esc(label)+'</small></span>'
