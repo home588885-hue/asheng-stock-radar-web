@@ -560,6 +560,10 @@ h1 {
 .radar-decision-levels dt{font-size:11px;color:#a2bddb}
 .radar-decision-levels dd{font-size:15px;font-weight:800;color:#f7fafc;overflow-wrap:anywhere;margin:3px 0 0}
 .radar-decision-meta{display:block;font-size:11px;line-height:1.45;color:#9bb0cc;margin-top:8px}
+.c-quote-diagnostic{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;padding:8px;border:1px solid #536a87;border-radius:8px;background:#172740;color:#e3eeff;font-size:12px;line-height:1.5}
+.c-quote-diagnostic>span{flex:1;min-width:180px}
+.c-quote-diagnostic>button{border:1px solid #658bbc;border-radius:6px;background:#2c4b70;color:#fff;padding:6px 10px;cursor:pointer}
+.c-quote-diagnostic>button:disabled{opacity:.6;cursor:wait}
 .holding-quick-controls{display:flex;gap:8px;flex-wrap:wrap;margin:5px 0 10px}
 .holding-quick-controls .holding-btn{flex:1;min-width:110px}
 .holding-mini-body>.radar-deep-dive{margin-top:5px}
@@ -1276,6 +1280,7 @@ h1 {
           </div>
           <div class="entry-phase" id="entryPhase"></div>
           <div class="holding-note">📌 已買進：只顯示管理員自己的持股｜C 驗證成功後交易時段約每3分鐘抓價；持股12分鐘確認12:50～13:20；S 完整模型晚上9點後分批更新。<span id="memberIdentity"></span><button class="holding-sync" id="syncHoldingsBtn">登出</button></div>
+          <div class="c-quote-diagnostic" role="status"><span id="cQuoteStatus">C 報價狀態檢查中…</span><button type="button" id="cQuoteCheck">檢查／重試 C</button></div>
         </section>
                 <p id="timeInfoExplanation" class="time-info-explanation" hidden>管理員三區在 C 報價驗證成功時，交易時段約每3分鐘更新有效成交價；已買進12分鐘存活只統計12:50～13:20有效成交。MA10／MA20／MA60、KD、MACD 等完整模型仍以 S 的盤後完整日 K 更新為準。</p>
         <main class="list" id="list">
@@ -1948,6 +1953,8 @@ h1 {
         }).filter(validTodayQuote);
         persistLiveQuoteCache();
         const fetchedNow=quotes.filter(q=>!q.cached_last_trade && incoming.has(String(q.stock_id))).length;
+        cQuoteCoverage={requested:unique.length,valid:quotes.length,at:Date.now()};
+        showCQuoteDiagnostic();
         return {ok:true,source:'Cloudflare TWSE MIS',bridge_ready:true,
           requested:unique.length,fetched_now:fetchedNow,cached_last_trade:quotes.length-fetchedNow,quotes};
       };
@@ -1959,6 +1966,7 @@ h1 {
       let holdingQuoteRefreshing = false;
       let holdingModelRefreshing = false;
       let holdingVisibilityControl = null; // 已買進頁專屬，切換分頁後失效
+      let holdingManualQuoteRefresh = null; // only a user-initiated C verification, no S refresh
       let pullbackWatch = new Map();
       let pullbackWatchSnapshots = new Map();
       let pullbackWatchArchived = [];
@@ -2299,19 +2307,40 @@ h1 {
         return fetchJsonWithTimeout(ANALYZER_FALLBACK_API + '?' + suffix, options, timeoutMs);
       };
       let cQuoteLastCheck={status:'尚未請求',at:'',returned:0,valid:0};
+      let cQuoteCoverage={requested:0,valid:0,at:null};
+      const showCQuoteDiagnostic=note=>{
+        const el=document.getElementById('cQuoteStatus');
+        if(!el)return;
+        if(note){el.textContent=String(note);return;}
+        if(!cQuoteReadWindow()){
+          el.textContent='⚪ C：目前不在盤中或13:31～17:00的盤後查價時段。';
+        }else if(!marketBridgeReady()){
+          el.textContent='🔴 C Worker 未連線／健康檢查未通過。請按「檢查／重試 C」查看狀態。';
+        }else if(cQuoteLastCheck.status==='尚未請求'){
+          el.textContent='🟡 C Worker 已通過健康檢查，尚未取得驗證後的 /quotes 成交資料。';
+        }else if(cQuoteCoverage.valid>0){
+          el.textContent='🟢 C 有效成交 '+cQuoteCoverage.valid+'/'+cQuoteCoverage.requested
+            +' 檔｜非當下即時報價時仍附成交時間｜最後請求 '+cQuoteLastCheck.status;
+        }else if(cQuoteLastCheck.status==='C 已回應'){
+          el.textContent='🟠 C /quotes 已回應，但當日有效成交為 0｜來源原始 '+cQuoteLastCheck.returned
+            +' 檔，須核對交易所回傳日期、成交價、時間及量。';
+        }else{
+          el.textContent='🔴 '+cQuoteLastCheck.status+'｜來源原始 '+cQuoteLastCheck.returned+' 檔。';
+        }
+      };
       const fetchLiveQuoteChunk = async symbols => {
         if (document.hidden || !cQuoteReadWindow()) return [];
         const suffix = '?' + new URLSearchParams({ symbols }).toString();
         if (!marketBridgeReady()) {
           cQuoteLastCheck={status:'C Worker 健康檢查未通過',at:new Date().toISOString(),returned:0,valid:0};
-          return [];
+          showCQuoteDiagnostic();return [];
         }
         try {
           let { data: session } = await authClient.auth.getSession();
           let token = session?.session?.access_token;
           if (!token) {
             cQuoteLastCheck={status:'登入工作階段無效',at:new Date().toISOString(),returned:0,valid:0};
-            return [];
+            showCQuoteDiagnostic();return [];
           }
           const requestQuotes = jwt => fetch(MARKET_BRIDGE_URL + '/quotes' + suffix, {
             headers:{ Authorization:'Bearer '+jwt, Accept:'application/json' },
@@ -2333,10 +2362,11 @@ h1 {
             at:new Date().toISOString(),returned:arr.length,
             valid:arr.filter(validTodayQuote).length
           };
+          showCQuoteDiagnostic();
           return response.ok&&data?.ok?arr:[];
         } catch(error) {
           cQuoteLastCheck={status:'C 連線／逾時／CORS 異常',at:new Date().toISOString(),returned:0,valid:0};
-          return [];
+          showCQuoteDiagnostic();return [];
         }
       };
       const fetchScanStatusShared = async () => {
@@ -8031,6 +8061,7 @@ h1 {
         const requestedStage = stage;
         const holdingToken = ++holdingLoadSeq;
         holdingVisibilityControl = null;
+        holdingManualQuoteRefresh = null;
         const holdingStillCurrent = () => holdingToken === holdingLoadSeq && navigationSeq === navToken && stage === requestedStage && stage === 'HOLDING';
         if (liveTimer) { clearInterval(liveTimer); liveTimer = null; }
         if (livePoolTimer) { clearInterval(livePoolTimer); livePoolTimer = null; }
@@ -8144,6 +8175,7 @@ h1 {
           }
         };
 
+        holdingManualQuoteRefresh = render; // reuse existing holding quote renderer on explicit user click
         const refreshHoldingModels = async () => {
           if (!holdingStillCurrent() || document.hidden || holdingModelRefreshing || !items.length) return;
           holdingModelRefreshing = true;
@@ -8390,6 +8422,7 @@ h1 {
           if (liveTimer) { clearInterval(liveTimer); liveTimer = null; }
           if (livePoolTimer) { clearInterval(livePoolTimer); livePoolTimer = null; }
           holdingVisibilityControl = null;
+          holdingManualQuoteRefresh = null;
           liveBasePicks = [];
           // Reuse the latest public-market DOM within this signed-in page session.
           // Held stock cards are never reused without the server holdings check.
@@ -8424,6 +8457,36 @@ h1 {
       $('#holdingForm').addEventListener('submit', saveHolding);
       $('#holdingCancel').addEventListener('click', () => $('#holdingDialog').close());
       $('#syncHoldingsBtn').addEventListener('click', syncHoldings);
+      // Manual C verification never modifies S models, positions or trade signals.
+      $('#cQuoteCheck').addEventListener('click', async event=>{
+        const button=event.currentTarget;
+        if(button.disabled)return;
+        button.disabled=true;
+        try{
+          showCQuoteDiagnostic('⏳ 檢查 C 健康與管理員報價驗證中…');
+          if(!cQuoteReadWindow()){
+            showCQuoteDiagnostic('⚪ 查價僅在交易日盤中或13:31～17:00；非交易時段不發送報價請求。');
+            return;
+          }
+          // Explicit retry bypasses only the client health cooldown and one-time
+          // postclose failure lock, never the JWT/admin validation on C.
+          marketBridgeProbeAt=0;
+          if(!marketBridgeReady())await configureCloudflareMarketBridge();
+          if(!marketBridgeReady()){
+            showCQuoteDiagnostic('🔴 C /health 無法連線或版本驗證未通過；管理員已登入不等於 C 已授權。');
+            return;
+          }
+          cPostCloseQuoteAttempted.clear();
+          cQuoteLastCheck={status:'尚未請求',at:'',returned:0,valid:0};
+          cQuoteCoverage={requested:0,valid:0,at:null};
+          if(stage==='HOLDING'&&holdingManualQuoteRefresh)await holdingManualQuoteRefresh();
+          else if(stage==='ENTRY')await refreshLiveQuotes();
+          else if(stage==='LAUNCH')await refreshSimpleQuotes();
+          showCQuoteDiagnostic();
+        }catch(error){
+          showCQuoteDiagnostic('🔴 C 人工檢查失敗：請稍後重試，持股與原模型未更動。');
+        }finally{button.disabled=false;}
+      });
       // Capture native details toggles to preserve expanded holdings across quote
       // updates and tab re-entry. Never persist private portfolio HTML on disk.
       $('#list').addEventListener('toggle', event => {
@@ -8561,6 +8624,7 @@ h1 {
           button.classList.toggle('on', button.dataset.stage === stage));
         updateEntryPhase();
         await configureCloudflareMarketBridge();
+        showCQuoteDiagnostic();
         if (stage === 'HOLDING') loadHoldingCards();
         else if (stage === 'ENTRY') loadLiveMonitor();
         else load();

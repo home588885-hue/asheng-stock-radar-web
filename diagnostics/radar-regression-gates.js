@@ -395,6 +395,25 @@ test('Final C quote is fetched only in foreground once per stock and never unloc
  assert.match(html,/if\(!market.open\|\|market.totalMinutes<540\|\|market.totalMinutes>=800\)return false/);
  assert.match(html,/const LOCKED_RULE_VERSION = '2026-10-06-ma10-20-60-v1'/);
 });
+
+test('C failure is visible and user can manually retry failed quotes without exposing tokens',()=>{
+ const htmlStatus=section('<div class="c-quote-diagnostic"','</section>');
+ assert.match(htmlStatus,/id="cQuoteStatus"/);
+ assert.match(htmlStatus,/id="cQuoteCheck"/);
+ const checker=section("      $('#cQuoteCheck').addEventListener('click',",
+   '      // Capture native details toggles');
+ assert.match(checker,/cPostCloseQuoteAttempted\.clear\(\)/);
+ assert.match(checker,/configureCloudflareMarketBridge\(\)/);
+ assert.match(checker,/holdingManualQuoteRefresh\(\)/);
+ assert.match(checker,/refreshLiveQuotes\(\)/);
+ assert.match(checker,/refreshSimpleQuotes\(\)/);
+ assert.doesNotMatch(checker,/\bsignOut\s*\(|\bfetch\s*\(|setInterval\s*\(|saveHolding/);
+ const fetcher=section("      let cQuoteLastCheck={status:'尚未請求'",'      const fetchScanStatusShared =');
+ assert.match(fetcher,/C 拒絕管理員驗證/);
+ assert.match(fetcher,/C 無法取得交易所報價/);
+ assert.match(fetcher,/C 連線／逾時／CORS 異常/);
+ assert.match(html,/const LOCKED_RULE_VERSION = '2026-10-06-ma10-20-60-v1'/);
+});
 for(const g of html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi)){
   if(/\bsrc=/.test(g[1]))continue;
   new Function(g[2]);
