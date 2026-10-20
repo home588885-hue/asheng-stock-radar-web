@@ -714,8 +714,12 @@ h1 {
 .entry-mini-metrics, .holding-mini-stats { font-variant-numeric:tabular-nums; }
 @media(max-width:640px) { .holding-mini-stats { grid-template-columns:repeat(2,minmax(0,1fr)); } .holding-mini-stats > span:last-child { grid-column:1 / -1; } }
 .holding-mini-stats b { color:#f8fafc; }
-.holding-mini-stats .pnl-up { color:#fca5a5; }
-.holding-mini-stats .pnl-down { color:#86efac; }
+/* P/L convention requested by owner: profit GREEN, loss RED, zero neutral.
+   Only color realized/unrealized HOLDING P/L, not daily market price movement or risk alerts. */
+.holding-mini-stats .pnl-up,.holding-row .pnl-up,.holding-rule-line .pnl-up { color:#86efac; }
+.holding-mini-stats .pnl-down,.holding-row .pnl-down,.holding-rule-line .pnl-down { color:#fca5a5; }
+.holding-mini-stats .pnl-flat,.holding-row .pnl-flat,.holding-rule-line .pnl-flat { color:#f8fafc; }
+.holding-mini-stats .pnl-unknown,.holding-row .pnl-unknown,.holding-rule-line .pnl-unknown { color:#cbd5e1; }
 .holding-mini-date { font-size:12px; color:#a0b5d2; }
 .holding-mini-body { padding:8px; border-top:1px solid #344762; }
 .holding-mini-body > .card, .holding-mini-body > .live-wrap { margin:0; }
@@ -5430,7 +5434,7 @@ h1 {
         const avg = Number(holding?.avg_cost);
         const pnl = holding && Number.isFinite(close) && Number.isFinite(avg) && avg > 0 ? ((close / avg) - 1) * 100 : null;
         const pnlLabel = displayQuote ? (quoteFinal ? '今日收盤損益' : '即時損益') : '模型收盤損益';
-        const holdingHtml = holding ? (options.hideHoldingControls === true ? '' : `<div class="holding-row"><span>📌 持有 ${Number(holding.quantity)}股｜成本 ${num(avg, 2)}${pnl == null ? '' : `｜${pnlLabel} ${pnl >= 0 ? '+' : ''}${num(pnl, 1)}%`}</span><div class="holding-actions"><button class="holding-btn" data-holding-edit="${esc(item.stock_id)}">部分賣出／調整</button><button class="holding-btn danger" data-holding-sell="${esc(item.stock_id)}">全部賣出</button></div></div>`) : `<div class="holding-row holding-empty"><button class="holding-btn buy" data-holding-buy="${esc(item.stock_id)}">✅ 我已買進</button></div>`;
+        const holdingHtml = holding ? (options.hideHoldingControls === true ? '' : `<div class="holding-row"><span>📌 持有 ${Number(holding.quantity)}股｜成本 ${num(avg, 2)}${pnl == null ? '' : `｜${pnlLabel} <b class="${holdingPnlClass(pnl)}">${pnl > 0 ? '+' : ''}${num(pnl, 1)}%</b>`}</span><div class="holding-actions"><button class="holding-btn" data-holding-edit="${esc(item.stock_id)}">部分賣出／調整</button><button class="holding-btn danger" data-holding-sell="${esc(item.stock_id)}">全部賣出</button></div></div>`) : `<div class="holding-row holding-empty"><button class="holding-btn buy" data-holding-buy="${esc(item.stock_id)}">✅ 我已買進</button></div>`;
         const holdingStatusHtml = holding ? holdingRulesHtml(item, displayQuote, options.compactHolding === true) : '';
         const holdingTodayHtml = holding ? holdingActionHtml(item, displayQuote) : '';
         const chip = metrics.chip;
@@ -6615,6 +6619,9 @@ h1 {
           ?'<small class="model-only-note">🛡 曾獲利達+5%，成本防線已啟動；扣除費稅及滑價仍可能有虧損。</small>':'';
         return `<section class="live-banner holding-action ${action.className}"><h2>📈 股票動向｜${actionIcon} ${esc(actionDateLabel)}</h2><div class="holding-main-action">${main}</div><span>${esc(modelPrefix)}：${held}</span><span>${esc(reminder)}</span>${givebackAlert}${boxBanner}${dataCaution}<dl class="holding-quote-grid">${fields.map(([label,value]) => `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl>${holdingCloseWatchHtml(item, safeQuote)}</section>`;
       };
+      // Display helper only. Do not alter position costs, quotes, risk gates or order advice.
+      const holdingPnlClass = value =>
+        !Number.isFinite(value)?'pnl-unknown':value>0?'pnl-up':value<0?'pnl-down':'pnl-flat';
       const holdingRulesHtml = (item, quote = null, embedded = false) => {
         const { action, main, rulesTitle } = holdingDisplay(item, quote);
         const metrics = item.metrics || {};
@@ -6637,7 +6644,7 @@ h1 {
         const strongNote = action.title.includes('強警示') ? '<div class="holding-rule-line"><b>強警示：</b>長黑、爆量、MA20 下方且籌碼偏弱，優先檢查是否提早處理。</div>' : '';
         const risk = holdingRiskPlan(item, quote);
         const riskNote=risk
-          ?'<div class="holding-rule-line"><b>成本風控：</b>成本 '+num(risk.cost,2)+'｜損益 '+num(risk.pnl,2)+'%｜-5%停損 '+num(risk.stopPrice,2)+'｜+10%全數停利 '+num(risk.takePrice,2)+'</div>'
+          ?'<div class="holding-rule-line"><b>成本風控：</b>成本 '+num(risk.cost,2)+'｜損益 <b class="'+holdingPnlClass(risk.pnl)+'">'+(risk.pnl>0?'+':'')+num(risk.pnl,2)+'%</b>｜-5%停損 '+num(risk.stopPrice,2)+'｜+10%全數停利 '+num(risk.takePrice,2)+'</div>'
           :'<div class="holding-rule-line"><b>成本風控：</b>有效報價或模型待確認。</div>';
         const profitGuard=holdingProfitProtection(item,quote);
         const profitNote=profitGuard
@@ -6794,7 +6801,7 @@ h1 {
         const high=holdingProfitProtection(item,live);
         const positionStatus=risk?.stopHard
           ?(risk.confirmed?'已達-5%硬停損':'-5%停損價格待核對')
-          :pnl==null?'資料待確認':pnl<0?'虧損警戒中':high?.armed?'保本中':'獲利中';
+          :pnl==null?'資料待確認':pnl<0?'虧損警戒中':pnl===0?'損益兩平':high?.armed?'保本中':'獲利中';
         const platform=m.holding_management?.second_platform||{};
         const platformVisible=pnl!=null&&pnl>=3&&pnl<10
           &&m.holding_management?.policy_version==='2026-10-20-hard5-break5-full10-ma5ma10-v3'
@@ -6822,7 +6829,7 @@ h1 {
               <span class="holding-mini-expand">股票動向</span>
               <span class="holding-mini-stats"><span>成本 <b>${cost>0?esc(num(cost,2)):'-'}</b></span>
                 <span>${esc(quoteDisplayState(live,item).label)} <b>${price!=null?esc(num(price,2)):'-'}</b></span>
-                <span>損益 <b class="${pnl==null?'':pnl>=0?'pnl-up':'pnl-down'}">${pnl==null?'-':(pnl>=0?'+':'')+esc(num(pnl,2))+'%'}</b></span></span>
+                <span>損益 <b class="${holdingPnlClass(pnl)}">${pnl==null?'-':(pnl>0?'+':'')+esc(num(pnl,2))+'%'}</b></span></span>
               <span class="holding-mini-status">帳面狀態：${esc(positionStatus+positionDetail)}</span>
               ${holdingMa20DaysHtml(item,live)}
               ${continuationRiskMiniHtml(item)}
@@ -6854,7 +6861,7 @@ h1 {
               <span class="holding-mini-action ${stopHit?'exit':'warn'}">${stopHit?'🔴 -5%硬停損｜立即核對出場':'⚪ 模型待更新'}</span><span class="holding-mini-expand">詳情</span>
               <span class="holding-mini-stats">成本 <b>${Number.isFinite(cost)&&cost>0?esc(num(cost,2)):'-'}</b>${todayPrice>0
                 ?'｜今日有效成交 <b>'+esc(num(todayPrice,2))+'</b>'
-                  +(pnl!=null?'｜損益 '+(pnl>=0?'+':'')+esc(num(pnl,2))+'%':'')
+                  +(pnl!=null?'｜損益 <b class="'+holdingPnlClass(pnl)+'">'+(pnl>0?'+':'')+esc(num(pnl,2))+'%</b>':'')
                 :'｜今日成交及損益待核對'}</span>
               <span class="holding-ma20-days pending"><strong>⚪ MA20 跌破天數：模型載入中</strong><small>後台連續交易日計數載入後才顯示，不以舊股價冒充</small></span>
               <span class="holding-mini-date">持有 ${Number.isFinite(qty)&&qty>0?esc(qty.toLocaleString('zh-TW')):'-'} 股｜點擊查看狀態</span>
