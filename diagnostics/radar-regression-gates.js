@@ -127,6 +127,30 @@ test('All three zones use Cloudflare C, 3-minute ticker, no old HTML cache',()=>
   assert.match(sw,/cache:'no-store'/);
   assert.doesNotMatch(sw,/caches\.open\(/);
 });
+test('New +8/+12/+15 chase tiers pass precise BIAS boundaries, never fake a missing quote',()=>{
+  const source=section('      const CHASE_RULE_VERSION=', '      const isLockedRulePayload =');
+  const {chaseTier,chaseRisk,chasePass,chaseOver}=new Function(source+
+    '\nreturn {chaseTier,chaseRisk,chasePass,chaseOver};')();
+  const sample=(id,bias,tier)=>({stock_id:id,metrics:{
+    close:100+bias,ma20:100,...(tier?{verified_cap_tier:tier}:{})}});
+  for(const [id,tier,limit] of [['2330',null,8],['1605',null,12],
+      ['6229','small_spike',15]]){
+    assert.equal(chaseTier(sample(id,0,tier)).limit,limit);
+    assert.equal(chasePass(sample(id,limit,tier)),true);
+    assert.equal(chasePass(sample(id,limit+0.01,tier)),false);
+    assert.equal(chaseOver(sample(id,limit+0.01,tier)),true);
+  }
+  assert.equal(chasePass({stock_id:'1605',metrics:{close:112,ma20:0}}),false);
+  assert.equal(chasePass({stock_id:'1605',metrics:{close:0,ma20:100}}),false);
+  assert.match(html,/const eligible=fresh&&String\(item\?\.as_of\|\|''\)===expectedSignalDataDate\(\)/);
+  assert.match(html,/&&masOkay&&chasePass\(item,price\)/);
+  assert.match(html,/const high=\(Number\.isFinite\(pos\)/);
+  assert.match(html,/chaseOver\(item,price\)/);
+  assert.match(html,/chasePass\(item,close\)/);
+  assert.match(html,/chasePass\(item,p\)/);
+  assert.doesNotMatch(html,/新進場5%上限|隔天以原本5%乖離|距 MA20 超過 5%/);
+  assert.match(html,/selectionMas: Object.freeze\(\['MA10','MA20','MA60'\]\)/);
+});
 for(const g of html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi)){
   if(/\bsrc=/.test(g[1]))continue;
   new Function(g[2]);
