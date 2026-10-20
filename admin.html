@@ -4551,6 +4551,7 @@ h1 {
         }
         persistTrialOutbox();
       };
+      let overnightPassiveResearch=[];
       const renderEntrySections = (rows,{quoteUpdate=false}={}) => {
         rows=[...new Map((rows||[]).map(row=>[String(row?.item?.stock_id||''),row])).values()]
           .filter(row=>row?.item?.stock_id && !holdings.has(String(row.item.stock_id))
@@ -4828,7 +4829,7 @@ h1 {
           const original=row.action||{},phaseInfo=overnightLifecycleState(item);
           const studyAction={...original,buyable:false,trialable:false,
             phase:blocked?'blocked':'observe',
-            text:phaseInfo.label,
+            text:item.__passive_monitor===true?passiveWatchDescription(item).label:phaseInfo.label,
             detail:'明日觀察：'+phaseInfo.tomorrow+'｜'+
               String(original.detail||original.text||'依盤後模型核對現階段')};
           return '<div class="entry-research-expanded">'
@@ -4864,20 +4865,40 @@ h1 {
         const researchCard=info=>{
           const item=info.item,id=String(item.stock_id),close=Number(item.metrics?.close);
           const phaseInfo=overnightLifecycleState(item);
+          const stageLabel=item.__passive_monitor===true?passiveWatchDescription(item).label:phaseInfo.label;
+          const nextFocus=item.__passive_monitor===true?passiveWatchDescription(item).detail:phaseInfo.tomorrow;
           return '<details class="entry-research-stock entry-research-details" data-stock-key="'
             +esc(id)+'" data-research-kind="watch">'
             +'<summary class="entry-research-summary"><div class="entry-research-name"><strong>'
             +esc(id+' '+String(item.stock_name||''))+'</strong>'
-            +'<span>'+esc(phaseInfo.label)+'｜點開完整分析 ▾</span></div>'
+            +'<span>'+esc(stageLabel)+'｜點開完整分析 ▾</span></div>'
             +'<small>模型 '+esc(String(item.as_of))+'｜分數 '+esc(String(item.score))
               +'｜收盤 '+esc(num(close,2))+'｜距MA20 '+esc(num(info.gap,1))+'%｜成交 '+esc(String(info.vol))+' 張</small>'
-            +'<small>目前階段：'+esc(phaseInfo.label)
+            +'<small>目前階段：'+esc(stageLabel)
               +(phaseInfo.firstSeen?'｜系統最早候選紀錄 '+esc(phaseInfo.firstSeen):'')
               +(phaseInfo.firstSignal?'｜首次突破模型日 '+esc(phaseInfo.firstSignal):'')
               +'</small>'
-            +'<small>明日主要觀察：'+esc(phaseInfo.tomorrow)+'</small></summary>'
+            +'<small>明日主要觀察：'+esc(nextFocus)+'</small></summary>'
             +researchExpandedCard(info.row,false)+'</details>';
         };
+        const passiveResearch=[...new Map([
+          ...retainedRows.filter(row=>row?.item?.__passive_monitor===true),
+          ...overnightPassiveResearch.filter(item=>passiveRadarWatchEligible(item)
+            &&!rows.some(row=>String(row.item?.stock_id||'')===String(item.stock_id||'')))
+            .map(item=>({item,quote:null,action:{key:'passive_watch',phase:'observe',
+              buyable:false,trialable:false,...passiveWatchDescription(item),
+              text:passiveWatchDescription(item).label}}))
+        ].map(row=>[String(row.item?.stock_id||''),row])).values()].slice(0,8);
+        const passiveResearchHtml=passiveResearch.length
+          ?'<div class="entry-research-hint"><b>🧭 型態追蹤｜MA10待轉強／突破等回踩｜'
+              +passiveResearch.length+' 檔（非買點）</b></div>'
+            +passiveResearch.map(row=>{
+              const m=row.item?.metrics||{},close=Number(m.close),ma20=Number(m.ma20);
+              return researchCard({row,item:row.item,
+                gap:close>0&&ma20>0?(close/ma20-1)*100:null,
+                vol:Number(m.current_volume_lots),weight:0,
+                label:passiveWatchDescription(row.item).label});
+            }).join(''):'';
         const researchPreview='<section class="entry-research-panel" data-stable-key="entry-research">'
           +'<strong>🌙 明日看盤清單｜直接看目前階段</strong>'
           +'<div class="entry-research-hint">依今日已完成日K分成「準備發動」與「已發動待回踩」兩路。'
@@ -4898,7 +4919,8 @@ h1 {
                 return researchCard(info);
               }).join('')
             :'')
-          +(!topResearch.length&&!strongFollowups.length?riskStudyHtml:'')
+          +passiveResearchHtml
+          +(!topResearch.length&&!strongFollowups.length&&!passiveResearch.length?riskStudyHtml:'')
           +'<small class="entry-research-meta">以上是 '+esc(expected)
           +' 的完成日K，起漲階段≠現在可以下單；隔天以新版 +8%／+12%／+15% 分級乖離上限、量價與C有效成交確認試單。'
           +'｜本輪候選 '+rows.length+' 檔，未掃到的股票不算淘汰。</small>'
@@ -7533,6 +7555,11 @@ h1 {
           return value.data;
         };
         const v5Data=unwrap(settled[0]),launchData=unwrap(settled[1]);
+        if(launchData){
+          overnightPassiveResearch=(launchData.observation_followups||[])
+            .filter(item=>item.__observation_kind==='ma10_pending_ma20_supported'
+              &&passiveRadarWatchEligible(item)).slice(0,5);
+        }
         syncFormalEntryValidation(launchData);
         return {v5Data,launchData};
       };
