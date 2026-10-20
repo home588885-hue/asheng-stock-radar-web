@@ -221,7 +221,7 @@ test('Launch, entry and tomorrow cards are brief when closed, compact when open,
   assert.match(retained,/radarDeepDetailsHtml\(detail\)/);
   assert.match(launch,/radarDeepDetailsHtml\(/);
   assert.match(entryCard,/radarDeepDetailsHtml\(v5MonitorCard/);
-  assert.match(html,/radarDeepDetailsHtml\(v5MonitorCard\(item,null,studyAction\)\)/);
+  assert.match(html,/radarDeepDetailsHtml\(v5MonitorCard\(item,validatedQuote,studyAction\)\)/);
   assert.match(wrap,/details class="radar-deep-dive"/);
   assert.match(movement,/stock-motion-compact/);
   assert.doesNotMatch(movement,/20日前高/);
@@ -234,6 +234,19 @@ test('Launch, entry and tomorrow cards are brief when closed, compact when open,
   const holding=section('      const holdingMiniHtml = (item, quote = null) => {','      const holdingPlaceholderHtml =');
   assert.match(holding,/holdingMini-stats|holding-mini-stats/);
   assert.match(holding,/holdingMa20DaysHtml\(item,live\)/);
+});
+test('Tomorrow watchlist reuses valid C quotes in summary and expanded data',()=>{
+  const expanded=section('        const researchExpandedCard = (row,blocked=false) => {','        const riskStudyHtml=');
+  const compact=section('        const researchCard=info=>{','        // One stock per evening research panel.');
+  assert.match(expanded,/bestTodayQuote\(row\?\.quote,String\(item\.stock_id\|\|''\)\)/);
+  assert.match(expanded,/stockMovementHtml\(item,validatedQuote,'entry',studyAction\)/);
+  assert.match(expanded,/v5MonitorCard\(item,validatedQuote,studyAction\)/);
+  assert.match(compact,/bestTodayQuote\(info\.row\?\.quote,id\)/);
+  assert.match(compact,/quoteRecentForDisplay\(live\)/);
+  assert.match(compact,/C 今日即時成交/);
+  assert.match(compact,/C 今日前次成交/);
+  assert.match(compact,/模型收盤/);
+  assert.doesNotMatch(expanded+compact,/\bfetch\s*\(|getLiveQuotes\s*\(|\bsetInterval\s*\(/);
 });
 test('Tomorrow watchlist does not repeat 4960 and 6925 in passive tracking',()=>{
   const part=section('        const dedupeEveningResearch=(candidateRows,alreadyShown=[])=>{',

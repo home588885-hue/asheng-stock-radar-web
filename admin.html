@@ -4866,9 +4866,10 @@ h1 {
             text:item.__passive_monitor===true?passiveWatchDescription(item).label:phaseInfo.label,
             detail:'明日觀察：'+phaseInfo.tomorrow+'｜'+
               String(original.detail||original.text||'依盤後模型核對現階段')};
+          const validatedQuote=bestTodayQuote(row?.quote,String(item.stock_id||''));
           return '<div class="entry-research-expanded">'
-            +stockMovementHtml(item,null,'entry',studyAction)
-            +radarDeepDetailsHtml(v5MonitorCard(item,null,studyAction))
+            +stockMovementHtml(item,validatedQuote,'entry',studyAction)
+            +radarDeepDetailsHtml(v5MonitorCard(item,validatedQuote,studyAction))
             +'</div>';
         };
         const riskStudyHtml=!topResearch.length&&riskStudy.length
@@ -4896,6 +4897,11 @@ h1 {
         const researchCard=info=>{
           const item=info.item,id=String(item.stock_id),close=Number(item.metrics?.close);
           const phaseInfo=overnightLifecycleState(item);
+          const candidateQuote=bestTodayQuote(info.row?.quote,id);
+          const live=validTodayQuote(candidateQuote)?candidateQuote:null;
+          const compactPrice=live
+            ?(quoteRecentForDisplay(live)?'C 今日即時成交 ':'C 今日前次成交 ')+num(Number(live.price),2)
+            :'模型收盤 '+(close>0?num(close,2):'-')+'｜非即時';
           const stageLabel=item.__passive_monitor===true?passiveWatchDescription(item).label:phaseInfo.label;
           const nextFocus=radarShortAdvice(item,{key:phaseInfo.key,
             detail:item.__passive_monitor===true?passiveWatchDescription(item).detail:phaseInfo.tomorrow});
@@ -4904,7 +4910,7 @@ h1 {
             +'<summary class="entry-research-summary radar-compact-summary">'
             +'<div class="entry-research-name"><strong>'+esc(id+' '+String(item.stock_name||''))
             +'</strong><span>'+esc(stageLabel)+'</span></div>'
-            +'<small>模型收盤 '+esc(close>0?num(close,2):'-')+'｜非即時</small>'
+            +'<small>'+esc(compactPrice)+'</small>'
             +'<small class="radar-compact-next">🔎 '+esc(nextFocus)+'</small>'
             +'<span class="radar-compact-arrow">展開 ▾</span></summary>'
             +researchExpandedCard(info.row,false)+'</details>';
