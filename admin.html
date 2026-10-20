@@ -4700,9 +4700,14 @@ h1 {
             return;
           }
           if(item.__observation_only===true){
-            b.retained.push(safeRow(row,{key:'historical_screen_only',phase:'observe',
-              stale_model:true,rank:1,text:'⚪ 舊日K初選｜待新版確認（非買點）',
-              detail:'模型 '+date+'｜僅按量能、均線及MA20分級乖離先列觀察；新版未補算不可試單或買進'}));
+            b.retained.push(safeRow(row,item.__first_bar_followup===true
+              ?{key:'first_bar_crossday_watch',phase:'observe',
+                stale_model:true,rank:3,className:'scout',buyable:false,trialable:false,
+                text:'🎯 第一根跨日追蹤｜等待新版日K',
+                detail:'首次模型 '+date+'｜仍保留在進場追蹤；不是今天的新突破。待S補算與今日C成交核對，未確認不得小量試單'}
+              :{key:'historical_screen_only',phase:'observe',
+                stale_model:true,rank:1,text:'⚪ 舊日K初選｜待新版確認（非買點）',
+                detail:'模型 '+date+'｜僅按量能、均線及MA20分級乖離先列觀察；新版未補算不可試單或買進'}));
             return;
           }
           // Old model never becomes a new launch, high-priority, or risk assessment.
@@ -7505,23 +7510,60 @@ h1 {
           &&Number(d.first_volume_ratio)>=1.2&&Number(d.first_volume_ratio)<=2.5
           &&Number.isFinite(pos)&&pos>=0&&pos<=60;
       };
+      // First launch is a watch DISCOVERY only; fresh C and the old risk gate
+      // alone can create an orange trial. Never rewrite S models or permissions.
+      const firstBarFollowupEligible = item => {
+        if(!item||holdings.has(String(item.stock_id||''))
+          ||!unifiedRadarGeneration(item)||!chaseModelReady(item)
+          ||!recentModelForDisplay(item))return false;
+        const m=item.metrics||{},mc=m.ma_cluster||{},d=m.box_strategy?.discovery||{};
+        const date=String(item.as_of||'');
+        const first=(mc.breakout_first_bar===true&&mc.display_first_bar===true)
+          ||(String(mc.launch_origin_date||'')===date&&mc.all_rising===true)
+          ||(d.first_bar_today===true&&String(d.first_bar_date||'')===date);
+        if(!first)return false;
+        const close=Number(m.close),ma20=Number(m.ma20),pos=Number(m.position_1y_pct);
+        const vol=Number(m.current_volume_lots),avg=Number(m.avg_volume_20_lots);
+        return close>0&&ma20>0&&pos>=0&&pos<85&&vol>=1000&&avg>=500
+          &&chasePass(item,close)&&m.entry_candle_guard?.main_bull!==false
+          &&m.entry_candle_guard?.weak_after_breakout!==true
+          &&m.holding_management?.strong_breakdown!==true;
+      };
       const buildEntryPool = (v5Picks = [], launchPicks = []) => {
         // UI exclusivity: exclude only stocks actually supplied to the visible LAUNCH
         // list; never hide a candidate absent from that source or change S selection.
         const launchShownIds = new Set(launchPicks
           .filter(item => launchQualityState(item).keep
+            && !firstBarFollowupEligible(item)
             && !['ACTIVE','ENTRY'].includes(modelLaunchPhase(item)))
           .map(item => String(item.stock_id || '')));
         const merged = new Map();
+        // Retain at most eight previous genuine first-bar snapshots in local
+        // research-only watch. Replace with a newer signed source for the symbol.
+        // No extra S/C call, database write or scan; previous day cannot BUY.
+        readEntryPoolCache().filter(firstBarFollowupEligible)
+          .sort((a,b)=>String(b.as_of||'').localeCompare(String(a.as_of||'')))
+          .slice(0,8).forEach(item=>{
+            const id=String(item.stock_id||'');
+            merged.set(id,{...item,__observation_only:true,
+              __observation_zone:'entry',__first_bar_followup:true});
+          });
         [...launchPicks, ...v5Picks].forEach(item => {
           const key = String(item?.stock_id || '');
           if (!key || holdings.has(key)) return;
-          if (!merged.has(key)) merged.set(key, item);
+          const prev=merged.get(key);
+          const date=String(item?.as_of||''),prevDate=String(prev?.as_of||'');
+          const updatedAt=String(item?.scanned_at||''),prevUpdated=String(prev?.scanned_at||'');
+          if(!prev||date>prevDate
+            ||(date===prevDate&&(prev?.__observation_only===true||updatedAt>prevUpdated)))
+            merged.set(key,item);
         });
         const rankItem = item => {
           // A verified box first-bar ranks before follow-on/retest tracking.
           // A prepared box remains an observation target until an actual breakout.
           if(boxFirstBreakoutReady(item))return 160;
+          if(firstBarFollowupEligible(item))
+            return item.__observation_only===true?108:155;
           if(recentModelForDisplay(item)&&item?.metrics?.box_strategy?.discovery?.ready_watch===true)return 112;
           if (!isEntryRadarItem(item))
             return (item?.metrics?.box_strategy?.discovery?.first_bar_today===true
