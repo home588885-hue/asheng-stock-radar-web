@@ -2442,6 +2442,39 @@ h1 {
           &&['launch','entry'].includes(String(item.__observation_zone||''))
           &&Number(item.metrics?.close)>0&&Number(item.metrics?.ma20)>0;
       };
+
+      // Passive model-life-cycle candidates, independent of buy signals and scan writes.
+      const passiveRadarWatchEligible=item=>{
+        if(item?.__passive_monitor!==true||!unifiedRadarGeneration(item))return false;
+        const kind=String(item.__observation_kind||'');
+        if(!['ma10_pending_ma20_supported','extended_breakout_wait_pullback'].includes(kind))return false;
+        const date=String(item.as_of||''),expected=expectedSignalDataDate();
+        if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return false;
+        const days=(Date.parse(expected+'T00:00:00Z')-Date.parse(date+'T00:00:00Z'))/86400000;
+        if(!Number.isFinite(days)||days<0||days>5)return false;
+        const m=item.metrics||{},close=Number(m.close),ma20=Number(m.ma20);
+        const ma10=Number(m.ma10),ma60=Number(m.ma60);
+        const lots=Number(m.current_volume_lots),avg=Number(m.avg_volume_20_lots);
+        const mother=String(m.shanchuan_v2?.mother_child?.lifecycle?.state||'');
+        return close>0&&ma20>0&&ma10>0&&ma60>0&&lots>=1000&&avg>=500
+          &&close>=ma20*.985&&m.entry_candle_guard?.weak_after_breakout!==true
+          &&m.holding_management?.strong_breakdown!==true
+          &&!mother.includes('low_broken')&&mother!=='invalid'&&mother!=='broken'
+          &&!holdings.has(String(item.stock_id||''));
+      };
+      const passiveWatchDescription=item=>{
+        const m=item?.metrics||{},close=Number(m.close),ma10=Number(m.ma10),ma20=Number(m.ma20);
+        const gap=close>0&&ma20>0?(close/ma20-1)*100:null;
+        if(item?.__observation_kind==='ma10_pending_ma20_supported')
+          return {label:'🟡 MA10 待站穩｜MA20 支撐追蹤（非買點）',
+            detail:'MA10 '+num(ma10,2)+'｜MA20 '+num(ma20,2)
+              +'｜距MA20 '+(gap==null?'-':num(gap,1)+'%')
+              +'｜等待縮量守住後再轉強；當日尚非小量試單'};
+        return {label:'🔵 已突破但乖離偏高｜等回踩（非買點）',
+          detail:'突破日 '+String(m.launch_sequence?.first_signal_date||item.as_of||'未知')
+            +'｜距MA20 '+(gap==null?'-':num(gap,1)+'%')
+            +'｜超出'+chaseLimitNote(item)+'，不追價；MA10／MA20支撐待核對'};
+      };
       const displayModelWarning=item=>String(item?.as_of||'')===expectedSignalDataDate()
         ?'':'📅 前次完整日K '+String(item?.as_of||'未知')+'｜盤後待補算（非買點）';
       // Shared status for LAUNCH / ENTRY / HOLDING. Uses the picks response,
@@ -4945,6 +4978,11 @@ h1 {
       const launchQualityState = item => {
         // Personal holdings are managed exclusively in 已買進.
         if (holdings.has(String(item?.stock_id||''))) return {keep:false,rank:0,className:'held',label:'📌 已買進'};
+        if(item?.__passive_monitor===true){
+          return passiveRadarWatchEligible(item)&&item.__observation_kind==='ma10_pending_ma20_supported'
+            ?{keep:true,rank:1,className:'near-turn-monitor',label:passiveWatchDescription(item).label}
+            :{keep:false,rank:0,className:'watch-in-other-zone',label:'另區追蹤'};
+        }
         if(item?.__observation_only===true)return observationModelForDisplay(item)
           &&item.__observation_zone==='launch'
           ?{keep:true,rank:1,className:'pending-rescan',label:'⚪ 舊日K初選｜等新版補算（非買點）'}
@@ -5405,6 +5443,12 @@ h1 {
             let launchPicks = (launchData.picks || []).filter(recentModelForDisplay);
             const launchObservation=(launchData.observation_launch||[])
               .filter(item=>observationModelForDisplay(item)&&item.__observation_zone==='launch');
+            const nearTurnWatch=(launchData.observation_followups||[])
+              .filter(item=>item.__observation_kind==='ma10_pending_ma20_supported'
+                &&passiveRadarWatchEligible(item));
+            const observedLaunch=[...new Map([...launchObservation,...nearTurnWatch]
+              .map(item=>[String(item.stock_id||''),item])).values()]
+              .filter(item=>!launchPicks.some(v=>String(v.stock_id||'')===String(item.stock_id||'')));
           // A partial EOD model refresh/temporarily empty source cannot wipe
           // the latest verified watch list. Retained rows remain observation only.
           if(!launchPicks.length &&
@@ -5422,8 +5466,8 @@ h1 {
             const counts = launchData.stage_counts || {};
             data = {
               ...launchData,
-              picks: [...launchPicks,...launchObservation],
-              observation_count:launchObservation.length,
+              picks: [...launchPicks,...observedLaunch],
+              observation_count:observedLaunch.length,
               quality_total: qualifiedTotal,
               quality_hidden: hiddenByTransport,
               combined_counts: {
@@ -5536,10 +5580,10 @@ h1 {
           });
           const launchTally = stage === 'LAUNCH' ? launchCandidateExplanation(data, rankedPicks) : null;
           if (stage === 'LAUNCH') {
-            const actionRows = rankedPicks.filter(item=>item.__observation_only!==true&&!displayModelWarning(item))
+            const actionRows = rankedPicks.filter(item=>item.__passive_monitor!==true&&item.__observation_only!==true&&!displayModelWarning(item))
             .map(item => ({item,action:simpleActionState(item)})).filter(row=>row.action);
             updateBuySignalNotice(actionRows);
-            const activeCount = rankedPicks.filter(item=>item.__observation_only!==true&&isActiveLaunchItem(item)).length;
+            const activeCount = rankedPicks.filter(item=>item.__passive_monitor!==true&&item.__observation_only!==true&&isActiveLaunchItem(item)).length;
             const pre = actionRows.filter(row=>!isActiveLaunchItem(row.item)&&row.action.key==='pre').length;
             const breakout = actionRows.filter(row=>!isActiveLaunchItem(row.item)&&row.action.key==='breakout').length;
             const add = actionRows.filter(row=>!isActiveLaunchItem(row.item)&&row.action.key==='add').length;
@@ -6857,8 +6901,9 @@ h1 {
         const early=earlyTurnWatchState(item);
         const lowBase=lowBaseWatchState(item);
         const pullback=ma10PullbackWatchState(item);
-        const trial=item.__observation_only===true?null:ma10PullbackTrialState(item,q);
-        const status=item?.__observation_only===true?'⚪ 舊日K初選｜等新版補算（非買點）'
+        const trial=item.__passive_monitor===true||item.__observation_only===true?null:ma10PullbackTrialState(item,q);
+        const status=item?.__passive_monitor===true?passiveWatchDescription(item).label
+          :item?.__observation_only===true?'⚪ 舊日K初選｜等新版補算（非買點）'
           :displayModelWarning(item)?displayModelWarning(item)
           :risk?.kind==='hard'?String(risk.text||'🔴 盤中風險｜暫不新買')
           :risk?.kind==='momentum'?String(risk.text||'🟡 短線轉弱｜等重新轉強')
@@ -6871,9 +6916,12 @@ h1 {
           :String(launchState?.label||'🟠 發動前｜等確認');
         const source=q?(quoteRecentForDisplay(q)?'C 當日即時成交':'今日前次成交（非即時）'):'盤後模型收盤（非即時）';
         const quoteTime=q?'｜報價 '+String(q.quote_time||'時間待確認'):'｜非即時價';
-        const greenMini=item.__observation_only===true?'':greenDipMiniHtml(item,q);
+        const greenMini=item.__passive_monitor===true||item.__observation_only===true?'':greenDipMiniHtml(item,q);
         const selected=launchExpandedIds.has(id)?' open':'';
-        const detailed=item?.__observation_only===true
+        const detailed=item?.__passive_monitor===true
+          ?'<div class="model-only-note">🟡 支撐追蹤，不是正式買點；請等待新版完整日K及C成交風控驗證。</div>'
+            +card(item,{hideSignal:true,historicalObservation:true,quote:q})
+          :item?.__observation_only===true
           ?'<div class="model-only-note">⚪ 僅供觀察：尚未完成新版分級乖離驗證，不可依舊模型試單。</div>'
             +card(item,{hideSignal:true,historicalObservation:true,quote:q})
           :displayModelWarning(item)?card(item,{hideSignal:true,quote:q})
@@ -7084,7 +7132,7 @@ h1 {
             .filter(row => {
               const item=row.item, q=validTodayQuote(row.quote) ? row.quote : null;
               if (!launchQualityState(item).keep) return false;
-              if(item?.__observation_only===true)return true;
+              if(item?.__passive_monitor===true||item?.__observation_only===true)return true;
                // The same S-active model candidate stays visible when C price breaks out.
               if (isActiveLaunchItem(item)) return true;
               if (!q) return true;
