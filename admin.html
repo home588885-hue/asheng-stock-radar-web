@@ -2854,14 +2854,16 @@ h1 {
               :live?'｜盤中仍待確認站穩':'｜僅前次S模型，待有效C成交核對');
           const detail=position+'｜距MA20 '+(gap==null?'-':num(gap,1)+'%')
             +'｜'+pending;
-          return {label,detail,position,nextStep:pending,modelPrefix,
+          return {label,detail,position,nextStep:pending,
+            shortAdvice:above?'已站上兩線，等收盤確認':'觀察站回MA10、守住MA20',modelPrefix,
             note:'當日C成交只更新位置判斷；S '+modelDate+' 型態、籌碼及均線仍以完整日K為準。'+pending,
             liveAbove:above,source:'passive-watch-v2'};
         }
-        const label='🔵 已突破但乖離偏高｜等回踩（非買點）';
+        const label='🔵 前次模型高乖離｜等回踩核對（非買點）';
         const position=source+'｜'+levelText+'｜距MA20 '+(gap==null?'-':num(gap,1)+'%');
         const detail=position+'｜S '+modelDate+' 追高風險觀察；'+pending;
-        return {label,detail,position,nextStep:pending,modelPrefix,
+        return {label,detail,position,nextStep:pending,
+          shortAdvice:'前次乖離偏高，待日K核對',modelPrefix,
           note:'前次模型提示位置偏高；今日C價格不等於新版完整日K已重新確認。'+pending,
           liveAbove:false,source:'passive-watch-v2'};
       };
@@ -4726,7 +4728,7 @@ h1 {
             <span class="entry-mini-name"><strong>${esc(id)} ${esc(item.stock_name||'')}</strong><small>${esc(glanceSignal)}</small></span>
             <span class="entry-mini-expand">展開</span>
             <span class="entry-mini-metrics">${esc(quoteDisplayState(q,item).label)} <b>${close>0?esc(num(close,2)):'-'}</b><small>${q?'｜'+esc(quoteDisplayState(q,item).moment):'｜S '+esc(String(item.as_of||'待更新'))}</small></span>
-            <span class="radar-compact-next">下一步：${esc(radarShortAdvice(item,safeDisplayAction))}</span>
+            <span class="radar-compact-next">下一步：${esc(radarShortAdvice(item,safeDisplayAction,q))}</span>
           </summary>
           <div class="entry-mini-full">${continuationRiskMiniHtml(item)}${expanded}${(activeTrial||activeFormal)
             ?'<div class="entry-survival-status '+esc(survival.tone)+'" data-entry-survival-id="'+esc(id)+'" data-entry-survival-trial="'+(activeTrial?'1':'0')+'">'+esc(survival.text)+'</div>':''}</div>
@@ -4792,7 +4794,7 @@ h1 {
           const detail=existing?v5MonitorCard(item,q,safeAction):'';
           const s=quoteDisplayState(q,item);
           const quoteLabel=s.label+' '+(validTodayQuote(q)?num(Number(q.price),2):Number.isFinite(close)&&close>0?num(close,2):'-')+(s.today_trade?'｜'+s.moment:'');
-          const next=existing?radarShortAdvice(item,{detail:note}):'等待完整日K回補';
+          const next=existing?radarShortAdvice(item,{detail:note},q):'等待完整日K回補';
           return '<details class="entry-mini entry-saved-mini" data-stock-key="'+esc(id)+'" data-tracking-symbol="'+esc(id)+'"'+selected+'>'
             +'<summary class="entry-mini-summary radar-compact-summary">'
             +'<span class="entry-mini-name"><strong>'+esc(id+' '+name)+'</strong><small>'+esc(label)+'</small></span>'
@@ -5441,7 +5443,7 @@ h1 {
                 +'</strong><span>🔴 暫不進場｜點開完整分析 ▾</span></div>'
                 +'<small>'+esc(quoteLabel)+'｜主要風險：'+esc(why)+'</small>'
                 +continuationRiskMiniHtml(item)
-                +'<small>🔎 '+esc(radarShortAdvice(item,{phase:'blocked'}))+'</small></summary>'
+                +'<small>🔎 '+esc(radarShortAdvice(item,{phase:'blocked'},bestTodayQuote(row?.quote,String(item.stock_id||''))))+'</small></summary>'
                 +researchExpandedCard(row,true)+'</details>';
             }).join('')+'</div>'
           :'';
@@ -5454,7 +5456,7 @@ h1 {
           const compactPrice=s.label+' '+(live?num(Number(live.price),2):close>0?num(close,2):'-')+(s.today_trade?'｜'+s.moment:'');
           const stageLabel=item.__passive_monitor===true?passiveWatchDescription(item,live).label:phaseInfo.label;
           const nextFocus=radarShortAdvice(item,{key:phaseInfo.key,
-            detail:item.__passive_monitor===true?passiveWatchDescription(item,live).detail:phaseInfo.tomorrow});
+            detail:item.__passive_monitor===true?passiveWatchDescription(item,live).detail:phaseInfo.tomorrow},live);
           return '<details class="entry-research-stock entry-research-details" data-stock-key="'
             +esc(id)+'" data-research-kind="watch">'
             +'<summary class="entry-research-summary radar-compact-summary">'
@@ -7193,13 +7195,13 @@ h1 {
 
 
       // Presentation only. The original action/risk model stays untouched.
-      const radarShortAdvice=(item,action=null)=>{
+      const radarShortAdvice=(item,action=null,quote=null)=>{
+        if(item?.__passive_monitor===true)
+          return passiveWatchDescription(item,quote).shortAdvice;
         const m=item?.metrics||{},q=String(action?.detail||'').trim();
         if(q&&q.length<=18)return q;
         const phase=String(action?.phase||''),k=String(action?.key||'');
         const close=Number(m.close),ma10=Number(m.ma10),ma20=Number(m.ma20);
-        if(item?.__observation_kind==='ma10_pending_ma20_supported')return '觀察站回MA10、守住MA20';
-        if(item?.__observation_kind==='extended_breakout_wait_pullback')return '不追高，等MA10／MA20回踩';
         if(phase==='blocked'||k==='avoid')return '先觀察支撐，暫不進場';
         if(phase==='confirmed'||phase==='trial')return '確認當日成交與風控';
         if(ma20>0&&close<ma20)return '等重新站回MA20';
@@ -7300,7 +7302,7 @@ h1 {
           action?.phase==='trial'&&action?.trialable!==true?'小量試單未驗證':'買點仍以風控與當日有效成交為準';
         // One top-level action, one next step, three reference prices. Research stays folded.
         const next=zone==='holding'&&String(action?.detail||'').trim()
-          ?String(action.detail).trim().slice(0,95):radarShortAdvice(item,action);
+          ?String(action.detail).trim().slice(0,95):radarShortAdvice(item,action,q);
         const levels=[[origin,fp(price)],['MA10',fp(ma10)],['MA20',fp(ma20)]];
         return '<section class="live-banner holding-action stock-motion stock-motion-compact radar-decision-card" data-motion-zone="'+esc(zone)+'">'
           +'<div class="radar-decision-label">① 目前判斷</div>'
@@ -7501,7 +7503,7 @@ h1 {
               <span class="entry-mini-name"><strong>${esc(id)} ${esc(item?.stock_name||'')}</strong><small>${esc(glanceStatus)}</small></span>
               <span class="entry-mini-expand">展開</span>
               <span class="entry-mini-metrics">${esc(source)} <b>${price!=null&&price>0?esc(num(price,2)):'-'}</b><small>${esc(quoteTime)}</small></span>
-              <span class="radar-compact-next">下一步：${esc(radarShortAdvice(item,{text:status}))}</span>
+              <span class="radar-compact-next">下一步：${esc(radarShortAdvice(item,{text:status},q))}</span>
             </summary>
             <div class="entry-mini-full">${continuationRiskMiniHtml(item)}${stockMovementHtml(item,q,'launch',{text:status,detail:overnightLifecycleState(item).tomorrow})}
               ${radarDeepDetailsHtml((trial?'<div class="model-only-note">'+esc(trial.detail)+'</div>':'')+detailed)}</div>
