@@ -702,48 +702,65 @@ test('Pre-breakout signal survives live breakout without bypassing trade gates',
   assert.match(html,/quoteFreshForTrial\(row\.quote\)/);
   assert.doesNotMatch(src,/fetch\s*\(|getLiveQuotes\s*\(|savePullbackWatchRows\s*\(/);
 });
-test('Scout history cards preserve their own expand state without changing trades',()=>{
-  const src=section('      const renderScoutPanel=()=>{','      const flushScoutCloud=async()=>{');
+test('First-bar records merge into main LAUNCH card and unmatched history remains folded',()=>{
+  const src=section('      let launchDisplayedIds=new Set();','      const flushScoutCloud=async()=>{');
   const panel={innerHTML:'',hidden:true,
     querySelector:()=>null,querySelectorAll:()=>[]};
   const rows=new Map([
     ['5521',{stock_id:'5521',stock_name:'工信',as_of:'2026-10-20',
       score:80,state:'prelaunch',label:'山川前哨',close:11.15,bias:2.2,
       reason:'觀察母子K壓力'}],
+    ['3062',{stock_id:'3062',stock_name:'建漢',as_of:'2026-10-20',
+      score:77,state:'prelaunch',label:'突破前哨',close:23.1,
+      reason:'等待前高'}],
     ['3013',{stock_id:'3013',stock_name:'晟銘電',as_of:'2026-10-20',
-      score:74,state:'first_bar',label:'已轉進場雷達',close:95.6,bias:4.95,
-      first_bar_date:'2026-10-19',reason:'轉進場沿用完整版'}],
+      score:74,state:'first_bar',label:'已轉進場雷達',close:95.6}],
     ['1609',{stock_id:'1609',stock_name:'大亞',as_of:'2026-10-20',
-      score:50,state:'invalid',label:'結構轉弱',close:37.25,bias:-3.07,
-      reason:'失效歷史'}]
+      score:50,state:'invalid',label:'結構轉弱',close:37.25}]
   ]);
   const escape=v=>String(v).replace(/[&<>"']/g,c=>({
     '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const render=new Function('document','stage','expectedSignalDataDate',
-    'scoutHistory','holdings','esc',src+'\nreturn renderScoutPanel;')(
-    {getElementById:()=>panel},'LAUNCH',()=> '2026-10-21',
-    rows,new Map(),escape);
-  render();
+  const renderFn=new Function('document','stage','expectedSignalDataDate',
+    'scoutHistory','holdings','esc','num',
+    src+'\nreturn {renderScoutPanel,setVisible:xs=>{launchDisplayedIds=new Set(xs)}};');
+  const sut=renderFn({getElementById:()=>panel},'LAUNCH',()=> '2026-10-21',
+    rows,new Map(),escape,(n,p)=>Number(n).toFixed(p));
+  sut.setVisible(['5521']);
+  sut.renderScoutPanel();
   assert.equal(panel.hidden,false);
-  assert.match(panel.innerHTML,/entry-mini-summary radar-compact-summary/);
-  assert.match(panel.innerHTML,/data-stock-key="5521"/);
-  assert.match(panel.innerHTML,/data-stock-key="3013"/);
-  assert.match(panel.innerHTML,/data-stock-key="1609"/);
-  assert.match(panel.innerHTML,/研究觀察，非橘色試單或綠色正式買點/);
-  assert.match(panel.innerHTML,/轉進場／過熱／失效 2 檔（歷史）/);
-  assert.doesNotMatch(panel.innerHTML,/<button/);
-  assert.doesNotMatch(panel.innerHTML,/<details class="entry-mini radar-scout-card"[^>]* open/);
+  assert.doesNotMatch(panel.innerHTML,/5521 工信/);
+  assert.match(panel.innerHTML,/3062 建漢/);
+  assert.match(panel.innerHTML,/3013 晟銘電/);
+  assert.match(panel.innerHTML,/1609 大亞/);
+  assert.match(panel.innerHTML,/其他前哨追蹤 1 檔｜轉進場／風險歷史 2 檔/);
+  assert.match(panel.innerHTML,/class="radar-scout-compact-row"/);
+  assert.doesNotMatch(panel.innerHTML,/class="entry-mini|data-stock-key|<button/);
+  assert.doesNotMatch(panel.innerHTML,/class="radar-scout-root" open/);
   panel.querySelector=selector=>selector==='details.radar-scout-root'?{open:true}:null;
-  panel.querySelectorAll=selector=>
-    selector==='details.radar-scout-card[open]'?[{dataset:{stockKey:'5521'}}]:
-    selector==='details[data-scout-group][open]'?[{dataset:{scoutGroup:'history'}}]:[];
-  render();
-  assert.match(panel.innerHTML,/details class="radar-scout-root" open/);
-  assert.match(panel.innerHTML,/data-stock-key="5521" open/);
-  assert.match(panel.innerHTML,/data-scout-group="history" open/);
-  assert.doesNotMatch(panel.innerHTML,/data-stock-key="1609" open/);
-  assert.match(html,/#scoutPanel \.radar-scout-list\{display:grid/);
+  sut.renderScoutPanel();
+  assert.match(panel.innerHTML,/class="radar-scout-root" open/);
+  sut.setVisible(['5521','3062','3013','1609']);
+  sut.renderScoutPanel();
+  assert.equal(panel.hidden,true);
+  assert.match(html,/launchScoutHistoryHtml\(item\)/);
+  assert.match(html,/launchDisplayedIds=new Set\(rankedPicks\.map/);
+  assert.match(html,/<main class="list" id="list">[\s\S]*?<section id="scoutPanel"/);
   assert.doesNotMatch(src,/getLiveQuotes\s*\(|scanBatch\s*\(|setInterval\s*\(/);
+});
+test('Tomorrow ENTRY research and continued pullback share one nonduplicated card shelf',()=>{
+  assert.match(html,/compactEntryGroupHtml\('tracking','🌙 明日看盤清單｜追蹤與等待回踩'/);
+  assert.match(html,/const tomorrowResearchRows=\[/);
+  assert.match(html,/\.{3}topResearch\.map\(x=>x\.row\)/);
+  assert.match(html,/\.{3}strongFollowups/);
+  assert.match(html,/\.{3}passiveResearch/);
+  assert.match(html,/const uniqueWatch=watch\.filter/);
+  assert.match(html,/blockedIds\.has\(id\)\|\|tomorrowSeen\.has\(id\)/);
+  assert.match(html,/const outHtml=banner\+simplifiedEntryHtml/);
+  assert.doesNotMatch(html,/const outHtml=banner\+researchPreview\+simplifiedEntryHtml/);
+  assert.match(html,/extraHtml:persistent\.savedHtml/);
+  assert.match(html,/compactEntryGroupHtml\('today'/);
+  assert.match(html,/compactEntryGroupHtml\('risk'/);
+  assert.match(html,/data-entry-fold="simple-'\+key/);
 });
 test('Foreign 10-day net and quarterly quality reuse the existing chip/revenue row',()=>{
   const src=section('      const chipMergedSnapshotText =',
