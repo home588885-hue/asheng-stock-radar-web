@@ -635,12 +635,13 @@ test('Unified passive C/S status is identical for mini, deep guide and next step
   assert.match(html,/S '\+esc\(item\.as_of\|\|'日期待更新'\)\+' 前次日K/);
 });
 test('Signed watch attention cannot invent a buy or hide a strong overextended stock',()=>{
-  const src=section('      const RADAR_WATCH_ATTENTION_VERSION=',
+  const src=section('      // V2 signed S-only observation;',
     '      // Presentation only. The original action/risk model stays untouched.');
   const attention=new Function('holdings','unifiedRadarGeneration','chaseModelReady',
-    'expectedSignalDataDate','validTodayQuote','chaseOver','num',
+    'expectedSignalDataDate','validTodayQuote','chasePass','chaseOver','num',
     src+'\nreturn radarWatchAttentionState;')(
     new Map(),()=>true,()=>true,()=> '2026-10-20',q=>!!q&&q.price>0,
+    (item,price)=>(price/Number(item.metrics.ma20)-1)*100<=12,
     (item,price)=>(price/Number(item.metrics.ma20)-1)*100>12,
     (x,d=1)=>Number(x).toFixed(d));
   const sample=(id,price,lots,avg,ma20)=>({stock_id:id,as_of:'2026-10-20',
@@ -665,6 +666,40 @@ test('Signed watch attention cannot invent a buy or hide a strong overextended s
   assert.match(html,/const launchMiniHtml =/);
   assert.match(html,/const holdingMiniHtml =/);
   assert.match(html,/if\(stage==='ENTRY'\|\|stage==='LIVE'\)return loadLiveMonitor\(\)/);
+});
+test('Pre-breakout signal survives live breakout without bypassing trade gates',()=>{
+  const src=section('      // V2 signed S-only observation;',
+    '      const RADAR_WATCH_ATTENTION_VERSION=');
+  const scout=new Function('holdings','unifiedRadarGeneration','chaseModelReady',
+    'expectedSignalDataDate','validTodayQuote','chasePass','chaseOver','num',
+    src+'\nreturn radarPreBreakoutState;')(
+    new Map(),()=>true,()=>true,()=> '2026-10-20',q=>!!q&&q.price>0,
+    (item,price)=>(price/Number(item.metrics.ma20)-1)*100<=12,
+    (item,price)=>(price/Number(item.metrics.ma20)-1)*100>12,
+    (v,d=1)=>Number(v).toFixed(d));
+  const item={stock_id:'TEST',as_of:'2026-10-20',metrics:{
+    close:100,prev_close:99,ma10:99,ma20:98,ma60:97,high20_prev:102,
+    current_volume_lots:1200,avg_volume_20_lots:450,
+    ma_cluster:{rising:{ma10:true,ma20:true},day_volume_ratio:1.2},
+    entry_candle_guard:{weak_after_breakout:false},
+    prebreakout_scout:{version:'2026-10-21-prebreakout-scout-v1',
+      as_of:'2026-10-20',eligible:true,state:'ready',actionable:false}}};
+  assert.equal(scout(item).priority,94);
+  assert.match(scout(item).label,/非買點/);
+  assert.equal(scout(item,{price:103}).priority,95);
+  assert.equal(scout(item,{price:120}).priority,98);
+  assert.match(scout(item,{price:120}).label,/禁追/);
+  assert.equal(scout({...item,as_of:'2026-10-19'}).eligible,false);
+  assert.equal(scout({...item,metrics:{...item.metrics,current_volume_lots:150}}).eligible,false);
+  assert.equal(scout({...item,metrics:{...item.metrics,prebreakout_scout:{
+    version:'2026-10-21-prebreakout-scout-v1',as_of:'2026-10-20',
+    eligible:false,actionable:false}}}).eligible,false);
+  assert.match(html,/if\(radarPreBreakoutState\(item\)\.eligible\)return true/);
+  assert.match(html,/rank:155,className:'prebreakout-watch'/);
+  assert.match(html,/preScout\.eligible\?radarPreBreakoutState\(item,q\)\.label/);
+  assert.match(html,/const launchShownIds =/);
+  assert.match(html,/quoteFreshForTrial\(row\.quote\)/);
+  assert.doesNotMatch(src,/fetch\s*\(|getLiveQuotes\s*\(|savePullbackWatchRows\s*\(/);
 });
 for(const g of html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi)){
   if(/\bsrc=/.test(g[1]))continue;
