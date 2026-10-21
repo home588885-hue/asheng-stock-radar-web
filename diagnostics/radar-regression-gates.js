@@ -561,6 +561,15 @@ test('ACTIVE starter MA10 C-only orange stays fresh, guarded and non-green',()=>
  assert.equal(ma10StarterSetup({...item,metrics:{...item.metrics,chip:{score:49}}}),null);
  assert.equal(ma10StarterSetup({...item,metrics:{...item.metrics,entry_candle_guard:{...item.metrics.entry_candle_guard,weak_after_breakout:true}}}),null);
  held.set('3013',{});assert.equal(ma10StarterSetup(item),null);held.clear();
+ const fusion=section('      const legacyEarlyStarterTrial = (item,quote,eligible) => {','      const eodStarterWatchEligible = item => {');
+ assert.match(fusion,/quoteFreshForTrial\(quote\)/);
+ assert.match(fusion,/pace<\.55\|\|pace>2\.60/);
+ assert.match(fusion,/gap20<0\|\|gap20>5/);
+ assert.match(fusion,/!chasePass\(item,price\)/);
+ assert.match(fusion,/macd_weak===true/);
+ assert.match(html,/const legacyStarter=legacyEarlyStarterTrial\(item,quote,earlyEligible\)/);
+ assert.match(html,/key:'legacy_early_starter_trial'/);
+ assert.match(html,/buyable:false,trialable:true,live_quote_verified:true/);
  const action=section('      const entrySnapshotState = (item, baseAction, quote = null) => {','      // Compact entry display only;');
  assert.match(action,/ma10StarterLiveTrial\(item,quote,earlyEligible\)/);
  assert.match(action,/phase:'trial',rank:Math.max\(95/);
