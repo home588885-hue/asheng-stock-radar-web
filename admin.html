@@ -3996,7 +3996,59 @@ h1 {
       // The EOD orange shelf is a watch PREPARATION, never a verified
       // intraday trial. Persist this independently so opening-day
       // reclassification cannot silently erase last night's watch candidates.
+      // Front-end only: near-MA10 ACTIVE/starter preparation from the signed S EOD.
+      // Do not promote on history, a stale model, an S label alone or MACD deceleration.
+      // MACD positive-but-slowing can remain a watch; only actual next-day C
+      // trade/volume confirmation can make an orange trial. Never grant green.
+      const ma10StarterSetup = item => {
+        if(!item||item.__observation_only===true||item.__passive_monitor===true
+          ||holdings.has(String(item.stock_id||''))
+          ||!unifiedRadarGeneration(item)||!chaseModelReady(item)
+          ||String(item.as_of||'')!==expectedSignalDataDate())return null;
+        const m=item.metrics||{},mc=m.ma_cluster||{},g=m.entry_candle_guard||{};
+        const ma10=Number(m.ma10),ma20=Number(m.ma20),ma60=Number(m.ma60);
+        const close=Number(m.close),avg=Number(m.avg_volume_20_lots);
+        const vol=Number(m.current_volume_lots),pos=Number(m.position_1y_pct);
+        const k=Number(m.daily_k),chip=Number(m.chip?.score);
+        const macd=Number(g.macd_hist),bias=ma20>0?(close/ma20-1)*100:NaN;
+        if(String(m.trade_lifecycle?.entry?.state||'')!=='starter'
+          ||String(m.scan_intelligence?.effective_lifecycle||'')!=='ACTIVE'
+          ||Number(item.score)<75||mc.all_rising!==true||mc.above_all_mas!==true
+          ||g.main_bull!==true||g.weak_after_breakout===true||g.kd_high_weak===true
+          ||m.holding_management?.strong_breakdown===true
+          ||m.quality_gate?.pass===false
+          ||![ma10,ma20,ma60,close,avg,vol,pos,k,chip,macd].every(Number.isFinite)
+          ||Math.min(ma10,ma20,ma60,close,avg)<=0
+          ||close<Math.max(ma10,ma20,ma60)||close>ma10*1.025
+          ||bias<0||bias>5||!chasePass(item,close)
+          ||avg<500||vol<1000||vol/avg<.8||vol/avg>2.5
+          ||pos<0||pos>=80||k<30||k>80||chip<60||macd<=0
+          ||['mother_low_broken','child_low_broken','invalid','broken']
+            .includes(String(m.shanchuan_v2?.mother_child?.lifecycle?.state||'')))return null;
+        return {ma10,ma20,close,avg,macdSlowing:g.macd_weak===true};
+      };
+      // Separate narrow ORANGE-only follow-through. Never changes the MA model,
+      // existing +8/+12/+15 chase tiers, V5 green, holdings or S/C scan cadence.
+      const ma10StarterLiveTrial = (item,quote,eligible) => {
+        const setup=ma10StarterSetup(item);
+        if(!setup||!eligible||!quoteFreshForTrial(quote))return null;
+        const price=Number(quote?.price),open=Number(quote?.open),high=Number(quote?.high);
+        const lots=Number(quote?.volume_lots);
+        const fraction=marketFraction(quote?.quote_time);
+        const pace=setup.avg>0&&fraction>0?lots/(setup.avg*fraction):NaN;
+        const gap20=setup.ma20>0?(price/setup.ma20-1)*100:NaN;
+        // A slowing but still positive EOD MACD must earn stronger live volume.
+        const paceFloor=setup.macdSlowing?1.35:1.15;
+        if(![price,open,high,lots,pace,gap20].every(Number.isFinite)
+          ||Math.min(price,open,high)<=0||lots<1000
+          ||price<setup.close*1.005||price<open*1.003
+          ||price>setup.close*1.035||price<high*.985
+          ||gap20<0||gap20>8||pace<paceFloor||pace>3.2
+          ||!chasePass(item,price))return null;
+        return {pace,ma10:setup.ma10,gap20};
+      };
       const eodStarterWatchEligible = item => {
+        if(ma10StarterSetup(item))return true;
         if(!item||holdings.has(String(item.stock_id||''))||!unifiedRadarGeneration(item)||!chaseModelReady(item)
           ||String(item.as_of||'')!==expectedSignalDataDate())return false;
         const m=item.metrics||{},mc=m.ma_cluster||{},g=m.entry_candle_guard||{};
@@ -4362,6 +4414,17 @@ h1 {
           live_quote_verified:true,className:'trial',text:'🟠 第一根起漲｜可小量試單',
           detail:'當日5分鐘內成交＋原MA10／20／60、量價與風控通過；不是正式買點｜'
             +String(baseAction.detail||'僅供小部位評估')};
+        // ACTIVE/starter beside MA10 is not itself a buy. The FIRST real
+        // next-session reclaim with sufficiently strong C trade may become
+        // orange without waiting for a late 20-day high breakout.
+        const earlyStarterTrial=ma10StarterLiveTrial(item,quote,eligible);
+        if(earlyStarterTrial)return {...baseAction,key:'ma10_starter_trial',
+          phase:'trial',rank:Math.max(95,Number(baseAction.rank||0)),
+          className:'trial',buyable:false,trialable:true,live_quote_verified:true,
+          text:'🟠 MA10低延伸轉強｜可小量試單',
+          detail:'S前日ACTIVE／starter、收盤近MA10 '+num(earlyStarterTrial.ma10,2)
+            +'｜C今日放量轉強 '+num(earlyStarterTrial.pace,2)+'x'
+            +'｜距MA20 +'+num(earlyStarterTrial.gap20,2)+'%｜僅小量評估，非V5正式買點'};
         // Preserve the user's original strict MA10 pullback trial route.
         // Never convert the NEW research-rejected MA20 observation to orange.
         const originalTrial=eligible&&originalMa10Watch
@@ -5013,11 +5076,15 @@ h1 {
             return;
           }
           if(eodTrialWatchReady(row)&&!['trial','confirmed'].includes(String(a.phase||''))){
+            const starterSetup=ma10StarterSetup(item);
             b.eodTrial.push(safeRow(row,{
               key:'eod_trial_watch',phase:'observe',rank:44,className:'scout',
-              text:market.open?'🟠 盤後試單觀察｜等當日確認':'🟠 明日小量試單觀察｜開盤再確認',
-              detail:'盤後日K starter符合既有分數／量能／MA10、20、60及不追高條件；'
-                +'僅供次日準備，必須再核對C當日5分鐘內成交、量價與原風控，未確認不可當買點'
+              text:starterSetup?'🟠 MA10低延伸轉強｜待C當日確認':'🟠 試單準備｜開盤再確認',
+              detail:starterSetup
+                ?'S盤後ACTIVE／starter且靠近MA10、MA20正乖離5%內；'
+                  +'MACD放緩僅准列觀察，必須等C當日有效成交、放量轉強且不追高才可小量試單（目前非買點）'
+                :'盤後日K starter符合既有分數／量能／MA10、20、60及不追高條件；'
+                  +'仍須C當日有效成交、量價與原風控確認，未確認不可當買點'
             }));
             return;
           }
