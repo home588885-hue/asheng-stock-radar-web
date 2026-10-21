@@ -56,8 +56,10 @@ const groups=simplifiedEntryHtml({
 const titles=['今日進場機會','持續追蹤與等待回踩','暫不適合進場','最近失效追蹤'];
 for(const title of titles)assert.ok(groups.includes(title),'missing main group '+title);
 assert.equal((groups.match(/data-stable-key="entry-simple-/g)||[]).length,4,'only 3 decision groups plus 1 history');
-assert.match(groups,/data-entry-fold="simple-today" open/);
-assert.match(groups,/data-entry-fold="simple-tracking" open/);
+assert.match(groups,/entry-bucket-simple-today/);
+assert.match(groups,/entry-bucket-simple-tracking/);
+assert.equal((groups.match(/entry-bucket-fold entry-bucket-flat/g)||[]).length,2,
+  'today and tracking remain directly visible without extra click');
 assert.match(groups,/data-entry-fold="simple-risk">/);
 assert.match(groups,/data-entry-fold="simple-history">/);
 assert.ok(!groups.includes('data-entry-fold="simple-risk" open'),'risk must be closed');
