@@ -745,6 +745,28 @@ test('Scout history cards preserve their own expand state without changing trade
   assert.match(html,/#scoutPanel \.radar-scout-list\{display:grid/);
   assert.doesNotMatch(src,/getLiveQuotes\s*\(|scanBatch\s*\(|setInterval\s*\(/);
 });
+test('Foreign flow is merged into existing chip without new boxes or buy permissions',()=>{
+  const source=section('      const chipMergedSnapshotText =',
+    '      const selectionGuide = (item, signal) => {');
+  const summary=new Function('num',source+'\nreturn chipMergedSnapshotText;')(
+    (n,d)=>Number(n).toFixed(d));
+  const bought=summary({score:76,label:'籌碼偏多',
+    institutional:{foreign_net_5d:1943133},
+    foreign:{change_10d_pp:1.55}});
+  assert.match(bought,/外資近5日累計買超/);
+  assert.match(bought,/外資10日持股比 \+1.55百分點/);
+  assert.doesNotMatch(bought,/連買5天|10日累計買超/);
+  const sold=summary({score:42,label:'籌碼偏弱',
+    institutional:{foreign_net_5d:-649119},
+    foreign:{change_10d_pp:-.01}});
+  assert.match(sold,/外資近5日累計賣超/);
+  assert.match(sold,/外資10日持股比 -0.01百分點/);
+  assert.equal(summary({score:55,label:'籌碼中性'}),'籌碼 55分・中性');
+  assert.match(html,/const chipText = chipMergedSnapshotText\(metrics\.chip,chipRaw\)/);
+  assert.match(html,/esc\(chipMergedSnapshotText\(chip\)\)/);
+  assert.match(html,/const chipNotes = \(chip\?\.notes\|\|\[\]\)\.filter/);
+  assert.doesNotMatch(source,/fetch\s*\(|getLiveQuotes\s*\(|setInterval\s*\(/);
+});
 for(const g of html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi)){
   if(/\bsrc=/.test(g[1]))continue;
   new Function(g[2]);
