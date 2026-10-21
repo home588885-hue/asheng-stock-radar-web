@@ -81,7 +81,9 @@ assert.match(html,/\.entry-research-stock>\.entry-research-summary/);
 const noModel=research({blocked:[old]});
 assert.doesNotMatch(noModel.researchPreview,/2222/);
 assert.equal(research({focus:[safe],held:[['1111',{}]]}).topResearch.length,0,'Held stocks are not new buy ideas');
-assert.match(html,/const outHtml=banner\+researchPreview\+simplifiedEntryHtml/);
+assert.match(html,/const outHtml=banner\+simplifiedEntryHtml/);
+assert.doesNotMatch(html,/const outHtml=banner\+researchPreview\+simplifiedEntryHtml/);
+assert.match(html,/const tomorrowResearchRows=\[/);
 assert.doesNotMatch(code,/fetch\(|savePullbackWatchRows\(|scanBatch|refreshLiveQuotes\(/);
 if(process.env.XC_EXPORT_RESEARCH_PREVIEW==='1'){
  const styleStart=html.indexOf('<style>'),styleEnd=html.indexOf('</style>',styleStart+7);
