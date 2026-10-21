@@ -5876,6 +5876,22 @@ h1 {
         const signal = options.actionOverride || simpleActionState(item, displayQuote) || { className:'watch', text:'⚪ 尚未達動作訊號', key:'none', detail:'先觀察' };
         const warrant = warrantSignal(rawSignal);
         const guide = selectionGuide(item, rawSignal);
+        // Live C price changes only the location/MA wording, never EOD model
+        // structure, signal eligibility, trading permissions or risk rules.
+        if(item.__passive_monitor===true
+          &&item.__observation_kind==='ma10_pending_ma20_supported') {
+          const live=validTodayQuote(displayQuote);
+          const ma10=Number(metrics.ma10),ma20=Number(metrics.ma20);
+          const price=Number(displayQuote?.price);
+          if(live&&[price,ma10,ma20].every(Number.isFinite)
+            &&ma10>0&&ma20>0&&price>=ma10&&price>=ma20) {
+            guide.status='盤中已站上MA10／MA20｜待收盤確認（非買點）';
+            guide.position='C當日成交 '+num(price,2)+'｜高於MA10 '+num(ma10,2)
+              +'、MA20 '+num(ma20,2)+'｜尚待新版日K確認';
+            guide.shape='前次完整日K型態：'+String(guide.shape||'等待確認');
+            guide.note='盤中價格已站上兩條均線；前次日K型態、量價與籌碼尚未更新，不能據此試單或買進。';
+          }
+        }
         const launch = metrics.launch_candidate || {};
         const launchQuality = launchQualityState(item);
         const launchQualityHtml = stage === 'LAUNCH' && launchQuality.keep ? '<div class="signal-note">' + esc(memberFacingText(launchQuality.label)) + '</div>' : '';
