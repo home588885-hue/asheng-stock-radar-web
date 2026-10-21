@@ -4722,7 +4722,10 @@ h1 {
         const signal=activeFormal?'🟢 正式買點（當日驗證）':
           activeTrial?'🟠 可小量試單（當日驗證）':
           String(originalAction.text||bucketLabel||'🟡 追蹤觀察');
-        const glanceSignal=(activeFormal||activeTrial)?signal:String(signal).split('｜')[0].trim();
+        const attention=(!activeFormal&&!activeTrial&&originalAction.phase!=='blocked'
+          &&originalAction.stale_model!==true)?radarWatchAttentionState(item,q):null;
+        const glanceSignal=(activeFormal||activeTrial)?signal:
+          attention?.priority>=70?attention.label:String(signal).split('｜')[0].trim();
         return `<details class="entry-mini" data-stock-key="${esc(id)}"${selected}>
           <summary class="entry-mini-summary radar-compact-summary">
             <span class="entry-mini-name"><strong>${esc(id)} ${esc(item.stock_name||'')}</strong><small>${esc(glanceSignal)}</small></span>
@@ -4757,7 +4760,7 @@ h1 {
       const compactEntryGroupHtml = (key,title,note,entries,{open=false,extraHtml='',extraCount=0,alwaysShow=false}={}) => {
         const total=entries.length+extraCount;
         if(!total&&!alwaysShow)return '';
-        const maxVisible=key==='today'?5:key==='tracking'?6:4;
+        const maxVisible=key==='today'?5:key==='tracking'?9:4;
         const preview=entries.slice(0,maxVisible),extra=entries.slice(maxVisible);
         const cards=arr=>arr.map(e=>entryCompactStock(e.row,e.label)).join('');
         const body=cards(preview)+(extra.length
@@ -4794,10 +4797,12 @@ h1 {
           const detail=existing?v5MonitorCard(item,q,safeAction):'';
           const s=quoteDisplayState(q,item);
           const quoteLabel=s.label+' '+(validTodayQuote(q)?num(Number(q.price),2):Number.isFinite(close)&&close>0?num(close,2):'-')+(s.today_trade?'｜'+s.moment:'');
+          const attention=existing?radarWatchAttentionState(item,q):null;
+          const displayLabel=attention?.priority>=70?attention.label:label;
           const next=existing?radarShortAdvice(item,{detail:note},q):'等待完整日K回補';
           return '<details class="entry-mini entry-saved-mini" data-stock-key="'+esc(id)+'" data-tracking-symbol="'+esc(id)+'"'+selected+'>'
             +'<summary class="entry-mini-summary radar-compact-summary">'
-            +'<span class="entry-mini-name"><strong>'+esc(id+' '+name)+'</strong><small>'+esc(label)+'</small></span>'
+            +'<span class="entry-mini-name"><strong>'+esc(id+' '+name)+'</strong><small>'+esc(displayLabel)+'</small></span>'
             +'<span class="entry-mini-expand">展開</span>'
             +'<span class="entry-mini-metrics">'+esc(quoteLabel)+'｜S '+esc(day)+'</span>'
             +continuationRiskMiniHtml(item)
@@ -4866,6 +4871,12 @@ h1 {
           ...add(labels.recalcDisplayRows,'⚪ 模型待補算｜非買點'),
           ...add(labels.retainedRows,'📋 前次新版留存｜非買點'),
           ...add(labels.pullbackRows,'🔵 高乖離｜持續追蹤等回踩')];
+        // Risk-safe ATTENTION order inside the existing tracking shelf.
+        // Volatile / overextended names stay OBSERVATION, never TODAY BUY.
+        watch.sort((a,b)=>radarWatchAttentionState(b.row?.item,b.row?.quote).priority
+          -radarWatchAttentionState(a.row?.item,a.row?.quote).priority
+          ||strongRebreakStudyRank(b.row?.item)-strongRebreakStudyRank(a.row?.item)
+          ||Number(b.row?.item?.score||0)-Number(a.row?.item?.score||0));
         const risk=[
           ...add(labels.avoidRows,'🔴 風險警戒｜先避開'),
           ...add(labels.waitRows,'🟡 條件未齊｜先觀察')];
@@ -7194,6 +7205,47 @@ h1 {
 
 
 
+      // 2026-10-21-watch-attention-v1: ONE read-only, signed-S/C attention
+      // calculation reused in LAUNCH and ENTRY summaries, rankings and saved
+      // watches. Never changes V5 entry, risk gates, holdings or quote cadence.
+      const RADAR_WATCH_ATTENTION_VERSION='2026-10-21-watch-attention-v1';
+      const radarWatchAttentionState=(item,quote=null)=>{
+        const none={priority:0,label:'',advice:'',version:RADAR_WATCH_ATTENTION_VERSION};
+        if(!item||holdings.has(String(item.stock_id||''))
+          ||!unifiedRadarGeneration(item)||!chaseModelReady(item)
+          ||String(item.as_of||'')!==expectedSignalDataDate())return none;
+        const m=item.metrics||{},mc=m.ma_cluster||{},g=m.entry_candle_guard||{};
+        if(m.holding_management?.strong_breakdown===true||g.weak_after_breakout===true
+          ||g.main_bull===false||mc.above_all_mas!==true
+          ||mc.rising?.ma10!==true||mc.rising?.ma20!==true||mc.rising?.ma60!==true)return none;
+        const close=Number(m.close),ma20=Number(m.ma20);
+        const lots=Number(m.current_volume_lots),avg=Number(m.avg_volume_20_lots);
+        if(!(close>0&&ma20>0&&lots>=1000&&avg>=400))return none;
+        const ratio=lots/avg;
+        const firstOrRebreak=g.recent_breakout===true||mc.breakout_detected_raw===true
+          ||mc.breakout_first_bar===true||m.first_breakout20===true
+          ||m.pullback_rebreak===true||m.v5?.pending_ready===true;
+        const q=validTodayQuote(quote)?quote:null;
+        const price=q?Number(q.price):close;
+        const gap=(price/ma20-1)*100;
+        const over=chaseOver(item,price);
+        const intradayJump=!!q&&Number(q.price)>=close*1.05;
+        if(ratio>=1.5&&firstOrRebreak){
+          if(over)return {priority:intradayJump?96:82,
+            label:intradayJump?'⚡ 當日急拉｜高乖離禁追':'🚀 放量續強｜高乖離禁追',
+            advice:'模型量比 '+num(ratio,1)+'倍、MA20乖離 +'+num(gap,1)+'%｜等回踩，不追價',
+            version:RADAR_WATCH_ATTENTION_VERSION};
+          return {priority:92,label:'⭐ 放量轉強｜優先追蹤（非買點）',
+            advice:'模型量比 '+num(ratio,1)+'倍｜盯突破位與回踩守穩，待原條件確認',
+            version:RADAR_WATCH_ATTENTION_VERSION};
+        }
+        if(!over&&ratio>=1.0&&(mc.watch_ready===true||m.bottom_start?.confirmed===true))
+          return {priority:38,label:'🌱 均線轉強｜等待量價（非買點）',
+            advice:'觀察前高與MA10支撐，量價確認前不試單',
+            version:RADAR_WATCH_ATTENTION_VERSION};
+        return none;
+      };
+
       // Presentation only. The original action/risk model stays untouched.
       const radarShortAdvice=(item,action=null,quote=null)=>{
         if(item?.__passive_monitor===true)
@@ -7204,6 +7256,8 @@ h1 {
         const close=Number(m.close),ma10=Number(m.ma10),ma20=Number(m.ma20);
         if(phase==='blocked'||k==='avoid')return '先觀察支撐，暫不進場';
         if(phase==='confirmed'||phase==='trial')return '確認當日成交與風控';
+        const attention=radarWatchAttentionState(item,quote);
+        if(attention.priority>=70)return attention.advice;
         if(ma20>0&&close<ma20)return '等重新站回MA20';
         if(ma10>0&&close<ma10)return '觀察站回MA10';
         if(ma20>0&&close>0&&chaseOver(item,close))return '乖離偏高，等回踩';
@@ -7478,6 +7532,8 @@ h1 {
           :displayModelWarning(item)?displayModelWarning(item)
           :risk?.kind==='hard'?String(risk.text||'🔴 盤中風險｜暫不新買')
           :risk?.kind==='momentum'?String(risk.text||'🟡 短線轉弱｜等重新轉強')
+          :risk?.kind==='position'&&radarWatchAttentionState(item,q).priority>=70
+            ?radarWatchAttentionState(item,q).label
           :risk?.kind==='position'?String(risk.text||'🔵 位置偏高｜等回踩')
           :early?'🌱 早期轉強｜優先追蹤，不可直接試單'
           :trial?trial.text
@@ -8119,7 +8175,7 @@ h1 {
           if (item?.metrics?.launch_sequence?.second_buy_candidate === true || item?.metrics?.ma_cluster?.launch_sequence?.second_buy_candidate === true) return 90;
           if (item?.metrics?.v5?.entry_confirmed === true) return 88;
           if (item?.metrics?.v5?.pending_ready === true) return 84;
-          if (entryState==='near') return 80;
+          if (entryState==='near') return Math.min(104,80+Math.floor(radarWatchAttentionState(item).priority/7));
           const watch=pullbackWatch.get(String(item?.stock_id||''));
           if (watch?.active===true || item?.__pullback_watch===true) return 75;
           return 0;
