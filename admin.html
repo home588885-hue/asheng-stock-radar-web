@@ -2158,9 +2158,13 @@ h1 {
         const day=expectedSignalDataDate();
         const records=[...scoutHistory.values()].filter(x=>!holdings.has(String(x.stock_id||'')));
         if(!records.length){panel.hidden=true;return;}
-        const active=records.filter(x=>!['invalid','overheated'].includes(x.state))
+        // Latest signed S ACTIVE/ENTRY decisions outrank an older passive scout.
+        // Keep promoted observations only in the collapsed history, never as
+        // another current prelaunch status on the LAUNCH screen.
+        const promoted=x=>String(x.label||'').includes('已轉進場雷達');
+        const active=records.filter(x=>!['invalid','overheated'].includes(x.state)&&!promoted(x))
           .sort((a,b)=>String(b.as_of).localeCompare(String(a.as_of))||b.score-a.score);
-        const archive=records.filter(x=>['invalid','overheated'].includes(x.state))
+        const archive=records.filter(x=>['invalid','overheated'].includes(x.state)||promoted(x))
           .sort((a,b)=>String(b.as_of).localeCompare(String(a.as_of))||b.score-a.score);
         const open=!!panel.querySelector('details')?.open;
         const itemHtml=x=>{
@@ -2175,12 +2179,12 @@ h1 {
             +'｜'+esc(x.reason||'等新版核對')+'</div></div>';
         };
         const html='<details'+(open?' open':'')+'><summary style="cursor:pointer;font-weight:650">'
-          +'🌱 第一根前哨 '+active.length+' 檔｜📋 過熱／失效 '+archive.length+' 檔（展開）</summary>'
+          +'🌱 第一根前哨 '+active.length+' 檔｜📋 轉進場／風險歷史 '+archive.length+' 檔（展開）</summary>'
           +'<p style="font-size:12px;margin:8px 0">山川箱型／母子K與均線轉強的研究觀察；不是橘色或綠色買點。'
           +'未更新日K只能等待補算。跨日紀錄與相同登入帳號的手機、電腦同步；不額外重算S或抓C報價。</p>'
           +(active.length?'<strong>持續觀察</strong>'+active.slice(0,6).map(itemHtml).join(''):'')
           +(active.length>6?'<details class="radar-scout-history"><summary>其餘追蹤 '+(active.length-6)+' 檔</summary>'+active.slice(6).map(itemHtml).join('')+'</details>':'')
-          +(archive.length?'<details class="radar-scout-history"><summary>過熱／失效 '+archive.length+' 檔（歷史）</summary>'+archive.map(itemHtml).join('')+'</details>':'')
+          +(archive.length?'<details class="radar-scout-history"><summary>已轉進場／過熱／失效 '+archive.length+' 檔（歷史）</summary>'+archive.map(itemHtml).join('')+'</details>':'')
           +'</details>';
         if(panel.innerHTML!==html)panel.innerHTML=html;
         panel.hidden=false;
@@ -2224,8 +2228,11 @@ h1 {
           for(const x of (data||[])){
             if(x.source_version!=='2026-10-20-shanchuan-v1')continue;
             const server=scoutFromCloud(x),local=scoutHistory.get(server.stock_id);
-            // Prefer the cloud record on an equal scan. Never overwrite a
-            // newer in-flight S snapshot with an older browser/cloud copy.
+            const pending=scoutPending.get(server.stock_id);
+            // An equal-timestamp cloud row may carry an older display label
+            // than the current signed S response. Preserve pending revisions
+            // until the account-scoped upsert completes; newer cloud scans win.
+            if(pending&&!scoutNewer(server,pending))continue;
             if(!local||!scoutNewer(local,server)){
               scoutHistory.set(server.stock_id,server);
               scoutPending.delete(server.stock_id);
