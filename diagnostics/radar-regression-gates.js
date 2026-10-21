@@ -634,6 +634,38 @@ test('Unified passive C/S status is identical for mini, deep guide and next step
   assert.match(html,/text:passive\?passive\.label:phaseInfo\.label/);
   assert.match(html,/S '\+esc\(item\.as_of\|\|'日期待更新'\)\+' 前次日K/);
 });
+test('Signed watch attention cannot invent a buy or hide a strong overextended stock',()=>{
+  const src=section('      const RADAR_WATCH_ATTENTION_VERSION=',
+    '      // Presentation only. The original action/risk model stays untouched.');
+  const attention=new Function('holdings','unifiedRadarGeneration','chaseModelReady',
+    'expectedSignalDataDate','validTodayQuote','chaseOver','num',
+    src+'\nreturn radarWatchAttentionState;')(
+    new Map(),()=>true,()=>true,()=> '2026-10-20',q=>!!q&&q.price>0,
+    (item,price)=>(price/Number(item.metrics.ma20)-1)*100>12,
+    (x,d=1)=>Number(x).toFixed(d));
+  const sample=(id,price,lots,avg,ma20)=>({stock_id:id,as_of:'2026-10-20',
+    metrics:{close:price,ma20,current_volume_lots:lots,avg_volume_20_lots:avg,
+      ma_cluster:{above_all_mas:true,rising:{ma10:true,ma20:true,ma60:true}},
+      entry_candle_guard:{main_bull:true,recent_breakout:true}}});
+  const k=sample('8089',23.9,3623,482,20.15);
+  assert.equal(attention(k).priority,82);
+  assert.match(attention(k).label,/高乖離禁追/);
+  assert.equal(attention(k,{price:26.25}).priority,96);
+  assert.equal(attention(sample('6418',44,127,101,35.21)).priority,0);
+  assert.equal(attention({...k,as_of:'2026-10-19'}).priority,0);
+  const weak={...k,metrics:{...k.metrics,
+    entry_candle_guard:{main_bull:true,recent_breakout:true,weak_after_breakout:true}}};
+  assert.equal(attention(weak).priority,0);
+  assert.doesNotMatch(src,/fetch\s*\(|getLiveQuotes\s*\(|savePullbackWatchRows\s*\(/);
+  const htmlEntry=section('      const simplifiedEntryHtml =', '      // Only compare existing EOD radar snapshots;');
+  assert.match(htmlEntry,/watch\.sort\(\(a,b\)=>radarWatchAttentionState/);
+  assert.match(html,/radarWatchAttentionState\(item,q\)/);
+  assert.match(html,/const maxVisible=key==='today'\?5:key==='tracking'\?9:4/);
+  assert.match(html,/const entryCompactStock =/);
+  assert.match(html,/const launchMiniHtml =/);
+  assert.match(html,/const holdingMiniHtml =/);
+  assert.match(html,/if\(stage==='ENTRY'\|\|stage==='LIVE'\)return loadLiveMonitor\(\)/);
+});
 for(const g of html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi)){
   if(/\bsrc=/.test(g[1]))continue;
   new Function(g[2]);
