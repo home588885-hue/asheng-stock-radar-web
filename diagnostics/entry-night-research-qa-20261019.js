@@ -63,7 +63,7 @@ assert.match(r.researchPreview,/data-trialable="false"/);
 assert.match(r.researchPreview,/data-buyable="false"/);
 const none=research({blocked:[veto],high:[inflated],rows:[veto,inflated]});
 assert.equal(none.topResearch.length,0,'No risk example can be promoted to a trial');
-assert.match(none.researchPreview,/沒有可準備試單/);
+assert.match(none.researchPreview,/本輪沒有達到低乖離準備條件/);
 assert.match(none.researchPreview,/今晚可先研究的風控案例/);
 assert.match(none.researchPreview,/4444/);
 assert.match(none.researchPreview,/3333/);
