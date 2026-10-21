@@ -477,6 +477,48 @@ test('All three zones show actual C trade time, never falsely live after the clo
  assert.match(html,/holdingQuoteRefreshMs: 180000/);
  assert.doesNotMatch(s,/fetch\s*\(|getLiveQuotes\s*\(|setInterval\s*\(/);
 });
+test('MA10/MA20 pullback early orange avoids 1000-lot wait and overextension',()=>{
+  const helper=section('      const ma10StarterSetup = item => {','      const eodStarterWatchEligible = item => {');
+  const held=new Map();
+  const {ma10StarterSetup,ma10StarterLiveTrial}=new Function(
+    'holdings','unifiedRadarGeneration','chaseModelReady','expectedSignalDataDate',
+    'chasePass','quoteFreshForTrial','marketFraction',
+    helper+'return {ma10StarterSetup,ma10StarterLiveTrial};'
+  )(held,()=>true,()=>true,()=>'2026-10-20',()=>true,q=>q?.fresh===true,()=>.1);
+  const item={stock_id:'3013',as_of:'2026-10-20',score:86,metrics:{
+    ma10:95.34,ma20:91.09,ma60:86.67,close:95.6,avg_volume_20_lots:3143,
+    current_volume_lots:4060,position_1y_pct:32.4,daily_k:63.3,chip:{score:61},
+    ma_cluster:{all_rising:true,above_all_mas:true},
+    entry_candle_guard:{main_bull:true,macd_hist:.573756,macd_weak:true},
+    scan_intelligence:{effective_lifecycle:'ACTIVE'},
+    trade_lifecycle:{entry:{state:'starter'}},holding_management:{strong_breakdown:false}
+  }};
+  const quote={fresh:true,price:96.3,open:96,high:96.7,volume_lots:500,quote_time:'09:35:00'};
+  assert.ok(ma10StarterSetup(item));
+  assert.ok(ma10StarterLiveTrial(item,quote,true),'time-adjusted 500-lot quote can be orange');
+  assert.equal(ma10StarterLiveTrial(item,{...quote,fresh:false},true),null);
+  assert.equal(ma10StarterLiveTrial(item,{...quote,volume_lots:150},true),null);
+  assert.equal(ma10StarterLiveTrial(item,{...quote,price:99.6,open:99,high:99.8},true),null);
+  assert.equal(ma10StarterLiveTrial(item,quote,false),null);
+  const near20={...item,metrics:{...item.metrics,close:92.2,
+    ma_cluster:{...item.metrics.ma_cluster,above_all_mas:false},
+    entry_candle_guard:{main_bull:true,macd_hist:.4,macd_weak:false}}};
+  assert.equal(ma10StarterSetup(near20).support,'MA20');
+  assert.equal(ma10StarterLiveTrial(near20,{...quote,price:94.8,open:94.5,high:95},true),null);
+  assert.equal(ma10StarterSetup({...item,as_of:'2026-10-19'}),null);
+  assert.equal(ma10StarterSetup({...item,metrics:{...item.metrics,
+    entry_candle_guard:{main_bull:true,weak_after_breakout:true,macd_hist:.5}}}),null);
+  held.set('3013',{});assert.equal(ma10StarterSetup(item),null);held.clear();
+  const entry=section('      const entrySnapshotState = (item, baseAction, quote = null) => {','      // Compact entry display only;');
+  assert.match(entry,/const earlyEligible=fresh&&modelFresh&&masOkay&&chasePass\(item,price\)/);
+  assert.match(entry,/ma10StarterLiveTrial\(item,quote,earlyEligible\)/);
+  assert.match(entry,/buyable:false,trialable:true/);
+  const render=section('      const renderEntrySections =','      // Explain an empty launch list');
+  assert.match(render,/const starterRows=byRank/);
+  assert.match(render,/quoteFreshForTrial\(row.quote\)/);
+  assert.match(html,/holdingQuoteRefreshMs: 180000/);
+  assert.match(html,/selectionMas: Object.freeze\(\['MA10','MA20','MA60'\]\)/);
+});
 test('ACTIVE starter MA10 C-only orange stays fresh, guarded and non-green',()=>{
  const source=section('      const ma10StarterSetup = item => {','      const eodStarterWatchEligible = item => {');
  const held=new Map();
@@ -508,7 +550,7 @@ test('ACTIVE starter MA10 C-only orange stays fresh, guarded and non-green',()=>
  assert.equal(ma10StarterSetup({...item,metrics:{...item.metrics,entry_candle_guard:{...item.metrics.entry_candle_guard,weak_after_breakout:true}}}),null);
  held.set('3013',{});assert.equal(ma10StarterSetup(item),null);held.clear();
  const action=section('      const entrySnapshotState = (item, baseAction, quote = null) => {','      // Compact entry display only;');
- assert.match(action,/ma10StarterLiveTrial\(item,quote,eligible\)/);
+ assert.match(action,/ma10StarterLiveTrial\(item,quote,earlyEligible\)/);
  assert.match(action,/phase:'trial',rank:Math.max\(95/);
  assert.match(action,/buyable:false,trialable:true/);
  const eod=section('      const eodStarterWatchEligible = item => {','      const pullbackWatchState =');
