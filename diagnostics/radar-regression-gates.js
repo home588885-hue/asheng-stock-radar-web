@@ -288,9 +288,9 @@ test('3062 and 4960 track support/overextension without a fabricated buy',()=>{
   const source=section('      const passiveRadarWatchEligible=item=>{','      const displayModelWarning=item=>');
   const held=new Map();
   const {passiveRadarWatchEligible:eligible,passiveWatchDescription:describe}=
-    new Function('unifiedRadarGeneration','expectedSignalDataDate','holdings','num','chaseLimitNote',
+    new Function('unifiedRadarGeneration','expectedSignalDataDate','holdings','num','chaseLimitNote','bestTodayQuote','validTodayQuote',
       source+'\nreturn {passiveRadarWatchEligible,passiveWatchDescription};')(
-      ()=>true,()=>'2026-10-20',held,(x,d=1)=>Number(x).toFixed(d),()=>'+12%');
+      ()=>true,()=>'2026-10-20',held,(x,d=1)=>Number(x).toFixed(d),()=>'+12%',q=>q,q=>q?.valid===true);
   const base={as_of:'2026-10-19',__passive_monitor:true,__observation_only:true,metrics:{
     close:22.35,ma10:22.37,ma20:22.27,ma60:21.1,current_volume_lots:2948,avg_volume_20_lots:2714,
     shanchuan_v2:{mother_child:{lifecycle:{state:'formed'}}},
@@ -305,7 +305,7 @@ test('3062 and 4960 track support/overextension without a fabricated buy',()=>{
       launch_sequence:{first_signal_date:'2026-10-19'}}};
   assert.equal(eligible(mei),true);
   assert.match(describe(mei).label,/等回踩/);
-  assert.match(describe(mei).detail,/不追價/);
+  assert.match(describe(mei).detail,/追高風險觀察/);
   const broken={...han,metrics:{...han.metrics,shanchuan_v2:{mother_child:{lifecycle:{state:'mother_low_broken'}}}}};
   assert.equal(eligible(broken),false);
   assert.equal(eligible({...han,as_of:'2026-10-13'}),false);
