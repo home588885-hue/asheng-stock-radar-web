@@ -2828,14 +2828,20 @@ h1 {
           &&!mother.includes('low_broken')&&mother!=='invalid'&&mother!=='broken'
           &&!holdings.has(String(item.stock_id||''));
       };
-      const passiveWatchDescription=item=>{
+      const passiveWatchDescription=(item,quote=null)=>{
         const m=item?.metrics||{},close=Number(m.close),ma10=Number(m.ma10),ma20=Number(m.ma20);
-        const gap=close>0&&ma20>0?(close/ma20-1)*100:null;
-        if(item?.__observation_kind==='ma10_pending_ma20_supported')
-          return {label:'🟡 MA10 待站穩｜MA20 支撐追蹤（非買點）',
-            detail:'MA10 '+num(ma10,2)+'｜MA20 '+num(ma20,2)
+        const live=validTodayQuote(quote),price=live?Number(quote.price):close;
+        const gap=price>0&&ma20>0?(price/ma20-1)*100:null;
+        if(item?.__observation_kind==='ma10_pending_ma20_supported') {
+          const above=live&&price>=ma10&&price>=ma20;
+          return {label:above?'🟡 盤中已站上MA10／MA20｜待收盤確認（非買點）'
+            :'🟡 MA10 待站穩｜MA20 支撐追蹤（非買點）',
+            detail:(above?'C當日成交 '+num(price,2)+' 已高於前次日K均線；不代表收盤站穩或已完成新版模型確認｜':'')
+              +'MA10 '+num(ma10,2)+'｜MA20 '+num(ma20,2)
               +'｜距MA20 '+(gap==null?'-':num(gap,1)+'%')
-              +'｜等待縮量守住後再轉強；當日尚非小量試單'};
+              +'｜'+(above?'等待完整日K與量價重新核對；目前非小量試單'
+                :'等待重新站穩並確認轉強；當日尚非小量試單')};
+        }
         return {label:'🔵 已突破但乖離偏高｜等回踩（非買點）',
           detail:'突破日 '+String(m.launch_sequence?.first_signal_date||item.as_of||'未知')
             +'｜距MA20 '+(gap==null?'-':num(gap,1)+'%')
@@ -5142,7 +5148,7 @@ h1 {
           const date=String(item.as_of||''),q=validTodayQuote(row.quote)?row.quote:null;
           row={...row,quote:q};
           if(item.__passive_monitor===true){
-            const follow=passiveWatchDescription(item);
+            const follow=passiveWatchDescription(item,q);
             b.retained.push(safeRow(row,{key:'passive_breakout_watch',phase:'observe',
               stale_model:true,rank:2,className:'scout',text:follow.label,
               detail:follow.detail+'｜新版K線更新後核對，未重新確認不可試單或正式買'}));
