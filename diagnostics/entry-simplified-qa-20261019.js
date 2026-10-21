@@ -51,9 +51,10 @@ const row=stock_id=>({item:{stock_id,stock_name:'測試'+stock_id,as_of:'2026-10
 const groups=simplifiedEntryHtml({
  completedRows:[row('1001')],starterRows:[row('1002')],eodTrialRows:[row('1005')],
  eodTrackRows:[row('1003')],retainedRows:[row('1004')],
+ tomorrowResearchRows:[row('1003'),row('1009'),row('1006')],
  avoidRows:[row('1006')],waitRows:[row('1007')]
 });
-const titles=['今日進場機會','持續追蹤與等待回踩','暫不適合進場','最近失效追蹤'];
+const titles=['今日進場機會','明日看盤清單｜追蹤與等待回踩','暫不適合進場','最近失效追蹤'];
 for(const title of titles)assert.ok(groups.includes(title),'missing main group '+title);
 assert.equal((groups.match(/data-stable-key="entry-simple-/g)||[]).length,4,'only 3 decision groups plus 1 history');
 assert.match(groups,/entry-bucket-simple-today/);
@@ -64,7 +65,7 @@ assert.match(groups,/data-entry-fold="simple-risk">/);
 assert.match(groups,/data-entry-fold="simple-history">/);
 assert.ok(!groups.includes('data-entry-fold="simple-risk" open'),'risk must be closed');
 assert.ok(!groups.includes('data-entry-fold="simple-history" open'),'history must be closed');
-for(const id of ['1001','1002','1003','1004','1005','1006','1007']){
+for(const id of ['1001','1002','1003','1004','1005','1006','1007','1009']){
   assert.equal((groups.match(new RegExp('data-stock-key="'+id+'"','g'))||[]).length,1,
     'current model row appears exactly once '+id);
 }
@@ -85,7 +86,11 @@ assert.ok(!fallback.includes('🟢 正式買點｜當日已驗證'),
 assert.ok(!fallback.includes('🟠 可小量試單｜當日已驗證'),
   'past watch must not convert to current orange trial');
 assert.match(html,/stableListRender\(simplifiedEntryHtml\(\)/);
-assert.match(html,/const outHtml=banner\+researchPreview\+simplifiedEntryHtml\(/);
+assert.match(html,/const outHtml=banner\+simplifiedEntryHtml\(/);
+assert.doesNotMatch(html,/const outHtml=banner\+researchPreview\+simplifiedEntryHtml\(/);
+assert.match(groups,/data-stock-key="1009"/);
+assert.equal((groups.match(/data-stock-key="1003"/g)||[]).length,1,'today research and saved model watch merged');
+assert.equal((groups.match(/data-stock-key="1006"/g)||[]).length,1,'blocked research stays only in risk bucket');
 assert.doesNotMatch(html,/= entryPersistedTrackingHtml\(\)/);
 assert.match(html,/@media\(max-width:640px\)\{\s*\.entry-bucket-simple-today/);
 const scriptBlock=html.slice(html.indexOf('const renderEntrySections ='),
