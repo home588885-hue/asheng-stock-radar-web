@@ -2828,24 +2828,42 @@ h1 {
           &&!mother.includes('low_broken')&&mother!=='invalid'&&mother!=='broken'
           &&!holdings.has(String(item.stock_id||''));
       };
+      // One presentation authority for every passive-watch surface:
+      // launch, entry, research, mini, movement and expanded technical guide.
+      // This function never changes model signals, buy permission or holdings.
       const passiveWatchDescription=(item,quote=null)=>{
-        const m=item?.metrics||{},close=Number(m.close),ma10=Number(m.ma10),ma20=Number(m.ma20);
-        const live=validTodayQuote(quote),price=live?Number(quote.price):close;
+        const m=item?.metrics||{},id=String(item?.stock_id||'');
+        const cached=bestTodayQuote(quote,id);
+        const live=validTodayQuote(cached);
+        const close=Number(m.close),ma10=Number(m.ma10),ma20=Number(m.ma20);
+        const livePrice=Number(cached?.price);
+        const price=live&&Number.isFinite(livePrice)&&livePrice>0?livePrice:close;
+        const validMas=Number.isFinite(ma10)&&ma10>0&&Number.isFinite(ma20)&&ma20>0;
         const gap=price>0&&ma20>0?(price/ma20-1)*100:null;
-        if(item?.__observation_kind==='ma10_pending_ma20_supported') {
-          const above=live&&price>=ma10&&price>=ma20;
-          return {label:above?'🟡 盤中已站上MA10／MA20｜待收盤確認（非買點）'
-            :'🟡 MA10 待站穩｜MA20 支撐追蹤（非買點）',
-            detail:(above?'C當日成交 '+num(price,2)+' 已高於前次日K均線；不代表收盤站穩或已完成新版模型確認｜':'')
-              +'MA10 '+num(ma10,2)+'｜MA20 '+num(ma20,2)
-              +'｜距MA20 '+(gap==null?'-':num(gap,1)+'%')
-              +'｜'+(above?'等待完整日K與量價重新核對；目前非小量試單'
-                :'等待重新站穩並確認轉強；當日尚非小量試單')};
+        const modelDate=String(item?.as_of||'日期待更新');
+        const source=live?'C當日成交 '+num(price,2):'S '+modelDate+' 收盤 '+(close>0?num(close,2):'待更新');
+        const above=live&&validMas&&price>=ma10&&price>=ma20;
+        const levelText='前次S均線 MA10 '+num(ma10,2)+'／MA20 '+num(ma20,2);
+        const pending='等待新版完整日K與量價確認；目前非小量試單或正式買點';
+        const modelPrefix='S '+modelDate+' 前次完整日K：';
+        if(item?.__observation_kind==='ma10_pending_ma20_supported'){
+          const label=above?'🟡 盤中已站上MA10／MA20｜待收盤確認（非買點）'
+            :'🟡 MA10 待站穩｜MA20 支撐追蹤（非買點）';
+          const position=source+'｜'+levelText
+            +(above?'｜盤中已站上兩線，尚未收盤確認'
+              :live?'｜盤中仍待確認站穩':'｜僅前次S模型，待有效C成交核對');
+          const detail=position+'｜距MA20 '+(gap==null?'-':num(gap,1)+'%')
+            +'｜'+pending;
+          return {label,detail,position,nextStep:pending,modelPrefix,
+            note:'當日C成交只更新位置判斷；S '+modelDate+' 型態、籌碼及均線仍以完整日K為準。'+pending,
+            liveAbove:above,source:'passive-watch-v2'};
         }
-        return {label:'🔵 已突破但乖離偏高｜等回踩（非買點）',
-          detail:'突破日 '+String(m.launch_sequence?.first_signal_date||item.as_of||'未知')
-            +'｜距MA20 '+(gap==null?'-':num(gap,1)+'%')
-            +'｜超出'+chaseLimitNote(item)+'，不追價；MA10／MA20支撐待核對'};
+        const label='🔵 已突破但乖離偏高｜等回踩（非買點）';
+        const position=source+'｜'+levelText+'｜距MA20 '+(gap==null?'-':num(gap,1)+'%');
+        const detail=position+'｜S '+modelDate+' 追高風險觀察；'+pending;
+        return {label,detail,position,nextStep:pending,modelPrefix,
+          note:'前次模型提示位置偏高；今日C價格不等於新版完整日K已重新確認。'+pending,
+          liveAbove:false,source:'passive-watch-v2'};
       };
       const displayModelWarning=item=>String(item?.as_of||'')===expectedSignalDataDate()
         ?'':'📅 前次完整日K '+String(item?.as_of||'未知')+'｜盤後待補算（非買點）';
@@ -5389,11 +5407,13 @@ h1 {
           const item=row?.item;
           if(!item||!unifiedRadarGeneration(item))return '';
           const original=row.action||{},phaseInfo=overnightLifecycleState(item);
+          const passive=item.__passive_monitor===true
+            ?passiveWatchDescription(item,row?.quote):null;
           const studyAction={...original,buyable:false,trialable:false,
             phase:blocked?'blocked':'observe',
-            text:item.__passive_monitor===true?passiveWatchDescription(item,bestTodayQuote(row?.quote,String(item.stock_id||''))).label:phaseInfo.label,
-            detail:'明日觀察：'+phaseInfo.tomorrow+'｜'+
-              String(original.detail||original.text||'依盤後模型核對現階段')};
+            text:passive?passive.label:phaseInfo.label,
+            detail:passive?passive.detail:'明日觀察：'+phaseInfo.tomorrow+'｜'
+              +String(original.detail||original.text||'依盤後模型核對現階段')};
           const validatedQuote=bestTodayQuote(row?.quote,String(item.stock_id||''));
           return '<div class="entry-research-expanded">'
             +stockMovementHtml(item,validatedQuote,'entry',studyAction)
@@ -5874,23 +5894,17 @@ h1 {
           : '-';
         const rawSignal = tradeSignal(item);
         const signal = options.actionOverride || simpleActionState(item, displayQuote) || { className:'watch', text:'⚪ 尚未達動作訊號', key:'none', detail:'先觀察' };
-        const warrant = warrantSignal(rawSignal);
+        const warrant = item.__passive_monitor===true?'':warrantSignal(rawSignal);
+        const passivePresentation=item.__passive_monitor===true
+          ?passiveWatchDescription(item,displayQuote):null;
         const guide = selectionGuide(item, rawSignal);
-        // Live C price changes only the location/MA wording, never EOD model
-        // structure, signal eligibility, trading permissions or risk rules.
-        if(item.__passive_monitor===true
-          &&item.__observation_kind==='ma10_pending_ma20_supported') {
-          const live=validTodayQuote(displayQuote);
-          const ma10=Number(metrics.ma10),ma20=Number(metrics.ma20);
-          const price=Number(displayQuote?.price);
-          if(live&&[price,ma10,ma20].every(Number.isFinite)
-            &&ma10>0&&ma20>0&&price>=ma10&&price>=ma20) {
-            guide.status='盤中已站上MA10／MA20｜待收盤確認（非買點）';
-            guide.position='C當日成交 '+num(price,2)+'｜高於MA10 '+num(ma10,2)
-              +'、MA20 '+num(ma20,2)+'｜尚待新版日K確認';
-            guide.shape='前次完整日K型態：'+String(guide.shape||'等待確認');
-            guide.note='盤中價格已站上兩條均線；前次日K型態、量價與籌碼尚未更新，不能據此試單或買進。';
-          }
+        if(passivePresentation){
+          // The detailed guide and the compact card consume the SAME status.
+          guide.status=passivePresentation.label;
+          guide.position=passivePresentation.position;
+          guide.shape=passivePresentation.modelPrefix+String(guide.shape||'型態待確認');
+          guide.levels=passivePresentation.modelPrefix+String(guide.levels||'支撐壓力待確認');
+          guide.note=passivePresentation.note;
         }
         const launch = metrics.launch_candidate || {};
         const launchQuality = launchQualityState(item);
@@ -5899,7 +5913,7 @@ h1 {
           ? '<div class="signal-note">🔥 發動中｜S 模型已發動，但不代表可直接買入；請核對風險與位置</div>' : '';
         const launchOverhead = Array.isArray(launch.overhead) ? launch.overhead : [];
         const launchStructureText = launch.structure === 'all_above' ? '✅ 全部均線站上' : launch.structure === 'one_overhead' ? `🟡 剩 ${launchOverhead[0]?.label || '1條均線'} 反壓` : '⚠️ 上方仍有多條均線';
-        const launchHtml = launch.eligible === true ? `<div class="signal-note">🌱 蓄勢候選｜底部結構 ${Number(launch.a_score || scores.A || 0)}｜1年位階 ${num(launch.position_1y_pct ?? metrics.position_1y_pct, 1)}%｜${launchStructureText}${launch.recent_bc_date ? `｜最近轉強紀錄 ${esc(launch.recent_bc_date)}` : ''}｜負責提早發現，不等於可買</div>` : '';
+        const launchHtml = launch.eligible === true ? `<div class="signal-note">${passivePresentation?'S '+esc(item.as_of||'日期待更新')+' 前次日K｜':''}🌱 蓄勢候選｜底部結構 ${Number(launch.a_score || scores.A || 0)}｜1年位階 ${num(launch.position_1y_pct ?? metrics.position_1y_pct, 1)}%｜${launchStructureText}${launch.recent_bc_date ? `｜最近轉強紀錄 ${esc(launch.recent_bc_date)}` : ''}｜負責提早發現，不等於可買</div>` : '';
         const launchSeq = metrics.launch_sequence || metrics.ma_cluster?.launch_sequence || {};
         const launchDays = launchSeq.days_since_first==null||launchSeq.days_since_first===''?NaN:Number(launchSeq.days_since_first);
         const launchBarState = launchBarDisplayState(item);
@@ -7252,21 +7266,20 @@ h1 {
         const life=overnightLifecycleState(item);
         const priceSource=quoteDisplayState(q,item);
         const origin=priceSource.label;
+        const passive=item.__passive_monitor===true?passiveWatchDescription(item,q):null;
         const headline=zone==='holding'?String(action?.text||'續抱'):
-          item.__passive_monitor===true
-          ?passiveWatchDescription(item,q).label
+          passive?passive.label
           :!recent?'⚪ 舊版模型待補算｜僅供觀察':
           zone==='entry'&&action?.phase==='confirmed'&&action?.buyable!==true
             ?'⚪ 正式買點仍待盤中驗證｜目前不可直接買':
           zone==='entry'&&action?.phase==='trial'&&action?.trialable!==true
             ?'🟡 小量試單條件待確認｜目前非買點':
           String(action?.text||life.label||'⚪ 等待確認');
-        const reason=item.__passive_monitor===true
-          ?passiveWatchDescription(item,q).detail+'｜未確認買進'
+        const reason=passive?passive.detail+'｜未確認買進'
           :!recent?'新版完整日K尚未寫入，不得當作試單或正式買點':
           zone==='launch'?'發動前仍是觀察名單，展開不代表可以買進':
           '進場資格另依當日有效成交、風控與存活確認，展開不會解鎖';
-        const plan=String(action?.detail||life.tomorrow||'觀察量價及MA10／MA20／MA60');
+        const plan=passive?passive.nextStep:String(action?.detail||life.tomorrow||'觀察量價及MA10／MA20／MA60');
         const structure=price==null||ma20<=0?'均線待更新':
           price<ma20?'🔴 MA20下方｜等止跌':
           [ma10,ma20,ma60].every(x=>x>0&&price>=x)
