@@ -4698,10 +4698,10 @@ h1 {
           ...add(labels.reclaimRows,'🟡 MA10／MA20回踩｜非買點'),
           ...add(labels.queuedDisplayRows,'🌱 底部已成形｜等發動'),
           ...add(labels.recalcDisplayRows,'⚪ 模型待補算｜非買點'),
-          ...add(labels.retainedRows,'📋 前次新版留存｜非買點')];
+          ...add(labels.retainedRows,'📋 前次新版留存｜非買點'),
+          ...add(labels.pullbackRows,'🔵 高乖離｜持續追蹤等回踩')];
         const risk=[
           ...add(labels.avoidRows,'🔴 風險警戒｜先避開'),
-          ...add(labels.pullbackRows,'🔵 位置偏高｜等回踩'),
           ...add(labels.waitRows,'🟡 條件未齊｜先觀察')];
         const shown=new Set([...today,...watch,...risk].map(e=>String(e.row?.item?.stock_id||'')).filter(Boolean));
         const persistent=groupedEntrySavedWatches(shown);
