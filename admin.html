@@ -2012,6 +2012,18 @@ h1 {
       let holdingVisibilityControl = null; // 已買進頁專屬，切換分頁後失效
       let holdingManualQuoteRefresh = null; // only a user-initiated C verification, no S refresh
       let pullbackWatch = new Map();
+      // Names are display-only and must never depend on a fresh daily K scan.
+      const archivedNameFallback = new Map([
+        ['3062','建漢'],['3147','大綜'],['3701','大眾控'],
+        ['4174','浩鼎'],['5202','力新'],['6505','台塑化']
+      ]);
+      const trackedStockName = (id,item=null,w=null) => {
+        const key=String(id||'');
+        const candidates=[item?.stock_name,pullbackWatchSnapshots.get(key)?.stock_name,
+          w?.stock_name,archivedNameFallback.get(key)];
+        return candidates.map(v=>String(v||'').trim())
+          .find(v=>v&&v!=='名稱待補'&&v!=='undefined')||'名稱待補';
+      };
       let pullbackWatchSnapshots = new Map();
       let pullbackWatchArchived = [];
       const persistentTrialInFlight = new Set();
@@ -3949,6 +3961,14 @@ h1 {
           if (!response.ok || !data?.ok) return [];
           pullbackWatch = new Map((data.watches || []).map(w => [String(w.stock_id), w]));
           pullbackWatchSnapshots = new Map((data.items || []).map(item => [String(item.stock_id),item]));
+          for(const item of data.items||[]) {
+            const id=String(item?.stock_id||''),name=String(item?.stock_name||'').trim();
+            if(id&&name&&name!=='名稱待補')archivedNameFallback.set(id,name);
+          }
+          for(const w of [...(data.watches||[]),...(data.archived||[])]) {
+            const id=String(w?.stock_id||''),name=String(w?.stock_name||'').trim();
+            if(id&&name&&name!=='名稱待補')archivedNameFallback.set(id,name);
+          }
           pullbackWatchArchived = Array.isArray(data.archived)?data.archived:[];
           const boughtIds=[...pullbackWatch.keys()].filter(id => holdings.has(id));
           if (boughtIds.length) {
@@ -4733,7 +4753,7 @@ h1 {
         const saved=[],risky=[];
         const card=(w,label,note) => {
           const id=String(w.stock_id||''),item=pullbackWatchSnapshots.get(id);
-          const name=String(item?.stock_name||'名稱待補');
+          const name=trackedStockName(id,item,w);
           const day=String(item?.as_of||w.first_as_of||'待補算');
           const close=Number(item?.metrics?.close),ma20=Number(item?.metrics?.ma20);
           const first=String(w.first_as_of||'未記錄');
@@ -4918,7 +4938,7 @@ h1 {
             &&String(item.as_of||'')===expectedSignalDataDate();
           const first=String(w.first_as_of||'未記錄');
           const day=String(item?.as_of||'未取得');
-          const name=String(item?.stock_name||'');
+          const name=trackedStockName(id,item,w);
           const title=pending?'⚪ 追蹤紀錄保留｜今日新版待核對（非買點）'
             :invalid?'🔴 追蹤失效｜已移至歷史'
             :w.trial_last_as_of?'🟠 曾符合小量試單｜持續追蹤（目前非試單）'
