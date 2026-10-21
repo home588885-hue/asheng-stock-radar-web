@@ -5165,6 +5165,8 @@ h1 {
         // A research shortlist, NOT an entry signal. It is generated only
         // from the CURRENT signed Shan-Chuan v2 model already loaded in ENTRY.
         // Reuses existing classified buckets; never expands scan or quote calls.
+        // One symbol, one decision area: risk bucket always wins over the overnight shortlist.
+        const overnightRiskIds=new Set([...avoidRows,...waitRows].map(row=>String(row?.item?.stock_id||'')).filter(Boolean));
         const researchGroups=[
           {label:'盤後試單準備',weight:8,rows:eodTrialRows},
           {label:'箱型第一根觀察',weight:7,rows:boxFirstRows},
@@ -5183,7 +5185,7 @@ h1 {
           const gap=close>0&&ma20>0?(close/ma20-1)*100:NaN;
           const mother=String(m.shanchuan_v2?.mother_child?.lifecycle?.state||'');
           const disqualified=['mother_low_broken','child_low_broken','invalid','broken'].includes(mother);
-          if(!id||researchSeen.has(id)||holdings.has(id)||!unifiedRadarGeneration(item)
+          if(!id||overnightRiskIds.has(id)||researchSeen.has(id)||holdings.has(id)||!unifiedRadarGeneration(item)
             ||String(item.as_of||'')!==expected
             ||!Number.isFinite(gap)||chaseOver(item,close)||gap<(-3)
             ||!Number.isFinite(vol)||vol<1000
@@ -5205,7 +5207,7 @@ h1 {
         const strongFollowups=rows.filter(row=>{
           const item=row?.item||{},id=String(item.stock_id||'');
           const lifecycle=overnightLifecycleState(item);
-          if(!id||extendedSeen.has(id)||holdings.has(id)
+          if(!id||overnightRiskIds.has(id)||extendedSeen.has(id)||holdings.has(id)
             ||!unifiedRadarGeneration(item)||String(item.as_of||'')!==expected
             ||lifecycle.key!=='extended')return false;
           const m=item.metrics||{};
@@ -5245,7 +5247,7 @@ h1 {
             +radarDeepDetailsHtml(v5MonitorCard(item,validatedQuote,studyAction))
             +'</div>';
         };
-        const riskStudyHtml=!topResearch.length&&riskStudy.length
+        const riskStudyHtml=!topResearch.length&&!strongFollowups.length&&riskStudy.length
           ?'<div class="entry-research-empty"><strong>📘 今晚可先研究的風控案例（全部不是買點）</strong>'
             +riskStudy.map(row=>{
               const item=row.item,m=item.metrics||{},close=Number(m.close),ma20=Number(m.ma20);
