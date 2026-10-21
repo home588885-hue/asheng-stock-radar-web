@@ -679,7 +679,7 @@ test('Pre-breakout signal survives live breakout without bypassing trade gates',
     (v,d=1)=>Number(v).toFixed(d));
   const item={stock_id:'TEST',as_of:'2026-10-20',metrics:{
     close:100,prev_close:99,ma10:99,ma20:98,ma60:97,high20_prev:102,
-    current_volume_lots:1200,avg_volume_20_lots:450,
+    position_1y_pct:35,current_volume_lots:1200,avg_volume_20_lots:450,
     ma_cluster:{rising:{ma10:true,ma20:true},day_volume_ratio:1.2},
     entry_candle_guard:{weak_after_breakout:false},
     prebreakout_scout:{version:'2026-10-21-prebreakout-scout-v1',
@@ -690,6 +690,7 @@ test('Pre-breakout signal survives live breakout without bypassing trade gates',
   assert.equal(scout(item,{price:120}).priority,98);
   assert.match(scout(item,{price:120}).label,/禁追/);
   assert.equal(scout({...item,as_of:'2026-10-19'}).eligible,false);
+  assert.equal(scout({...item,metrics:{...item.metrics,position_1y_pct:96}}).eligible,false);
   assert.equal(scout({...item,metrics:{...item.metrics,current_volume_lots:150}}).eligible,false);
   assert.equal(scout({...item,metrics:{...item.metrics,prebreakout_scout:{
     version:'2026-10-21-prebreakout-scout-v1',as_of:'2026-10-20',
