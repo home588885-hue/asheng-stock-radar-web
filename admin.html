@@ -5391,7 +5391,7 @@ h1 {
           const original=row.action||{},phaseInfo=overnightLifecycleState(item);
           const studyAction={...original,buyable:false,trialable:false,
             phase:blocked?'blocked':'observe',
-            text:item.__passive_monitor===true?passiveWatchDescription(item).label:phaseInfo.label,
+            text:item.__passive_monitor===true?passiveWatchDescription(item,bestTodayQuote(row?.quote,String(item.stock_id||''))).label:phaseInfo.label,
             detail:'明日觀察：'+phaseInfo.tomorrow+'｜'+
               String(original.detail||original.text||'依盤後模型核對現階段')};
           const validatedQuote=bestTodayQuote(row?.quote,String(item.stock_id||''));
@@ -5432,9 +5432,9 @@ h1 {
           const live=validTodayQuote(candidateQuote)?candidateQuote:null;
           const s=quoteDisplayState(live,item);
           const compactPrice=s.label+' '+(live?num(Number(live.price),2):close>0?num(close,2):'-')+(s.today_trade?'｜'+s.moment:'');
-          const stageLabel=item.__passive_monitor===true?passiveWatchDescription(item).label:phaseInfo.label;
+          const stageLabel=item.__passive_monitor===true?passiveWatchDescription(item,live).label:phaseInfo.label;
           const nextFocus=radarShortAdvice(item,{key:phaseInfo.key,
-            detail:item.__passive_monitor===true?passiveWatchDescription(item).detail:phaseInfo.tomorrow});
+            detail:item.__passive_monitor===true?passiveWatchDescription(item,live).detail:phaseInfo.tomorrow});
           return '<details class="entry-research-stock entry-research-details" data-stock-key="'
             +esc(id)+'" data-research-kind="watch">'
             +'<summary class="entry-research-summary radar-compact-summary">'
@@ -5482,7 +5482,7 @@ h1 {
               return researchCard({row,item:row.item,
                 gap:close>0&&ma20>0?(close/ma20-1)*100:null,
                 vol:Number(m.current_volume_lots),weight:0,
-                label:passiveWatchDescription(row.item).label});
+                label:passiveWatchDescription(row.item,bestTodayQuote(row.quote,String(row.item.stock_id||''))).label});
             }).join(''):'';
         const researchPreview='<section class="entry-research-panel" data-stable-key="entry-research">'
           +'<strong>🌙 明日看盤清單｜直接看目前階段</strong>'
@@ -7238,7 +7238,7 @@ h1 {
         const origin=priceSource.label;
         const headline=zone==='holding'?String(action?.text||'續抱'):
           item.__passive_monitor===true
-          ?String(action?.text||passiveWatchDescription(item).label)
+          ?passiveWatchDescription(item,q).label
           :!recent?'⚪ 舊版模型待補算｜僅供觀察':
           zone==='entry'&&action?.phase==='confirmed'&&action?.buyable!==true
             ?'⚪ 正式買點仍待盤中驗證｜目前不可直接買':
@@ -7246,7 +7246,7 @@ h1 {
             ?'🟡 小量試單條件待確認｜目前非買點':
           String(action?.text||life.label||'⚪ 等待確認');
         const reason=item.__passive_monitor===true
-          ?passiveWatchDescription(item).detail+'｜未確認買進'
+          ?passiveWatchDescription(item,q).detail+'｜未確認買進'
           :!recent?'新版完整日K尚未寫入，不得當作試單或正式買點':
           zone==='launch'?'發動前仍是觀察名單，展開不代表可以買進':
           '進場資格另依當日有效成交、風控與存活確認，展開不會解鎖';
@@ -7442,7 +7442,7 @@ h1 {
         const lowBase=lowBaseWatchState(item);
         const pullback=ma10PullbackWatchState(item);
         const trial=item.__passive_monitor===true||item.__observation_only===true?null:ma10PullbackTrialState(item,q);
-        const status=item?.__passive_monitor===true?passiveWatchDescription(item).label
+        const status=item?.__passive_monitor===true?passiveWatchDescription(item,q).label
           :item?.__observation_only===true?'⚪ 舊日K初選｜等新版補算（非買點）'
           :displayModelWarning(item)?displayModelWarning(item)
           :risk?.kind==='hard'?String(risk.text||'🔴 盤中風險｜暫不新買')
@@ -7945,8 +7945,8 @@ h1 {
                       text:'📋 最近完整日K候選（非買點）',detail:'尚未取得目標交易日完整模型'}:null);
                 return { ...row, action:row.item.__passive_monitor===true
                   ?{key:'passive_breakout_watch',phase:'observe',rank:2,stale_model:true,
-                    buyable:false,trialable:false,...passiveWatchDescription(row.item),
-                    text:passiveWatchDescription(row.item).label}
+                    buyable:false,trialable:false,...passiveWatchDescription(row.item,row.quote),
+                    text:passiveWatchDescription(row.item,row.quote).label}
                   :entrySnapshotState(row.item,baseAction,row.quote) };
               })
               .filter(row => row.action)
