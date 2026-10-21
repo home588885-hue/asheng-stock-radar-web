@@ -2115,7 +2115,14 @@ h1 {
         if(!y)return true;
         const d=String(x.as_of||'').localeCompare(String(y.as_of||''));
         if(d!==0)return d>0;
-        return String(x.scanned_at||'')>String(y.scanned_at||'');
+        const ts=String(x.scanned_at||'').localeCompare(String(y.scanned_at||''));
+        if(ts!==0)return ts>0;
+        // Identical S model day+scan: safety invalid/overheated outranks
+        // an ENTRY transfer, which outranks an earlier prelaunch scout.
+        // Old browsers must not roll a cross-device transfer backwards.
+        const rank=z=>['invalid','overheated'].includes(String(z?.state||''))?3
+          :String(z?.label||'').includes('已轉進場雷達')?2:1;
+        return rank(x)>rank(y);
       };
       const scoutFromCloud=x=>({
         stock_id:String(x.stock_id||''),stock_name:String(x.stock_name||'').slice(0,64),
