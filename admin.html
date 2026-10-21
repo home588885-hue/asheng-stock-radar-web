@@ -4055,6 +4055,34 @@ h1 {
           ||!chasePass(item,price))return null;
         return {pace,ma10:setup.ma10,gap20,support:setup.support,lots};
       };
+      // V2 fusion: the original 2026-10-08 early starter participation lane.
+      // Keep the current MA10/20/60, signed S model, hard risk, and fresh C gates.
+      // This lane only relaxes soft intraday volume pace, never V5 formal green.
+      const legacyEarlyStarterTrial = (item,quote,eligible) => {
+        const setup=ma10StarterSetup(item);
+        if(!setup||!eligible||!quoteFreshForTrial(quote))return null;
+        const m=item.metrics||{},price=Number(quote?.price),open=Number(quote?.open);
+        const high=Number(quote?.high),lots=Number(quote?.volume_lots);
+        const fraction=marketFraction(quote?.quote_time);
+        const projected=fraction>0?lots/fraction:NaN;
+        const pace=setup.avg>0?projected/setup.avg:NaN;
+        const gap20=setup.ma20>0?(price/setup.ma20-1)*100:NaN;
+        const minLots=fraction>0?Math.max(200,Math.min(1000,Math.ceil(setup.avg*fraction*.55))):NaN;
+        const kd=Number(m.daily_k),pos=Number(m.position_1y_pct);
+        const d=Number(m.daily_d);
+        if(![price,open,high,lots,projected,pace,gap20,minLots,kd,pos].every(Number.isFinite)
+          ||Math.min(price,open,high)<=0||lots<minLots||projected<1000
+          ||pace<.55||pace>2.60||pos>80
+          ||kd<30||kd>85||(Number.isFinite(d)&&kd<d)
+          ||price<Math.max(setup.ma10,setup.ma20,setup.ma60)*1.001
+          ||price<open*.995||price<high*.985
+          ||price>setup.ma10*1.025||price>setup.close*1.025
+          ||gap20<0||gap20>5||!chasePass(item,price)
+          ||m.entry_candle_guard?.macd_weak===true
+          ||m.entry_candle_guard?.weak_after_breakout===true
+          ||m.entry_candle_guard?.kd_high_weak===true)return null;
+        return {pace,lots,gap20,ma10:setup.ma10};
+      };
       const eodStarterWatchEligible = item => {
         if(ma10StarterSetup(item))return true;
         if(!item||holdings.has(String(item.stock_id||''))||!unifiedRadarGeneration(item)||!chaseModelReady(item)
@@ -4438,6 +4466,16 @@ h1 {
           detail:'S前日靠近'+earlyStarterTrial.support+'，C當日已站穩MA10 '+num(earlyStarterTrial.ma10,2)
             +'｜量速 '+num(earlyStarterTrial.pace,2)+'x｜有效累計 '+num(earlyStarterTrial.lots,0)+'張'
             +'｜MA20乖離 '+num(earlyStarterTrial.gap20,2)+'%｜僅小量評估，非V5正式買點'};
+        // The old early-starter edge, fused into today's V2 action pipeline.
+        // Only the orange trial tier; never label a candidate as green.
+        const legacyStarter=legacyEarlyStarterTrial(item,quote,earlyEligible);
+        if(legacyStarter)return {...baseAction,key:'legacy_early_starter_trial',
+          phase:'trial',rank:Math.max(94,Number(baseAction.rank||0)),
+          className:'trial',buyable:false,trialable:true,live_quote_verified:true,
+          text:'🟠 舊版第一根節奏｜新版安全試單',
+          detail:'舊版提早量速 '+num(legacyStarter.pace,2)+'x，C有效成交 '
+            +num(legacyStarter.lots,0)+'張｜MA20乖離 '+num(legacyStarter.gap20,2)
+            +'%｜新版風控已核對，僅小量試單；非V5正式買點'};
         // Preserve the user's original strict MA10 pullback trial route.
         // Never convert the NEW research-rejected MA20 observation to orange.
         const originalTrial=eligible&&originalMa10Watch
