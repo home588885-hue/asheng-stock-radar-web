@@ -3690,13 +3690,32 @@ h1 {
         const text=score!=null&&Number.isFinite(score)
           ?'籌碼 '+num(score,0)+'分・'+label:'籌碼待更新';
         const inst=chip?.institutional||{},foreign=chip?.foreign||{};
-        const net=inst.foreign_net_5d==null?null:Number(inst.foreign_net_5d);
+        const net10=inst.foreign_10d_covered===true&&inst.foreign_net_10d!=null
+          ?Number(inst.foreign_net_10d):null;
+        const net5=inst.foreign_net_5d==null?null:Number(inst.foreign_net_5d);
         const delta=foreign.change_10d_pp==null?null:Number(foreign.change_10d_pp);
-        const five=net!=null&&Number.isFinite(net)
-          ?net>0?'外資近5日累計買超':net<0?'外資近5日累計賣超':'外資近5日買賣持平':'';
-        const ten=delta!=null&&Number.isFinite(delta)
-          ?'外資10日持股比 '+(delta>0?'+':'')+num(delta,2)+'百分點':'';
-        return [text,five,ten].filter(Boolean).join('｜');
+        const direction=net10!=null&&Number.isFinite(net10)
+          ?net10>0?'外資10日累計買超':net10<0?'外資10日累計賣超':'外資10日買賣持平'
+          :net5!=null&&Number.isFinite(net5)
+            ?net5>0?'外資近5日累計買超':net5<0?'外資近5日累計賣超':'外資近5日持平'
+            :delta!=null&&Number.isFinite(delta)
+              ?'外資10日持股比 '+(delta>0?'+':'')+num(delta,2)+'百分點':'';
+        return [text,direction].filter(Boolean).join('｜');
+      };
+      // Keep the original 「籌碼／營收」 row, no extra alerts/sections.
+      const fundamentalChipBrief = metrics=>{
+        const f=metrics?.fundamental_blend||{};
+        if(f.version!=='2026-10-21-fundamental-chip-confluence-v1'
+          ||f.as_of==null)return '';
+        if(f.all_five_confirmed===true)return '五項成長／籌碼／突破共振（仍非買點）';
+        const parts=[];
+        if(f.revenue3m_yoy_gt20===true)parts.push('近3月營收年增>20%');
+        if(f.gross_margin_2q_up===true)parts.push('毛利率連兩季改善');
+        if(f.operating_cashflow_positive===true)parts.push('單季營業現金流正');
+        // Foreign ten-day cumulative flow is already included once in
+        // chipMergedSnapshotText; no duplicated status line.
+        if(f.volume_break_ma20===true)parts.push('帶量站上MA20');
+        return parts.join('・');
       };
       const selectionGuide = (item, signal) => {
         const metrics = item?.metrics || {};
@@ -3803,7 +3822,7 @@ h1 {
           if (Number.isFinite(aggregate3m)) parts.push(`近3月 ${aggregate3m >= 0 ? '+' : ''}${num(aggregate3m, 1)}%`);
           revenueText = parts.join('・');
         }
-        return { status, position, levels, fundamentals: `${chipText}｜${revenueText}`, quality: qualityText, shape: shapeText, note };
+        return { status, position, levels, fundamentals: [chipText,revenueText,fundamentalChipBrief(metrics)].filter(Boolean).join('｜'), quality: qualityText, shape: shapeText, note };
       };
 
       const baseSimpleActionState = (item, quote = null) => {
@@ -6017,9 +6036,11 @@ h1 {
         const holdingTodayHtml = holding ? holdingActionHtml(item, displayQuote) : '';
         const chip = metrics.chip;
         const chipNotes = (chip?.notes||[]).filter(note =>
-          !(chip?.foreign?.change_10d_pp!=null
-            && Number.isFinite(Number(chip.foreign.change_10d_pp))
-            && String(note).startsWith('外資持股比10日')));
+          !(String(note).startsWith('外資持股比10日')
+            && ((chip?.institutional?.foreign_10d_covered===true
+                && chip.institutional.foreign_net_10d!=null)
+              || (chip?.foreign?.change_10d_pp!=null
+                && Number.isFinite(Number(chip.foreign.change_10d_pp))))));
         const chipHtml = chip ? `<div class="metrics"><span class="pill">🧩 ${esc(chipMergedSnapshotText(chip))}</span><span class="pill">技術＋籌碼 ${Number(chip.combined_score ?? item.score ?? 0)}</span>${chipNotes.map(note => `<span class="pill">${esc(memberFacingText(note))}</span>`).join('')}</div>` : ((item.stage === 'B' || item.stage === 'C') ? '<div class="meta">🧩 籌碼資料待下一次重掃更新</div>' : '');
         const liquidityKnown = metrics.current_volume_lots != null || metrics.avg_volume_20_lots != null;
         const liquidityHtml = liquidityKnown ? `<div class="metrics"><span class="pill">${metrics.liquidity_ok === true ? '✅' : '⚠️'} ${esc(metrics.liquidity_label || '流動性')}</span><span class="pill">當日量 ${Number(metrics.current_volume_lots || 0).toLocaleString('zh-TW')}張</span><span class="pill">20日均量 ${Number(metrics.avg_volume_20_lots || 0).toLocaleString('zh-TW')}張</span></div>` : '';
