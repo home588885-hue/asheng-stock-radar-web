@@ -4059,8 +4059,23 @@ h1 {
       // Keep the current MA10/20/60, signed S model, hard risk, and fresh C gates.
       // This lane only relaxes soft intraday volume pace, never V5 formal green.
       const legacyEarlyStarterTrial = (item,quote,eligible) => {
-        const setup=ma10StarterSetup(item);
-        if(!setup||!eligible||!quoteFreshForTrial(quote))return null;
+        // Independent original-style discovery: do not inherit the strict MA10 starter gate.
+        if(!item||!eligible||!quoteFreshForTrial(quote)
+          ||item.__observation_only===true||item.__passive_monitor===true
+          ||holdings.has(String(item.stock_id||''))
+          ||!unifiedRadarGeneration(item)||!chaseModelReady(item)
+          ||String(item.as_of||'')!==expectedSignalDataDate())return null;
+        const mm=item.metrics||{},guard=mm.entry_candle_guard||{},cluster=mm.ma_cluster||{};
+        const ma10=Number(mm.ma10),ma20=Number(mm.ma20),ma60=Number(mm.ma60);
+        const close=Number(mm.close),avg=Number(mm.avg_volume_20_lots);
+        if(![ma10,ma20,ma60,close,avg].every(v=>Number.isFinite(v)&&v>0)
+          ||cluster.all_rising!==true||close<Math.max(ma20,ma60)*.985
+          ||avg<500||Number(item.score)<70
+          ||guard.main_bull===false||guard.weak_after_breakout===true
+          ||mm.quality_gate?.pass===false||mm.holding_management?.strong_breakdown===true
+          ||['mother_low_broken','child_low_broken','invalid','broken']
+            .includes(String(mm.shanchuan_v2?.mother_child?.lifecycle?.state||'')))return null;
+        const setup={ma10,ma20,ma60,close,avg};
         const m=item.metrics||{},price=Number(quote?.price),open=Number(quote?.open);
         const high=Number(quote?.high),lots=Number(quote?.volume_lots);
         const fraction=marketFraction(quote?.quote_time);
@@ -4401,7 +4416,13 @@ h1 {
           &&mcModel?.quality?.bottom_structure===true
           &&mcModel?.quality?.chip_confirmed===true
           &&mcModel?.quality?.risk_pass===true;
-        if(!baseAction&&!recovery&&!originalMa10Watch&&!motherChildWatch&&!boxSetup)return null;
+        const legacyDiscovery=modelFresh&&unifiedRadarGeneration(item)
+          &&item?.metrics?.ma_cluster?.all_rising===true
+          &&Number(item?.score)>=70
+          &&Number(item?.metrics?.avg_volume_20_lots)>=500
+          &&Number(item?.metrics?.current_volume_lots)>=1000
+          &&item?.metrics?.entry_candle_guard?.weak_after_breakout!==true;
+        if(!baseAction&&!recovery&&!originalMa10Watch&&!motherChildWatch&&!boxSetup&&!legacyDiscovery)return null;
         if(!baseAction)baseAction={key:'pullback_watch',rank:32,className:'scout',
           text:motherChildWatch?'🟡 母子K突破｜研究追蹤':boxSetup?'🟡 箱型整理｜突破追蹤':'🟡 回踩支撐觀察｜等盤中量價',
           detail:motherChildWatch?'母子K量價與籌碼條件齊，等待獨立獲利驗證':boxSetup?'等待箱頂突破並核對盤中成交量':'最近完整日K模型待核對',
