@@ -7228,8 +7228,10 @@ h1 {
         const ma10=Number(m.ma10),ma20=Number(m.ma20),ma60=Number(m.ma60);
         const high=Number(m.high20_prev??mc.breakout_price);
         const lots=Number(m.current_volume_lots),avg=Number(m.avg_volume_20_lots);
+        const position=Number(m.position_1y_pct);
         if(!(close>0&&prev>0&&high>0&&ma10>0&&ma20>0&&ma60>0
-          &&lots>=1000&&avg>=400)||m.holding_management?.strong_breakdown===true
+          &&lots>=1000&&avg>=400&&Number.isFinite(position)
+          &&position>=0&&position<=75)||m.holding_management?.strong_breakdown===true
           ||g.weak_after_breakout===true||mc.breakout_detected_raw===true
           ||m.first_breakout20===true)return no;
         const near=(close/high-1)*100,bias=(close/ma20-1)*100;
@@ -7238,7 +7240,8 @@ h1 {
         const signed=sc.version==='2026-10-21-prebreakout-scout-v1'
           &&String(sc.as_of||'')===String(item.as_of||'');
         if(signed&&!(sc.eligible===true&&sc.actionable===false))return no;
-        if(!signed&&!(Number(mc.day_volume_ratio)>=.75
+        if(!signed&&!(Number(item.score)>=60
+          &&Number(mc.day_volume_ratio)>=.75
           &&Number(mc.day_volume_ratio)<=2.5
           &&mc.rising?.ma10===true&&mc.rising?.ma20===true))return no;
         const q=validTodayQuote(quote)?quote:null;
