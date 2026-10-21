@@ -5471,8 +5471,8 @@ h1 {
           ...overnightPassiveResearch.filter(item=>passiveRadarWatchEligible(item)
             &&!rows.some(row=>String(row.item?.stock_id||'')===String(item.stock_id||'')))
             .map(item=>({item,quote:null,action:{key:'passive_watch',phase:'observe',
-              buyable:false,trialable:false,...passiveWatchDescription(item),
-              text:passiveWatchDescription(item).label}}))
+              buyable:false,trialable:false,...passiveWatchDescription(item,bestTodayQuote(null,String(item.stock_id||''))),
+              text:passiveWatchDescription(item,bestTodayQuote(null,String(item.stock_id||''))).label}}))
         ].map(row=>[String(row.item?.stock_id||''),row])).values()],primaryResearchRows).slice(0,8);
         const passiveResearchHtml=passiveResearch.length
           ?'<div class="entry-research-hint"><b>🧭 型態追蹤｜MA10待轉強／突破等回踩｜'
@@ -5594,7 +5594,7 @@ h1 {
         if (holdings.has(String(item?.stock_id||''))) return {keep:false,rank:0,className:'held',label:'📌 已買進'};
         if(item?.__passive_monitor===true){
           return passiveRadarWatchEligible(item)&&item.__observation_kind==='ma10_pending_ma20_supported'
-            ?{keep:true,rank:1,className:'near-turn-monitor',label:passiveWatchDescription(item).label}
+            ?{keep:true,rank:1,className:'near-turn-monitor',label:passiveWatchDescription(item,bestTodayQuote(null,String(item.stock_id||''))).label}
             :{keep:false,rank:0,className:'watch-in-other-zone',label:'另區追蹤'};
         }
         if(item?.__observation_only===true)return observationModelForDisplay(item)
