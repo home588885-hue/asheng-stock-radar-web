@@ -5652,6 +5652,13 @@ h1 {
         const d=m.box_strategy.discovery||{};
         if(d.first_bar_today===true)
           return {keep:false,rank:0,className:'box-promoted',label:'📦 山川第一根已轉進場雷達'};
+        const preScout=radarPreBreakoutState(item);
+        const preLife=String(m.scan_intelligence?.effective_lifecycle||'');
+        const preEntry=String(m.trade_lifecycle?.entry?.state||'');
+        if(preScout.eligible&&!['ACTIVE','ENTRY'].includes(preLife)
+          &&!['starter','formal_candidate'].includes(preEntry)
+          &&m.v5?.entry_confirmed!==true)
+          return {keep:true,rank:155,className:'prebreakout-watch',label:preScout.label};
         const gap20=Number(m.ma20)>0?(Number(m.close)/Number(m.ma20)-1)*100:null;
         if(d.ready_watch===true&&gap20!=null&&chasePass(item,Number(m.close))
           &&m.v5?.entry_confirmed!==true
@@ -7208,12 +7215,57 @@ h1 {
       // 2026-10-21-watch-attention-v1: ONE read-only, signed-S/C attention
       // calculation reused in LAUNCH and ENTRY summaries, rankings and saved
       // watches. Never changes V5 entry, risk gates, holdings or quote cadence.
+      // V2 signed S-only observation; shared by LAUNCH, ENTRY and saved
+      // tracking. Live C can update label but never unlock trade permissions.
+      const radarPreBreakoutState=(item,quote=null)=>{
+        const no={eligible:false,priority:0,label:'',advice:''};
+        if(!item||holdings.has(String(item.stock_id||''))
+          ||!unifiedRadarGeneration(item)||!chaseModelReady(item)
+          ||String(item.as_of||'')!==expectedSignalDataDate()
+          ||item.__observation_only===true||item.__passive_monitor===true)return no;
+        const m=item.metrics||{},mc=m.ma_cluster||{},g=m.entry_candle_guard||{},sc=m.prebreakout_scout||{};
+        const close=Number(m.close),prev=Number(m.prev_close);
+        const ma10=Number(m.ma10),ma20=Number(m.ma20),ma60=Number(m.ma60);
+        const high=Number(m.high20_prev??mc.breakout_price);
+        const lots=Number(m.current_volume_lots),avg=Number(m.avg_volume_20_lots);
+        if(!(close>0&&prev>0&&high>0&&ma10>0&&ma20>0&&ma60>0
+          &&lots>=1000&&avg>=400)||m.holding_management?.strong_breakdown===true
+          ||g.weak_after_breakout===true||mc.breakout_detected_raw===true
+          ||m.first_breakout20===true)return no;
+        const near=(close/high-1)*100,bias=(close/ma20-1)*100;
+        if(!(near>=-6&&near<0&&bias>=-2&&bias<=6&&close/prev<=1.045
+          &&ma10>=ma20*.985&&ma20>=ma60*.97&&chasePass(item,close)))return no;
+        const signed=sc.version==='2026-10-21-prebreakout-scout-v1'
+          &&String(sc.as_of||'')===String(item.as_of||'');
+        if(signed&&!(sc.eligible===true&&sc.actionable===false))return no;
+        if(!signed&&!(Number(mc.day_volume_ratio)>=.75
+          &&Number(mc.day_volume_ratio)<=2.5
+          &&mc.rising?.ma10===true&&mc.rising?.ma20===true))return no;
+        const q=validTodayQuote(quote)?quote:null;
+        const price=q?Number(q.price):close;
+        if(q&&price<Math.max(ma10,ma20))return {eligible:true,priority:25,
+          label:'🔴 突破前哨失守｜暫不新買',
+          advice:'跌破短均線，等待重新整理與日K確認'};
+        if(q&&chaseOver(item,price))return {eligible:true,priority:98,
+          label:'🚀 前哨後急漲｜高乖離禁追',
+          advice:'今天已偏離MA20上限｜不追價，等回踩再評估'};
+        if(q&&price>=high)return {eligible:true,priority:95,
+          label:'⚡ 前哨突破前高｜待驗證（非買點）',
+          advice:'C成交越過前高 '+num(high,2)+'｜仍須原量價及風控確認'};
+        const ready=signed?sc.state==='ready':near>=-3;
+        return {eligible:true,priority:ready?94:78,
+          label:ready?'🎯 突破前哨｜優先觀察（非買點）':'🌱 整理轉強｜留意前高（非買點）',
+          advice:'距前高 '+num(Math.abs(near),1)+'%｜觀察 '+num(high,2)+' 突破與MA10守穩',
+          source:signed?'signed-20day-scout':'signed-v2-basic-watch'};
+      };
       const RADAR_WATCH_ATTENTION_VERSION='2026-10-21-watch-attention-v1';
       const radarWatchAttentionState=(item,quote=null)=>{
         const none={priority:0,label:'',advice:'',version:RADAR_WATCH_ATTENTION_VERSION};
         if(!item||holdings.has(String(item.stock_id||''))
           ||!unifiedRadarGeneration(item)||!chaseModelReady(item)
           ||String(item.as_of||'')!==expectedSignalDataDate())return none;
+        const pre=radarPreBreakoutState(item,quote);
+        if(pre.eligible)return {...pre,version:RADAR_WATCH_ATTENTION_VERSION};
         const m=item.metrics||{},mc=m.ma_cluster||{},g=m.entry_candle_guard||{};
         if(m.holding_management?.strong_breakdown===true||g.weak_after_breakout===true
           ||g.main_bull===false||mc.above_all_mas!==true
@@ -7524,6 +7576,7 @@ h1 {
         const risk=newEntryRiskGate(item,q);
         // Do not turn a watch candidate into a buy signal merely by opening a card.
         const early=earlyTurnWatchState(item);
+        const preScout=radarPreBreakoutState(item,q);
         const lowBase=lowBaseWatchState(item);
         const pullback=ma10PullbackWatchState(item);
         const trial=item.__passive_monitor===true||item.__observation_only===true?null:ma10PullbackTrialState(item,q);
@@ -7535,6 +7588,7 @@ h1 {
           :risk?.kind==='position'&&radarWatchAttentionState(item,q).priority>=70
             ?radarWatchAttentionState(item,q).label
           :risk?.kind==='position'?String(risk.text||'🔵 位置偏高｜等回踩')
+          :preScout.eligible?radarPreBreakoutState(item,q).label
           :early?'🌱 早期轉強｜優先追蹤，不可直接試單'
           :trial?trial.text
           :pullback?'🟡 縮量回踩 MA10 守住｜優先觀察，尚非買點'
@@ -7760,6 +7814,9 @@ h1 {
               if(item?.__passive_monitor===true||item?.__observation_only===true)return true;
                // The same S-active model candidate stays visible when C price breaks out.
               if (isActiveLaunchItem(item)) return true;
+              // Signed pre-breakout scout remains visible through the day's
+              // breakout or overextension, until S next supplies a full day K.
+              if(radarPreBreakoutState(item).eligible)return true;
               if (!q) return true;
               const m=item?.metrics||{}, mc=m.ma_cluster||{};
               const price=Number(q.price), high=Number(q.high), ma10=Number(m.ma10), ma20=Number(m.ma20), ma60=Number(m.ma60);
