@@ -124,7 +124,7 @@ test('New-generation ENTRY keeps the authenticated cross-day shelf on both sourc
 test('All three zones use Cloudflare C, 3-minute ticker, no old HTML cache',()=>{
   assert.match(html,/const fetchLiveQuoteChunk = async symbols/);
   assert.match(html,/const quoteRecentForDisplay = quote =>/);
-  assert.match(html,/const greenDipObservation=\(item,quote=null\)/);
+  assert.match(html,/const quoteFreshForTrial = quote =>/);
   assert.match(html,/holdingQuoteRefreshMs:\s*180000/);
   assert.match(html,/if \(stage !== 'LAUNCH'/);
   assert.match(html,/async function refreshLiveQuotes\(\)/);
@@ -151,7 +151,7 @@ test('New +8/+12/+15 chase tiers pass precise BIAS boundaries, never fake a miss
   assert.match(html,/const high=\(Number\.isFinite\(pos\)/);
   assert.match(html,/chaseOver\(item,price\)/);
   assert.match(html,/chasePass\(item,close\)/);
-  assert.match(html,/chasePass\(item,p\)/);
+  assert.match(html,/const ma10StarterLiveTrial = \(item,quote,eligible\) =>/);
   assert.doesNotMatch(html,/新進場5%上限|隔天以原本5%乖離|距 MA20 超過 5%/);
   assert.match(html,/selectionMas: Object.freeze\(\['MA10','MA20','MA60'\]\)/);
 });
