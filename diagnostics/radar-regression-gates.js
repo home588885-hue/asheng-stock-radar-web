@@ -590,6 +590,50 @@ test('ACTIVE starter MA10 C-only orange stays fresh, guarded and non-green',()=>
  assert.match(html,/nightlySnapshotOnly: true/);
  assert.match(html,/selectionMas: Object.freeze\(\['MA10','MA20','MA60'\]\)/);
 });
+test('Unified passive C/S status is identical for mini, deep guide and next step',()=>{
+  const presentSource=section('      const passiveWatchDescription=(item,quote=null)=>{','      const displayModelWarning=item=>');
+  const present=new Function('bestTodayQuote','validTodayQuote','num',
+    presentSource+'return passiveWatchDescription;')(
+      q=>q,q=>q?.valid===true,(v,d=2)=>Number(v).toFixed(d));
+  const item={stock_id:'3062',as_of:'2026-10-19',
+    __passive_monitor:true,__observation_kind:'ma10_pending_ma20_supported',
+    metrics:{close:22.1,ma10:22.37,ma20:22.27}};
+  const live=present(item,{valid:true,price:23.15});
+  const below=present(item,{valid:true,price:22.1});
+  const noC=present(item,null);
+  assert.equal(live.liveAbove,true);
+  assert.match(live.label,/盤中已站上MA10／MA20/);
+  assert.match(live.position,/C當日成交 23\.15/);
+  assert.match(live.position,/前次S均線 MA10 22\.37／MA20 22\.27/);
+  assert.match(live.modelPrefix,/S 2026-10-19 前次完整日K/);
+  assert.match(live.shortAdvice,/已站上兩線/);
+  assert.match(live.detail,/非小量試單或正式買點/);
+  assert.equal(below.liveAbove,false);
+  assert.match(below.label,/MA10 待站穩/);
+  assert.match(noC.position,/S 2026-10-19 收盤/);
+  const high=present({...item,__observation_kind:'extended_breakout_wait_pullback'},{valid:true,price:23.15});
+  assert.match(high.label,/前次模型高乖離/);
+  assert.match(high.detail,/非小量試單或正式買點/);
+  const guide=section('        const passivePresentation=item.__passive_monitor===true','        const launch = metrics.launch_candidate || {};');
+  assert.match(guide,/passiveWatchDescription\(item,displayQuote\)/);
+  assert.match(guide,/guide\.status=passivePresentation\.label/);
+  assert.match(guide,/guide\.position=passivePresentation\.position/);
+  assert.match(guide,/guide\.shape=passivePresentation\.modelPrefix/);
+  assert.match(guide,/guide\.note=passivePresentation\.note/);
+  assert.doesNotMatch(guide,/price>=ma10/);
+  const movement=section('      const stockMovementHtml =','      const holdingUrgencyRank =');
+  assert.match(movement,/const passive=item\.__passive_monitor===true\?passiveWatchDescription\(item,q\)/);
+  assert.match(movement,/passive\?passive\.label/);
+  assert.match(movement,/passive\?passive\.detail/);
+  assert.match(movement,/passive\?passive\.nextStep/);
+  const short=section('      const radarShortAdvice=','      \/\/ 2026-10-20-continuation-risk-display-v1');
+  assert.match(short,/passiveWatchDescription\(item,quote\)\.shortAdvice/);
+  assert.match(html,/radarShortAdvice\(item,safeDisplayAction,q\)/);
+  assert.match(html,/radarShortAdvice\(item,\{text:status\},q\)/);
+  assert.match(html,/radarShortAdvice\(item,action,q\)/);
+  assert.match(html,/text:passive\?passive\.label:phaseInfo\.label/);
+  assert.match(html,/S '\+esc\(item\.as_of\|\|'日期待更新'\)\+' 前次日K/);
+});
 for(const g of html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi)){
   if(/\bsrc=/.test(g[1]))continue;
   new Function(g[2]);
