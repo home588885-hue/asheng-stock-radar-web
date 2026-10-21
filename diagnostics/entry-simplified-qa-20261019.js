@@ -23,6 +23,19 @@ const esc=v=>String(v??'').replace(/[&<>"']/g,s=>({'&':'&amp;','<':'&lt;','>':'&
 const {simplifiedEntryHtml,groupedEntrySavedWatches}=new Function(
   'entryCompactStock','esc','pullbackWatch','pullbackWatchSnapshots','pullbackWatchArchived',
   'holdings','unifiedRadarGeneration','expectedSignalDataDate','pullbackWatchState','num',
+  // Isolated signed-V2 presentation dependencies; no network or live trading.
+  "const quoteFreshForTrial=()=>false;"+
+  "const formalEntryValidation={enabled:false};"+
+  "const radarWatchAttentionState=()=>({priority:0});"+
+  "const bestTodayQuote=()=>null;"+
+  "const validTodayQuote=()=>false;"+
+  "const quoteDisplayState=()=>({label:'S 日K',moment:''});"+
+  "const trackedStockName=(id,item)=>item?.stock_name||id;"+
+  "const stockMovementHtml=()=>'';"+
+  "const continuationRiskMiniHtml=()=>'';"+
+  "const radarDeepDetailsHtml=()=>'';"+
+  "const v5MonitorCard=()=>'';"+
+  "const radarShortAdvice=()=> '等待完整K';"+
   source+'\nreturn {simplifiedEntryHtml,groupedEntrySavedWatches};'
 )(
   (row,label)=>'<details class="entry-mini" data-stock-key="'+esc(row.item.stock_id)+'"><summary>'+esc(label)+'</summary></details>',
