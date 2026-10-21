@@ -4913,6 +4913,7 @@ h1 {
           ...add(safeCompleted,'🟢 正式買點｜當日已驗證'),
           ...add(safeStarter,'🟠 可小量試單｜當日已驗證')];
         const watch=[
+          ...add(labels.tomorrowResearchRows,'🌙 明日研究追蹤｜非買點'),
           ...add((labels.completedRows||[]).filter(row=>!safeCompleted.includes(row)),'🟡 正式買點待重新確認｜非買點'),
           ...add((labels.starterRows||[]).filter(row=>!safeStarter.includes(row)),'🟡 試單待重新確認｜非買點'),
           ...add(labels.eodTrialRows,'🟠 明日試單觀察｜目前非買點'),
@@ -4934,14 +4935,23 @@ h1 {
         const risk=[
           ...add(labels.avoidRows,'🔴 風險警戒｜先避開'),
           ...add(labels.waitRows,'🟡 條件未齊｜先觀察')];
-        const shown=new Set([...today,...watch,...risk].map(e=>String(e.row?.item?.stock_id||'')).filter(Boolean));
+        // Tomorrow's one-and-only tracking shelf. No duplicate stock cards,
+        // and a risk/held stock can never leak into next-session research.
+        const blockedIds=new Set([...today,...risk].map(x=>String(x.row?.item?.stock_id||'')));
+        const tomorrowSeen=new Set();
+        const uniqueWatch=watch.filter(x=>{
+          const id=String(x.row?.item?.stock_id||'');
+          if(!id||blockedIds.has(id)||tomorrowSeen.has(id))return false;
+          tomorrowSeen.add(id);return true;
+        });
+        const shown=new Set([...today,...uniqueWatch,...risk].map(e=>String(e.row?.item?.stock_id||'')).filter(Boolean));
         const persistent=groupedEntrySavedWatches(shown);
         const groups=[
           compactEntryGroupHtml('today','🎯 今日進場機會',
             '只有當日確認才可試單或買進',today,{open:true,alwaysShow:true}),
-          compactEntryGroupHtml('tracking','📌 持續追蹤與等待回踩',
-            '第一根、回踩及跨日觀察（非新買點）',
-            watch,{open:true,extraHtml:persistent.savedHtml,extraCount:persistent.savedCount,alwaysShow:true}),
+          compactEntryGroupHtml('tracking','🌙 明日看盤清單｜追蹤與等待回踩',
+            '第一根、回踩與跨日觀察合併，僅供明日研究（非買點）',
+            uniqueWatch,{open:true,extraHtml:persistent.savedHtml,extraCount:persistent.savedCount,alwaysShow:true}),
           compactEntryGroupHtml('risk','⚠️ 暫不適合進場',
             '暫不新買、等回踩或重新確認',
             risk,{open:false,extraHtml:persistent.riskyHtml,extraCount:persistent.riskyCount,alwaysShow:true})
@@ -5604,10 +5614,18 @@ h1 {
           +'｜📋 前次新版留存 '+retainedRows.length+'｜應更新日 '+esc(expectedSignalDataDate())+'</span>'
           +'<small>只有當日有效成交與原風控全部通過才可試單／確認買點。未更新日K只供觀察；全部詳細判斷點開個股查看。'
           +(staleRows.length?'｜另有 '+staleRows.length+' 檔過期資料不列入':'')+'</small></div>';
-        const outHtml=banner+researchPreview+simplifiedEntryHtml({
+        // The old '明日看盤清單' was a second full stock-card feed.
+        // Merge its qualified research-only names into the EXISTING
+        // tracking shelf. Only one card per symbol; no extra model/API call.
+        const tomorrowResearchRows=[
+          ...topResearch.map(x=>x.row),
+          ...strongFollowups,
+          ...passiveResearch
+        ];
+        const outHtml=banner+simplifiedEntryHtml({
           completedRows,starterRows,eodTrialRows,boxFirstRows,focusRows,signalRows,
           eodTrackRows,reclaimRows,queuedDisplayRows,recalcDisplayRows,
-          retainedRows,avoidRows,pullbackRows,waitRows
+          retainedRows,avoidRows,pullbackRows,waitRows,tomorrowResearchRows
         });
         updateBuySignalNotice([...completedRows,...starterRows]);
         stableListRender(outHtml,{quoteUpdate});
