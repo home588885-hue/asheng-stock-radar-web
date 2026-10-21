@@ -27,6 +27,7 @@ const {simplifiedEntryHtml,groupedEntrySavedWatches}=new Function(
   "const quoteFreshForTrial=()=>false;"+
   "const formalEntryValidation={enabled:false};"+
   "const radarWatchAttentionState=()=>({priority:0});"+
+  "const strongRebreakStudyRank=()=>0;"+
   "const bestTodayQuote=()=>null;"+
   "const validTodayQuote=()=>false;"+
   "const quoteDisplayState=()=>({label:'S 日K',moment:''});"+
