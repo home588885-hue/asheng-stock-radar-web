@@ -477,6 +477,48 @@ test('All three zones show actual C trade time, never falsely live after the clo
  assert.match(html,/holdingQuoteRefreshMs: 180000/);
  assert.doesNotMatch(s,/fetch\s*\(|getLiveQuotes\s*\(|setInterval\s*\(/);
 });
+test('ACTIVE starter MA10 C-only orange stays fresh, guarded and non-green',()=>{
+ const source=section('      const ma10StarterSetup = item => {','      const eodStarterWatchEligible = item => {');
+ const held=new Map();
+ const {ma10StarterSetup,ma10StarterLiveTrial}=new Function(
+   'holdings','unifiedRadarGeneration','chaseModelReady','expectedSignalDataDate',
+   'chasePass','quoteFreshForTrial','marketFraction',
+   source+'return {ma10StarterSetup,ma10StarterLiveTrial};'
+ )(held,()=>true,()=>true,()=>'2026-10-20',()=>true,q=>q?.fresh===true,()=>.5);
+ // 3013: 2026-10-20 signed EOD values. Price/volume on the next day are SYNTHETIC.
+ const item={stock_id:'3013',as_of:'2026-10-20',score:86,metrics:{
+   ma10:95.34,ma20:91.09,ma60:86.67,close:95.6,avg_volume_20_lots:3143,
+   current_volume_lots:4060,position_1y_pct:32.4,daily_k:63.3,chip:{score:61},
+   ma_cluster:{all_rising:true,above_all_mas:true},
+   entry_candle_guard:{main_bull:true,macd_hist:.573756,macd_weak:true},
+   scan_intelligence:{effective_lifecycle:'ACTIVE'},
+   trade_lifecycle:{entry:{state:'starter'}},holding_management:{strong_breakdown:false}
+ }};
+ const q={fresh:true,price:97,open:96.1,high:97.5,volume_lots:2400,quote_time:'10:05:00'};
+ assert.equal(ma10StarterSetup(item)?.macdSlowing,true);
+ assert.ok(ma10StarterLiveTrial(item,q,true));
+ assert.equal(ma10StarterLiveTrial(item,null,true),null);
+ assert.equal(ma10StarterLiveTrial(item,{...q,fresh:false},true),null);
+ assert.equal(ma10StarterLiveTrial(item,q,false),null);
+ assert.equal(ma10StarterLiveTrial(item,{...q,volume_lots:1200},true),null);
+ assert.equal(ma10StarterLiveTrial(item,{...q,price:101,open:100,high:101.2},true),null);
+ assert.equal(ma10StarterSetup({...item,as_of:'2026-10-19'}),null);
+ assert.equal(ma10StarterSetup({...item,metrics:{...item.metrics,close:97}}),null);
+ assert.equal(ma10StarterSetup({...item,metrics:{...item.metrics,chip:{score:49}}}),null);
+ assert.equal(ma10StarterSetup({...item,metrics:{...item.metrics,entry_candle_guard:{...item.metrics.entry_candle_guard,weak_after_breakout:true}}}),null);
+ held.set('3013',{});assert.equal(ma10StarterSetup(item),null);held.clear();
+ const action=section('      const entrySnapshotState = (item, baseAction, quote = null) => {','      // Compact entry display only;');
+ assert.match(action,/ma10StarterLiveTrial\(item,quote,eligible\)/);
+ assert.match(action,/phase:'trial',rank:Math.max\(95/);
+ assert.match(action,/buyable:false,trialable:true/);
+ const eod=section('      const eodStarterWatchEligible = item => {','      const pullbackWatchState =');
+ assert.match(eod,/ma10StarterSetup\(item\)/);
+ const grouped=section('      const renderEntrySections =','      // Explain an empty launch list');
+ assert.match(grouped,/const starterRows=byRank/);
+ assert.match(grouped,/quoteFreshForTrial\(row.quote\)/);
+ assert.match(html,/nightlySnapshotOnly: true/);
+ assert.match(html,/selectionMas: Object.freeze\(\['MA10','MA20','MA60'\]\)/);
+});
 for(const g of html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi)){
   if(/\bsrc=/.test(g[1]))continue;
   new Function(g[2]);
