@@ -28,6 +28,7 @@ const {simplifiedEntryHtml,groupedEntrySavedWatches}=new Function(
   "const formalEntryValidation={enabled:false};"+
   "const radarWatchAttentionState=()=>({priority:0});"+
   "const strongRebreakStudyRank=()=>0;"+
+  "const entryExpandedIds=new Set();"+
   "const bestTodayQuote=()=>null;"+
   "const validTodayQuote=()=>false;"+
   "const quoteDisplayState=()=>({label:'S 日K',moment:''});"+
