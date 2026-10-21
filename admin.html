@@ -3678,6 +3678,26 @@ h1 {
         if (signal.className === 'sell') return '⚠️ 權證風控｜以標的收盤弱勢確認為主，不只看權證價格';
         return '';
       };
+      // Existing chip panel, one accurate directional readout.
+      // Five-day foreign net flow != consecutive buying, and the ten-day
+      // foreign holding-ratio change != ten-day net shares purchased.
+      // Read-only presentation from signed S snapshots, no S/C requests.
+      const chipMergedSnapshotText = (chip, fallbackScore=null)=>{
+        const raw=chip?.score??fallbackScore;
+        const score=raw==null||raw===''?null:Number(raw);
+        const label=String(chip?.label||
+          (score==null?'待更新':score>=70?'偏強':score>=60?'尚可':score>=50?'中性':'偏弱')).replace(/^籌碼/,'');
+        const text=score!=null&&Number.isFinite(score)
+          ?'籌碼 '+num(score,0)+'分・'+label:'籌碼待更新';
+        const inst=chip?.institutional||{},foreign=chip?.foreign||{};
+        const net=inst.foreign_net_5d==null?null:Number(inst.foreign_net_5d);
+        const delta=foreign.change_10d_pp==null?null:Number(foreign.change_10d_pp);
+        const five=net!=null&&Number.isFinite(net)
+          ?net>0?'外資近5日累計買超':net<0?'外資近5日累計賣超':'外資近5日買賣持平':'';
+        const ten=delta!=null&&Number.isFinite(delta)
+          ?'外資10日持股比 '+(delta>0?'+':'')+num(delta,2)+'百分點':'';
+        return [text,five,ten].filter(Boolean).join('｜');
+      };
       const selectionGuide = (item, signal) => {
         const metrics = item?.metrics || {};
         const v5 = metrics.v5 || {};
@@ -3742,7 +3762,7 @@ h1 {
         const chipRaw = metrics.chip?.score ?? v5.chip_score;
         const chipScore = chipRaw == null ? null : Number(chipRaw);
         const chipLabel = metrics.chip?.label || (Number.isFinite(chipScore) ? (chipScore >= 70 ? '偏強' : chipScore >= 60 ? '尚可' : chipScore >= 50 ? '中性' : '偏弱') : '待更新');
-        const chipText = Number.isFinite(chipScore) ? `籌碼 ${num(chipScore, 0)}分・${chipLabel}` : '籌碼待更新';
+        const chipText = chipMergedSnapshotText(metrics.chip,chipRaw);
         const gate = metrics.quality_gate || {};
         const qualityReasons = Array.isArray(gate.reasons) ? gate.reasons.map(value => String(value)) : [];
         const qualityText = gate.pass === false ? `品質待確認：${qualityReasons.length ? qualityReasons.join('、') : '條件未完整'}` : (gate.pass === true ? '品質檢查通過' : '品質檢查待更新');
@@ -5996,7 +6016,11 @@ h1 {
         const holdingStatusHtml = holding ? holdingRulesHtml(item, displayQuote, options.compactHolding === true) : '';
         const holdingTodayHtml = holding ? holdingActionHtml(item, displayQuote) : '';
         const chip = metrics.chip;
-        const chipHtml = chip ? `<div class="metrics"><span class="pill">🧩 籌碼 ${Number(chip.score)}｜${esc(chip.label || '')}</span><span class="pill">技術＋籌碼 ${Number(chip.combined_score ?? item.score ?? 0)}</span>${(chip.notes || []).map(note => `<span class="pill">${esc(memberFacingText(note))}</span>`).join('')}</div>` : ((item.stage === 'B' || item.stage === 'C') ? '<div class="meta">🧩 籌碼資料待下一次重掃更新</div>' : '');
+        const chipNotes = (chip?.notes||[]).filter(note =>
+          !(chip?.foreign?.change_10d_pp!=null
+            && Number.isFinite(Number(chip.foreign.change_10d_pp))
+            && String(note).startsWith('外資持股比10日')));
+        const chipHtml = chip ? `<div class="metrics"><span class="pill">🧩 ${esc(chipMergedSnapshotText(chip))}</span><span class="pill">技術＋籌碼 ${Number(chip.combined_score ?? item.score ?? 0)}</span>${chipNotes.map(note => `<span class="pill">${esc(memberFacingText(note))}</span>`).join('')}</div>` : ((item.stage === 'B' || item.stage === 'C') ? '<div class="meta">🧩 籌碼資料待下一次重掃更新</div>' : '');
         const liquidityKnown = metrics.current_volume_lots != null || metrics.avg_volume_20_lots != null;
         const liquidityHtml = liquidityKnown ? `<div class="metrics"><span class="pill">${metrics.liquidity_ok === true ? '✅' : '⚠️'} ${esc(metrics.liquidity_label || '流動性')}</span><span class="pill">當日量 ${Number(metrics.current_volume_lots || 0).toLocaleString('zh-TW')}張</span><span class="pill">20日均量 ${Number(metrics.avg_volume_20_lots || 0).toLocaleString('zh-TW')}張</span></div>` : '';
         const v5 = metrics.v5;
