@@ -477,6 +477,18 @@ test('All three zones show actual C trade time, never falsely live after the clo
  assert.match(html,/holdingQuoteRefreshMs: 180000/);
  assert.doesNotMatch(s,/fetch\s*\(|getLiveQuotes\s*\(|setInterval\s*\(/);
 });
+test('Today opportunity shelf excludes yellow MA10 watch and stale C quotes across entry rendering',()=>{
+  const entry=section('      const simplifiedEntryHtml = (labels={}) => {','      // Only compare existing EOD radar snapshots;');
+  assert.match(entry,/const verifiedToday=\(rows,kind\)=>/);
+  assert.match(entry,/quoteFreshForTrial\(row\?\.quote\)/);
+  assert.match(entry,/a\.live_quote_verified===true/);
+  assert.match(entry,/a\.phase==='trial'&&a\.trialable===true/);
+  assert.match(entry,/a\.phase==='confirmed'&&a\.buyable===true/);
+  assert.match(entry,/const safeStarter=verifiedToday\(labels\.starterRows,'trial'\)/);
+  assert.match(entry,/const safeCompleted=verifiedToday\(labels\.completedRows,'confirmed'\)/);
+  assert.match(entry,/試單待重新確認｜非買點/);
+  assert.doesNotMatch(entry,/\.\.\.add\(labels\.eodTrialRows,'🟠 明日試單觀察｜目前非買點'\)\];\s*const watch=/);
+});
 test('MA10/MA20 pullback early orange avoids 1000-lot wait and overextension',()=>{
   const helper=section('      const ma10StarterSetup = item => {','      const eodStarterWatchEligible = item => {');
   const held=new Map();
