@@ -745,27 +745,37 @@ test('Scout history cards preserve their own expand state without changing trade
   assert.match(html,/#scoutPanel \.radar-scout-list\{display:grid/);
   assert.doesNotMatch(src,/getLiveQuotes\s*\(|scanBatch\s*\(|setInterval\s*\(/);
 });
-test('Foreign flow is merged into existing chip without new boxes or buy permissions',()=>{
-  const source=section('      const chipMergedSnapshotText =',
+test('Foreign 10-day net and quarterly quality reuse the existing chip/revenue row',()=>{
+  const src=section('      const chipMergedSnapshotText =',
     '      const selectionGuide = (item, signal) => {');
-  const summary=new Function('num',source+'\nreturn chipMergedSnapshotText;')(
-    (n,d)=>Number(n).toFixed(d));
-  const bought=summary({score:76,label:'籌碼偏多',
-    institutional:{foreign_net_5d:1943133},
-    foreign:{change_10d_pp:1.55}});
-  assert.match(bought,/外資近5日累計買超/);
-  assert.match(bought,/外資10日持股比 \+1.55百分點/);
-  assert.doesNotMatch(bought,/連買5天|10日累計買超/);
-  const sold=summary({score:42,label:'籌碼偏弱',
-    institutional:{foreign_net_5d:-649119},
-    foreign:{change_10d_pp:-.01}});
-  assert.match(sold,/外資近5日累計賣超/);
-  assert.match(sold,/外資10日持股比 -0.01百分點/);
-  assert.equal(summary({score:55,label:'籌碼中性'}),'籌碼 55分・中性');
+  const helpers=new Function('num',src+
+    '\nreturn {chipMergedSnapshotText,fundamentalChipBrief};')(
+    (n,d=2)=>Number(n).toFixed(d));
+  const net=helpers.chipMergedSnapshotText({score:76,label:'籌碼偏多',
+    institutional:{foreign_net_5d:-2000,foreign_net_10d:1943133,foreign_10d_covered:true},
+    foreign:{change_10d_pp:-.12}});
+  assert.match(net,/外資10日累計買超/);
+  assert.doesNotMatch(net,/近5日累計賣超|持股比|連買/);
+  const sold=helpers.chipMergedSnapshotText({score:42,label:'籌碼偏弱',
+    institutional:{foreign_net_10d:-649119,foreign_10d_covered:true}});
+  assert.match(sold,/外資10日累計賣超/);
+  const old=helpers.chipMergedSnapshotText({score:70,label:'籌碼偏多',
+    institutional:{foreign_net_5d:12345},foreign:{change_10d_pp:1.55}});
+  assert.match(old,/外資近5日累計買超/);
+  assert.doesNotMatch(old,/10日累計買超/);
+  assert.equal(helpers.chipMergedSnapshotText({score:55,label:'籌碼中性'}),'籌碼 55分・中性');
+  const all={version:'2026-10-21-fundamental-chip-confluence-v1',
+    as_of:'2026-10-21',all_five_confirmed:true};
+  assert.match(helpers.fundamentalChipBrief({fundamental_blend:all}),/五項成長／籌碼／突破共振（仍非買點）/);
+  const partial={version:all.version,as_of:all.as_of,
+    gross_margin_2q_up:true,operating_cashflow_positive:true};
+  assert.match(helpers.fundamentalChipBrief({fundamental_blend:partial}),
+    /毛利率連兩季改善・單季營業現金流正/);
+  assert.equal(helpers.fundamentalChipBrief({}), '');
   assert.match(html,/const chipText = chipMergedSnapshotText\(metrics\.chip,chipRaw\)/);
   assert.match(html,/esc\(chipMergedSnapshotText\(chip\)\)/);
-  assert.match(html,/const chipNotes = \(chip\?\.notes\|\|\[\]\)\.filter/);
-  assert.doesNotMatch(source,/fetch\s*\(|getLiveQuotes\s*\(|setInterval\s*\(/);
+  assert.match(html,/fundamentals: \[chipText,revenueText,fundamentalChipBrief\(metrics\)\]/);
+  assert.doesNotMatch(src,/fetch\s*\(|getLiveQuotes\s*\(|setInterval\s*\(/);
 });
 for(const g of html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi)){
   if(/\bsrc=/.test(g[1]))continue;
