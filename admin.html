@@ -4688,9 +4688,9 @@ h1 {
         const add=(rows,label)=>(rows||[]).map(row=>({row,label}));
         const today=[
           ...add(labels.completedRows,'🟢 正式買點｜當日已驗證'),
-          ...add(labels.starterRows,'🟠 可小量試單｜當日已驗證'),
-          ...add(labels.eodTrialRows,'🟠 明日試單觀察｜目前非買點')];
+          ...add(labels.starterRows,'🟠 可小量試單｜當日已驗證')];
         const watch=[
+          ...add(labels.eodTrialRows,'🟠 明日試單觀察｜目前非買點'),
           ...add(labels.boxFirstRows,'📦 箱型突破第一根｜等確認'),
           ...add(labels.focusRows,'⭐ 優先觀察｜非買點'),
           ...add(labels.signalRows,'🟠 訊號待核對｜非買點'),
