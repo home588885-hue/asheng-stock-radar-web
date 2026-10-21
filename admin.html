@@ -4098,6 +4098,44 @@ h1 {
           ||m.entry_candle_guard?.kd_high_weak===true)return null;
         return {pace,lots,gap20,ma10:setup.ma10};
       };
+      // Two 2026-10-08 original starter patterns, fused into V2 as orange-only.
+      // Never reuse the original hard-failure trial override.
+      const legacyVolumeBreakoutTrial = (item,quote,eligible) => {
+        if(!item||!eligible||!quoteFreshForTrial(quote)
+          ||item.__observation_only===true||item.__passive_monitor===true
+          ||holdings.has(String(item.stock_id||''))
+          ||!unifiedRadarGeneration(item)||!chaseModelReady(item)
+          ||String(item.as_of||'')!==expectedSignalDataDate())return null;
+        const m=item.metrics||{},mc=m.ma_cluster||{},g=m.entry_candle_guard||{};
+        const ma10=Number(m.ma10),ma20=Number(m.ma20),ma60=Number(m.ma60);
+        const close=Number(m.close),avg=Number(m.avg_volume_20_lots);
+        const pos=Number(m.position_1y_pct),kd=Number(m.daily_k),d=Number(m.daily_d);
+        const price=Number(quote?.price),open=Number(quote?.open),high=Number(quote?.high);
+        const lots=Number(quote?.volume_lots),fraction=marketFraction(quote?.quote_time);
+        const projected=fraction>0?lots/fraction:NaN,pace=avg>0?projected/avg:NaN;
+        const gap20=ma20>0?(price/ma20-1)*100:NaN;
+        const anchor=Number(m.recent_high20||m.high20_prev||mc.breakout_price);
+        const dist=anchor>0?(price/anchor-1)*100:NaN;
+        if(![ma10,ma20,ma60,close,avg,pos,kd,price,open,high,lots,projected,pace,gap20].every(Number.isFinite)
+          ||Math.min(ma10,ma20,ma60,close,avg,price,open,high)<=0
+          ||mc.all_rising!==true||avg<500||projected<1000
+          ||Number(item.score)<70||g.main_bull===false||g.weak_after_breakout===true
+          ||g.macd_weak===true||g.kd_high_weak===true
+          ||m.quality_gate?.pass===false||m.holding_management?.strong_breakdown===true
+          ||['mother_low_broken','child_low_broken','invalid','broken']
+            .includes(String(m.shanchuan_v2?.mother_child?.lifecycle?.state||''))
+          ||price<Math.max(ma10,ma20,ma60)*1.001
+          ||price<open*.995||price<close*.995||price<high/1.02
+          ||!chasePass(item,price))return null;
+        const low=pos>=0&&pos<=35&&pace>2.6&&pace<=4
+          &&gap20>=0&&gap20<=5;
+        const mid=pos>35&&pos<=70&&pace>2.6&&pace<=3.2
+          &&gap20>=0&&gap20<=5&&mc.above_all_mas===true
+          &&Number.isFinite(dist)&&dist>0&&dist<=3
+          &&Number.isFinite(d)&&kd>=30&&kd<=80&&kd>=d;
+        if(!low&&!mid)return null;
+        return {kind:low?'low':'mid',pace,gap20,pos,dist,lots};
+      };
       const eodStarterWatchEligible = item => {
         if(ma10StarterSetup(item))return true;
         if(!item||holdings.has(String(item.stock_id||''))||!unifiedRadarGeneration(item)||!chaseModelReady(item)
@@ -4497,6 +4535,14 @@ h1 {
           detail:'舊版提早量速 '+num(legacyStarter.pace,2)+'x，C有效成交 '
             +num(legacyStarter.lots,0)+'張｜MA20乖離 '+num(legacyStarter.gap20,2)
             +'%｜新版風控已核對，僅小量試單；非V5正式買點'};
+        const legacyBurst=legacyVolumeBreakoutTrial(item,quote,earlyEligible);
+        if(legacyBurst)return {...baseAction,key:legacyBurst.kind==='low'?'legacy_low_volume_trial':'legacy_mid_breakout_trial',
+          phase:'trial',rank:Math.max(95,Number(baseAction.rank||0)),
+          className:'trial',buyable:false,trialable:true,live_quote_verified:true,
+          text:legacyBurst.kind==='low'?'🟠 低檔爆量第一根｜新版安全試單':'🟠 中位箱型突破｜新版安全試單',
+          detail:'舊版特殊放量辨識｜一年位階 '+num(legacyBurst.pos,1)+'%｜C量速 '
+            +num(legacyBurst.pace,2)+'x｜MA20乖離 '+num(legacyBurst.gap20,2)
+            +'%｜新版風控通過；非V5正式買點'};
         // Preserve the user's original strict MA10 pullback trial route.
         // Never convert the NEW research-rejected MA20 observation to orange.
         const originalTrial=eligible&&originalMa10Watch
