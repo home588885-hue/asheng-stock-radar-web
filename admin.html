@@ -1246,6 +1246,9 @@ h1 {
 #scoutPanel .radar-scout-card .entry-mini-full{padding:10px 12px;font-size:13px;line-height:1.65;color:#cbd9ee;overflow-wrap:anywhere}
 #scoutPanel .radar-scout-card .radar-scout-reason{color:#e2e8f0}
 #scoutPanel .radar-scout-group-label{display:block;margin:10px 0 6px;font-size:13px}
+#scoutPanel .radar-scout-compact-row{padding:7px 4px;border-bottom:1px solid #30445e;font-size:12px;line-height:1.55;overflow-wrap:anywhere}
+#scoutPanel .radar-scout-compact-row:last-child{border-bottom:0}
+#scoutPanel .radar-scout-compact-row strong{font-size:13px;margin-right:6px}
 @media(max-width:640px){
 #app .radar-compact-summary,#app .holding-mini-summary{padding:10px;gap:4px 8px}
 #app .radar-compact-summary .entry-mini-name strong,#app .holding-mini-summary .holding-mini-name strong{font-size:17px}
@@ -1335,10 +1338,10 @@ h1 {
           <div class="c-quote-diagnostic" role="status"><span id="cQuoteStatus">C 報價狀態檢查中…</span><button type="button" id="cQuoteCheck">檢查／重試 C</button></div>
         </section>
                 <p id="timeInfoExplanation" class="time-info-explanation" hidden>管理員三區在 C 報價驗證成功時，交易時段約每3分鐘更新有效成交價；已買進12分鐘存活只統計12:50～13:20有效成交。MA10／MA20／MA60、KD、MACD 等完整模型仍以 S 的盤後完整日 K 更新為準。</p>
-        <section id="scoutPanel" class="box" hidden aria-label="第一根前哨與跨日追蹤"></section>
         <main class="list" id="list">
           <div class="box empty loading">正在載入候選股…</div>
         </main>
+        <section id="scoutPanel" class="box" hidden aria-label="其他前哨追蹤與歷史"></section>
 
         <dialog class="holding-dialog" id="holdingDialog">
           <form id="holdingForm">
@@ -2179,67 +2182,44 @@ h1 {
           for(const id of scoutHistory.keys())if(!keepIds.has(id)){scoutHistory.delete(id);scoutPending.delete(id);}
         }
       };
+      // Deduplicate historical first-bar observations against the SAME
+      // signed LAUNCH stock cards, and keep unmatched/history in ONE small
+      // folded shelf below the main radar (never an extra primary stock card).
+      let launchDisplayedIds=new Set();
       const renderScoutPanel=()=>{
         const panel=document.getElementById('scoutPanel');
         if(!panel)return;
         if(stage!=='LAUNCH'){panel.hidden=true;return;}
-        const day=expectedSignalDataDate();
-        const records=[...scoutHistory.values()].filter(x=>!holdings.has(String(x.stock_id||'')));
-        if(!records.length){panel.hidden=true;return;}
-        // A newer signed S decision always outranks an older passive scout.
-        // Transferred and invalid names remain in HISTORY, never fresh candidates.
+        const rows=[...scoutHistory.values()].filter(x=>
+          !holdings.has(String(x.stock_id||''))
+          &&!launchDisplayedIds.has(String(x.stock_id||'')));
+        if(!rows.length){panel.hidden=true;return;}
         const promoted=x=>String(x.label||'').includes('已轉進場雷達');
-        const active=records.filter(x=>!['invalid','overheated'].includes(x.state)&&!promoted(x))
-          .sort((a,b)=>String(b.as_of).localeCompare(String(a.as_of))||b.score-a.score);
-        const archive=records.filter(x=>['invalid','overheated'].includes(x.state)||promoted(x))
-          .sort((a,b)=>String(b.as_of).localeCompare(String(a.as_of))||b.score-a.score);
-        // Preserve every expanded stock and the outer/history folds whenever
-        // cloud sync refreshes the HTML. No extra saved state or background jobs.
-        const open=!!panel.querySelector('details.radar-scout-root')?.open;
-        const openCards=new Set(Array.from(panel.querySelectorAll('details.radar-scout-card[open]'))
-          .map(node=>String(node.dataset.stockKey||'')));
-        const openGroups=new Set(Array.from(panel.querySelectorAll('details[data-scout-group][open]'))
-          .map(node=>String(node.dataset.scoutGroup||'')));
-        const itemHtml=x=>{
-          const id=String(x.stock_id||'');
-          const old=String(x.as_of)!==day;
-          const label=old?'⚪ 待新版K線補算｜前次 '+String(x.label||''):String(x.label||'觀察中');
-          const price=Number(x.close)>0?Number(x.close).toFixed(2):'－';
-          const gap=Number.isFinite(x.bias)?(x.bias>=0?'+':'')+x.bias.toFixed(2)+'%':'－';
-          const first=x.first_bar_date?'｜第一根 '+esc(x.first_bar_date):'';
-          return '<details class="entry-mini radar-scout-card" data-stock-key="'+esc(id)+'"'
-            +(openCards.has(id)?' open':'')+'>'
-            +'<summary class="entry-mini-summary radar-compact-summary">'
-            +'<span class="entry-mini-name"><strong>'+esc(id+' '+String(x.stock_name||''))+'</strong>'
-            +'<small>'+esc(label)+'</small></span>'
-            +'<span class="entry-mini-expand">展開</span>'
-            +'<span class="entry-mini-metrics">模型 '+esc(String(x.as_of||'-'))
-            +'｜S收盤 <b>'+esc(price)+'</b>｜距MA20 '+esc(gap)+'</span>'
-            +'</summary>'
-            +'<div class="entry-mini-full">'
-            +'<div class="radar-scout-reason">'+esc(String(x.reason||'等新版核對'))+'</div>'
-            +(first?'<div>第一根 '+esc(x.first_bar_date)+'</div>':'')
-            +'<div>模型日 '+esc(String(x.as_of||'-'))+'｜S收盤 '+esc(price)
-            +'｜距MA20 '+esc(gap)+'</div>'
-            +'<div>研究觀察，非橘色試單或綠色正式買點。</div>'
-            +'</div></details>';
+        const history=x=>['invalid','overheated'].includes(String(x.state||''))||promoted(x);
+        const active=rows.filter(x=>!history(x))
+          .sort((a,b)=>String(b.as_of).localeCompare(String(a.as_of))||Number(b.score)-Number(a.score));
+        const archived=rows.filter(history)
+          .sort((a,b)=>String(b.as_of).localeCompare(String(a.as_of))||Number(b.score)-Number(a.score));
+        const wasOpen=!!panel.querySelector('details.radar-scout-root')?.open;
+        const rowHtml=x=>{
+          const id=String(x.stock_id||''),name=String(x.stock_name||'');
+          const p=Number(x.close),date=String(x.as_of||'');
+          const state=String(x.label||'待日K確認');
+          const price=p>0?'｜S '+num(p,2):'';
+          return '<div class="radar-scout-compact-row"><strong>'
+            +esc(id+' '+name)+'</strong>'+esc(state)+'｜'+esc(date)
+            +esc(price)
+            +(x.reason?'｜'+esc(String(x.reason).slice(0,70)):'')
+            +'</div>';
         };
-        const html='<details class="radar-scout-root"'+(open?' open':'')+'>'
-          +'<summary style="cursor:pointer;font-weight:650">'
-          +'🌱 第一根前哨 '+active.length+' 檔｜📋 轉進場／風險歷史 '+archive.length+' 檔（展開）</summary>'
-          +'<p style="font-size:12px;margin:8px 0">山川箱型／母子K與均線轉強的研究觀察；不是橘色或綠色買點。'
-          +'未更新日K只能等待補算。跨日紀錄與相同登入帳號的手機、電腦同步；不額外重算S或抓C報價。</p>'
-          +(active.length?'<strong class="radar-scout-group-label">持續觀察</strong>'
-            +'<div class="radar-scout-list">'+active.slice(0,6).map(itemHtml).join('')+'</div>':'')
-          +(active.length>6?'<details class="radar-scout-history" data-scout-group="more"'
-            +(openGroups.has('more')?' open':'')+'>'
-            +'<summary>其餘追蹤 '+(active.length-6)+' 檔</summary>'
-            +'<div class="radar-scout-list">'+active.slice(6).map(itemHtml).join('')+'</div></details>':'')
-          +(archive.length?'<details class="radar-scout-history" data-scout-group="history"'
-            +(openGroups.has('history')?' open':'')+'>'
-            +'<summary>已轉進場／過熱／失效 '+archive.length+' 檔（歷史）</summary>'
-            +'<div class="radar-scout-list">'+archive.map(itemHtml).join('')+'</div></details>':'')
-          +'</details>';
+        const html='<details class="radar-scout-root"'+(wasOpen?' open':'')+'>'
+          +'<summary>📂 其他前哨追蹤 '+active.length
+          +' 檔｜轉進場／風險歷史 '+archived.length+' 檔（點開）</summary>'
+          +'<div class="radar-scout-list">'
+          +(active.length?active.map(rowHtml).join(''):'')
+          +(archived.length?'<div class="radar-scout-group-label">歷史紀錄（非買點）</div>'
+            +archived.map(rowHtml).join(''):'')
+          +'</div></details>';
         if(panel.innerHTML!==html)panel.innerHTML=html;
         panel.hidden=false;
       };
@@ -6336,6 +6316,12 @@ h1 {
             const bCombined = Number(b.metrics?.chip?.combined_score ?? b.score ?? 0);
             return bCombined - aCombined || Number(b.score || 0) - Number(a.score || 0);
           });
+          if(stage==='LAUNCH'){
+            // Only candidates actually rendered count as main cards; all
+            // remaining cross-day/history items stay folded below the list.
+            launchDisplayedIds=new Set(rankedPicks.map(x=>String(x.stock_id||'')));
+            renderScoutPanel();
+          }
           const launchTally = stage === 'LAUNCH' ? launchCandidateExplanation(data, rankedPicks) : null;
           if (stage === 'LAUNCH') {
             const actionRows = rankedPicks.filter(item=>item.__passive_monitor!==true&&item.__observation_only!==true&&!displayModelWarning(item))
@@ -7646,6 +7632,16 @@ h1 {
       // UI-only launch folding. Keep ALL server model selection, ordering,
       // realtime requests, and full original details/action cards untouched.
       const launchExpandedIds = new Set();
+      const launchScoutHistoryHtml=item=>{
+        const x=scoutHistory.get(String(item?.stock_id||''));
+        if(!x)return '';
+        const fresh=String(x.as_of||'')===String(item?.as_of||'');
+        return '<div class="model-only-note">📍 '+(fresh?'前哨追蹤':'前次前哨紀錄')
+          +'｜'+esc(String(x.label||'觀察中'))
+          +'｜'+esc(String(x.as_of||''))
+          +(x.reason?'｜'+esc(String(x.reason).slice(0,100)):'')
+          +'</div>';
+      };
       const launchMiniHtml = (item, quote = null) => {
         const id=String(item?.stock_id||''),m=item?.metrics||{};
         const q=bestTodayQuote(marketBridgeReady()&&validTodayQuote(quote)?quote:null,id);
@@ -7698,7 +7694,7 @@ h1 {
               <span class="entry-mini-metrics">${esc(source)} <b>${price!=null&&price>0?esc(num(price,2)):'-'}</b><small>${esc(quoteTime)}</small></span>
               <span class="radar-compact-next">下一步：${esc(radarShortAdvice(item,{text:status},q))}</span>
             </summary>
-            <div class="entry-mini-full">${continuationRiskMiniHtml(item)}${stockMovementHtml(item,q,'launch',{text:status,detail:overnightLifecycleState(item).tomorrow})}
+            <div class="entry-mini-full">${launchScoutHistoryHtml(item)}${continuationRiskMiniHtml(item)}${stockMovementHtml(item,q,'launch',{text:status,detail:overnightLifecycleState(item).tomorrow})}
               ${radarDeepDetailsHtml((trial?'<div class="model-only-note">'+esc(trial.detail)+'</div>':'')+detailed)}</div>
           </details>
         </section>`;
