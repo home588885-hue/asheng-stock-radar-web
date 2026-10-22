@@ -2167,48 +2167,75 @@ h1 {
           for(const id of scoutHistory.keys())if(!keepIds.has(id)){scoutHistory.delete(id);scoutPending.delete(id);}
         }
       };
-      // History is preserved in the existing account-scoped cloud table.
-      // No duplicate zone: current signed candidates take precedence; only
-      // active unmatched scouts appear as read-only mini cards in LAUNCH.
+      // User-facing historical tracking is a one-level collapsed card,
+      // exactly like the current LAUNCH cards. No new zone or trade gate.
       let launchDisplayedIds=new Set();
       const scoutOnlyLaunchRows=()=>[...scoutHistory.values()].filter(x=>{
         const id=String(x.stock_id||'');
         if(!id||holdings.has(id)||launchDisplayedIds.has(id))return false;
-        if(['invalid','overheated'].includes(String(x.state||'')))return false;
-        if(String(x.label||'').includes('已轉進場雷達'))return false;
         const day=Date.parse(String(x.as_of||'')+'T00:00:00Z');
         return Number.isFinite(day)&&Date.now()-day<14*86400000;
-      }).sort((a,b)=>String(b.as_of).localeCompare(String(a.as_of))
-        ||Number(b.score||0)-Number(a.score||0));
-      const launchScoutOnlyHtml=(x,expanded=false)=>{
-        const id=String(x.stock_id||''),name=String(x.stock_name||''),
-          sourceDay=String(x.as_of||'');
-        const price=Number(x.close);
+      }).sort((a,b)=>{
+        const archived=x=>['invalid','overheated'].includes(String(x.state||''))
+          ||String(x.label||'').includes('已轉進場雷達');
+        return Number(archived(a))-Number(archived(b))
+          ||String(b.as_of).localeCompare(String(a.as_of))
+          ||Number(b.score||0)-Number(a.score||0);
+      });
+      const scoutHistoryClass=x=>{
+        if(x.state==='invalid')return {status:'🔴 歷史追蹤｜結構失效',next:'僅保留紀錄，不列入買進清單'};
+        if(x.state==='overheated')return {status:'🔵 歷史追蹤｜過熱觀察',next:'等待新的完整日K，禁止追高'};
+        if(String(x.label||'').includes('已轉進場雷達'))
+          return {status:'📌 歷史追蹤｜已轉進場',next:'買點以目前進場雷達為準'};
+        return {status:'🌱 前哨追蹤｜尚非買點',next:'等待最新完整日K與量價確認'};
+      };
+      const launchScoutOnlyHtml=(x,expanded=null)=>{
+        const id=String(x.stock_id||''),name=String(x.stock_name||id),
+          sourceDay=String(x.as_of||''),kind=scoutHistoryClass(x);
+        const price=Number(x.close),bias=x.bias==null?null:Number(x.bias);
         const recordPrice=Number.isFinite(price)&&price>0?num(price,2):'-';
-        const why=String(x.reason||'等待完整日K確認').slice(0,140);
-        const desc=String(x.label||'突破前哨').slice(0,80);
-        // Historical S close can never become a live C buy/trial cue.
+        const recordBias=bias!=null&&Number.isFinite(bias)
+          ?(bias>=0?'+':'')+num(bias,2)+'%':'未取得';
+        const why=String(x.reason||'僅保留歷史觀察紀錄').slice(0,240);
+        const desc=String(x.label||'突破前哨').slice(0,90);
+        const first=String(x.first_bar_date||''),seen=String(x.seen_as_of||'');
+        const open=expanded==null?launchExpandedIds.has(id):expanded;
+        // S historical close is not C live, and it never unlocks a buy.
         return '<section class="launch-mini-wrap launch-scout-inline" data-stock-id="'+esc(id)+'" data-scout-only="true">'
-          +'<details class="entry-mini" data-stock-key="'+esc(id)+'"'+(expanded?' open':'')+'>'
-          +'<summary class="entry-mini-summary radar-compact-summary">'
+          +'<details class="entry-mini" data-stock-key="'+esc(id)+'"'+(open?' open':'')+'>'
+          +'<summary class="entry-mini-summary radar-compact-summary" aria-label="'+esc(id+' '+name+' '+kind.status)+'">'
           +'<span class="entry-mini-name"><strong>'+esc(id+' '+name)
-          +'</strong><small>⚪ 前哨追蹤｜尚非買點</small></span>'
+          +'</strong><small>'+esc(kind.status)+'</small></span>'
           +'<span class="entry-mini-expand">展開</span>'
-          +'<span class="entry-mini-metrics">S '+esc(sourceDay)+'（非即時） <b>'+esc(recordPrice)+'</b></span>'
-          +'<span class="radar-compact-next">下一步：等最新日K與量價確認</span>'
-          +'</summary><div class="entry-mini-full"><div class="model-only-note">'
-          +esc(desc+'｜'+why)+'｜歷史前哨紀錄，不可直接試單或買進'
-          +'</div></div></details></section>';
+          +'<span class="entry-mini-metrics">S 歷史收盤（非即時） <b>'+esc(recordPrice)
+          +'</b><small>'+esc(sourceDay)+'</small></span>'
+          +'<span class="radar-compact-next">下一步：'+esc(kind.next)+'</span>'
+          +'</summary><div class="entry-mini-full">'
+          +'<article class="card radar-scout-detail" aria-label="'+esc(id+' '+name+' 歷史追蹤資料')+'">'
+          +'<div class="top"><div><div class="name">'+esc(id+' '+name)
+          +'</div><div class="meta">前哨歷史｜模型資料日 '+esc(sourceDay)+'｜不是即時行情</div></div>'
+          +'<div class="badge WATCH">歷史觀察</div></div>'
+          +'<div class="selection-guide"><b>狀態：'+esc(desc)+'</b>'
+          +'<span>當時 S 收盤：'+esc(recordPrice)+'</span>'
+          +'<span>MA20 乖離（歷史）：'+esc(recordBias)+'</span>'
+          +(first?'<span>第一根紀錄：'+esc(first)+'</span>':'')
+          +(seen?'<span>開始追蹤：'+esc(seen)+'</span>':'')
+          +'<span>下一步：'+esc(kind.next)+'</span></div>'
+          +'<div class="model-only-note">觀察原因：'+esc(why)+'</div>'
+          +'<div class="risk-summary">⚪ 歷史資料，非目前買點；不得依此試單、追價或加碼。'
+          +'最新價格與買點請以目前雷達 C／S 有效資料及風控為準。</div>'
+          +'</article></div></details></section>';
       };
       const renderScoutPanel=()=>{
         if(stage!=='LAUNCH')return;
         const list=document.getElementById('list');
         if(!list||!list.querySelector('.launch-mini-wrap'))return;
-        const previous=[...list.querySelectorAll('[data-scout-only="true"]')];
-        const expanded=new Set(previous.filter(n=>n.querySelector('details')?.open)
+        const existing=[...list.querySelectorAll('[data-scout-only="true"]')];
+        const expanded=new Set(existing.filter(n=>n.querySelector('details')?.open)
           .map(n=>String(n.dataset.stockId||'')));
-        previous.forEach(n=>n.remove());
-        const html=scoutOnlyLaunchRows().map(x=>launchScoutOnlyHtml(x,expanded.has(String(x.stock_id)))).join('');
+        existing.forEach(n=>n.remove());
+        const html=scoutOnlyLaunchRows().map(x=>launchScoutOnlyHtml(x,
+          expanded.has(String(x.stock_id))||launchExpandedIds.has(String(x.stock_id)))).join('');
         if(html)list.insertAdjacentHTML('beforeend',html);
       };
 
@@ -7712,9 +7739,9 @@ h1 {
           </details>
         </section>`;
       };
-      const launchListHtml = items => {
+      const launchListHtml = (items,quoteMap=null) => {
         launchDisplayedIds=new Set(items.map(item=>String(item.stock_id||'')));
-        return items.map(item=>launchMiniHtml(item)).join('')
+        return items.map(item=>launchMiniHtml(item,quoteMap?.get(String(item.stock_id||''))||null)).join('')
           +scoutOnlyLaunchRows().map(x=>launchScoutOnlyHtml(x)).join('');
       };
       const recoveryPattern = (item, quote) => {
@@ -7930,7 +7957,12 @@ h1 {
               return true;
             });
 
-          stableListRender(rows.length ? rows.map(row => launchMiniHtml(row.item, row.quote)).join('') : '<div class="box empty">目前沒有仍符合發動前條件的股票；只有明確轉弱、跌離發動區或位置過熱才會移出。</div>',{quoteUpdate:true});
+          const liveQuoteMap=new Map(rows.map(row=>[String(row.item.stock_id||''),row.quote]));
+          const liveLaunchItems=rows.map(row=>row.item);
+          launchDisplayedIds=new Set(liveLaunchItems.map(item=>String(item.stock_id||'')));
+          stableListRender(liveLaunchItems.length||scoutOnlyLaunchRows().length
+            ?launchListHtml(liveLaunchItems,liveQuoteMap)
+            :'<div class="box empty">目前沒有仍符合發動前條件的股票；只有明確轉弱、跌離發動區或位置過熱才會移出。</div>',{quoteUpdate:true});
           const quoteTimes = rows.map(row => row.quote?.quote_time).filter(Boolean);
           const latestQuote = quoteTimes.length ? quoteTimes.sort().at(-1) : '-';
           const missing=liveBasePicks.filter(item=>!quoteMap.has(String(item.stock_id))).map(item=>String(item.stock_id)).slice(0,9);
