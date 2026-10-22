@@ -1,0 +1,59 @@
+name: Research only - historical ex-right ex-dividend snapshot
+on:
+  push:
+    branches: [research/core-vnext-evidence-gate-20261022]
+    paths: [.github/workflows/research-dividend-audit-once-20261023.yml]
+permissions:
+  contents: read
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - name: Obtain historical free FinMind dividend-adjustment events, no production requests
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json,urllib.request,urllib.parse,zipfile,csv,io,time
+          from pathlib import Path
+          from collections import Counter
+          SYMBOLS="""1442 1563 1702 2006 2020 2072 2105 2211 2317 2330 2347 2377 2385 2395 2501 2504 2520 2528 2530 2535 2633 2809 2812 2845 2855 2880 2881 2883 2884 2885 2890 2891 2892 2903 3010 3014 3030 3045 3231 3312 3324 3444 3489 3596 3624 3661 3694 4113 4402 4749 4904 4909 4938 4974 5009 5213 5269 5315 5434 5443 5465 5469 5519 6139 6176 6177 6186 6189 6191 6412 6550 6768 8032 8150 8163 8210 8271 8299 8937 9946 9958""".split()
+          rows=[]; failures=[]
+          base="https://api.finmindtrade.com/api/v4/data"
+          for idx,symbol in enumerate(SYMBOLS):
+              par={"dataset":"TaiwanStockDividendResult","data_id":symbol,"start_date":"2022-01-01","end_date":"2025-12-31"}
+              url=base+"?"+urllib.parse.urlencode(par)
+              try:
+                  req=urllib.request.Request(url,headers={"User-Agent":"Asheng-IsolatedDividendAudit/1.0","Accept":"application/json"})
+                  with urllib.request.urlopen(req,timeout=20) as response:
+                      obj=json.load(response)
+                  if not isinstance(obj.get("data"),list) or obj.get("status") not in (200,"200",None):
+                      failures.append([symbol,"api-"+str(obj.get("status"))]);continue
+                  for item in obj["data"]:
+                      if str(item.get("stock_id"))!=symbol:continue
+                      try:
+                          bef=float(item["before_price"]);aft=float(item["after_price"])
+                          if bef<=0 or aft<=0 or bef/aft<.65 or bef/aft>1.65:continue
+                          dt=str(item["date"]).replace("-","")
+                          if len(dt)==8 and dt.isdigit():
+                              rows.append({"stock_id":symbol,"date":dt,"before_price":bef,"after_price":aft,
+                                           "ratio":round(bef/aft,9),"event_type":str(item.get("stock_or_cache_dividend",""))})
+                      except (KeyError,TypeError,ValueError):continue
+              except Exception as e:
+                  failures.append([symbol,str(e)[:120]])
+              if idx%12==0:print("DIVIDEND_PROGRESS",idx+1,len(SYMBOLS),flush=True)
+          with zipfile.ZipFile("dividend_audit_2022_2025.zip","w",compression=zipfile.ZIP_DEFLATED) as zf:
+              payload=io.StringIO()
+              writer=csv.DictWriter(payload,fieldnames=["stock_id","date","before_price","after_price","ratio","event_type"])
+              writer.writeheader();writer.writerows(sorted(rows,key=lambda v:(v["stock_id"],v["date"])))
+              zf.writestr("dividend_results.csv",payload.getvalue())
+              zf.writestr("retrieval_status.json",json.dumps({"symbols_attempted":len(SYMBOLS),"events":len(rows),"failures":failures},ensure_ascii=False))
+          print("DIVIDEND_DONE",json.dumps({"symbols":len(SYMBOLS),"events":len(rows),"failed":len(failures),"example":rows[:3],"failures_preview":failures[:8]},ensure_ascii=False),flush=True)
+          PY
+      - name: Upload short lived one-time dividend research output
+        uses: actions/upload-artifact@v4
+        with:
+          name: asheng-public-dividend-adjustments-2022-2025
+          path: dividend_audit_2022_2025.zip
+          retention-days: 1
+          if-no-files-found: error
