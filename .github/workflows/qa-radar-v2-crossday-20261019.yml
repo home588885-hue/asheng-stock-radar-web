@@ -34,3 +34,4 @@ jobs:
 # Revalidate overnight shortlist reason labels and newest-v2-only controls.
 # Verify mobile/desktop expand-collapse after research card fixture fix.
 # Manual QA refresh 2026-10-22: verify consistent compact/expanded status and KD-high guard. Zero C/S scans.
+# 2026-10-22 rerun: regression baseline now checks shared decision text instead of the retired passive-only headline.
