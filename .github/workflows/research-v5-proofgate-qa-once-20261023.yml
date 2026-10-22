@@ -1,0 +1,15 @@
+name: Research V5 proof gate regression QA (one-off, zero network scans)
+on:
+  push:
+    branches: [research/core-vnext-evidence-gate-20261022]
+    paths: [.github/workflows/research-v5-proofgate-qa-once-20261023.yml]
+permissions:
+  contents: read
+jobs:
+  prove-no-go:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Audit fail-closed future-proof gate, including lookahead rejection
+        run: node diagnostics/vnext-proof-gate-20261023.test.js
