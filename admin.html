@@ -2323,6 +2323,47 @@ h1 {
         if(scoutCloudReady){void flushScoutCloud();}
         else{void refreshScoutCloud();}
       };
+      // Only signed, actually scanned S pre-breakout observations enter the
+      // existing private historical watch. These are NEVER trading approvals.
+      const ingestSignedPrebreakoutRows=rows=>{
+        if(!Array.isArray(rows))return;
+        let changed=false;
+        for(const item of rows){
+          const id=String(item?.stock_id||''),day=String(item?.as_of||'');
+          const m=item?.metrics||{},sc=m.prebreakout_scout||{},intel=m.scan_intelligence||{};
+          if(!/^[0-9A-Z.-]{2,12}$/.test(id)||!/^20\d\d-\d\d-\d\d$/.test(day)
+            ||sc.version!=='2026-10-21-prebreakout-scout-v1'
+            ||String(sc.as_of||'')!==day||sc.eligible!==true||sc.actionable!==false
+            ||!unifiedRadarGeneration(item)||!chaseModelReady(item)
+            ||holdings.has(id))continue;
+          const previous=scoutHistory.get(id);
+          const launched=['ACTIVE','ENTRY'].includes(String(intel.effective_lifecycle||''))
+            ||['starter','formal_candidate'].includes(String(m.trade_lifecycle?.entry?.state||''))
+            ||m.ma_cluster?.breakout_first_bar===true;
+          const origin=String(intel.prebreakout_first_seen_as_of||day);
+          const seen=previous?.seen_as_of
+            ||(/^20\d\d-\d\d-\d\d$/.test(origin)&&origin<=day?origin:day);
+          const seq=m.ma_cluster?.launch_sequence||m.launch_sequence||{};
+          const incoming={
+            stock_id:id,stock_name:String(item.stock_name||id).slice(0,64),
+            as_of:day,scanned_at:String(item.scanned_at||''),state:launched?'followup':'prelaunch',
+            label:launched?'🎯 已轉進場雷達｜前哨留歷史':'🌱 突破前哨｜持續追蹤（非買點）',
+            reason:String(sc.reason||'均線轉強，觀察前高量價確認').slice(0,240),
+            first_bar_date:String(seq.first_signal_date||previous?.first_bar_date||'').slice(0,10),
+            seen_as_of:seen,close:Number(m.close)||null,
+            bias:Number.isFinite(Number(sc.ma20_bias_pct))?Number(sc.ma20_bias_pct):null,
+            score:Number(sc.score??item.score)||0
+          };
+          if(previous&&scoutNewer(previous,incoming))continue;
+          if(JSON.stringify(previous)!==JSON.stringify(incoming)){
+            scoutHistory.set(id,incoming);scoutPending.set(id,incoming);changed=true;
+          }
+        }
+        scoutCleanHistory();
+        if(changed)renderScoutPanel();
+        if(scoutCloudReady){void flushScoutCloud();}
+        else if(changed){void refreshScoutCloud();}
+      };
       const ENTRY_QUOTE_REFRESH_MS = LOCKED_SETTINGS.entryQuoteRefreshMs;
       const ENTRY_POOL_REFRESH_MS = LOCKED_SETTINGS.entryPoolRefreshMs;
       let entryPoolRefreshing = false;
@@ -6225,6 +6266,7 @@ h1 {
               throw new Error('發動前來源不是最新山川模型，拒絕混入舊版');
             applyGlobalHeaderSummary(launchData);
             ingestScoutObservations(launchData.scout_observations);
+            ingestSignedPrebreakoutRows(launchData.picks);
             lastLaunchModelReadAt = Date.now();
             let launchPicks = (launchData.picks || []).filter(recentModelForDisplay);
             const launchObservation=(launchData.observation_launch||[])
@@ -8411,6 +8453,7 @@ h1 {
         if(launchData?.progress)latestScanProgress=launchData.progress;
         if(launchData){
           ingestScoutObservations(launchData.scout_observations);
+          ingestSignedPrebreakoutRows(launchData.picks);
           overnightPassiveResearch=(launchData.observation_followups||[])
             .filter(item=>item.__observation_kind==='ma10_pending_ma20_supported'
               &&passiveRadarWatchEligible(item)).slice(0,5);
