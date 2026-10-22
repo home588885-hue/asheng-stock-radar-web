@@ -631,7 +631,7 @@ test('Unified passive C/S status is identical for mini, deep guide and next step
   assert.match(html,/radarShortAdvice\(item,safeDisplayAction,q\)/);
   assert.match(html,/radarShortAdvice\(item,\{text:status\},q\)/);
   assert.match(html,/radarShortAdvice\(item,action,q\)/);
-  assert.match(html,/text:blocked\?'🔴 暫不進場｜風控待核對'/);
+  assert.match(html,/const rawStudyLabel=blocked\?'🔴 暫不進場｜風控待核對'/);
   assert.match(html,/passive\?passive\.label:String\(original\.text\|\|phaseInfo\.label\)/);
   assert.match(html,/S '\+esc\(item\.as_of\|\|'日期待更新'\)\+' 前次日K/);
 });
@@ -851,11 +851,12 @@ test('Compact summary, expanded decision and technical guide share one action',(
   assert.match(html,/const decisionText=activeFormal\?/);
   assert.match(html,/const safeDisplayAction=\{\.\.\.originalAction,buyable:activeFormal,trialable:activeTrial,[\s\S]*?text:decisionText/);
   assert.match(html,/const glanceSignal=String\(decisionText\)\.split/);
+  assert.match(html,/const stageLabel=rawStageLabel\.includes\('非買點'\)/);
   assert.match(html,/stockMovementHtml\(item,q,'entry',safeDisplayAction\)/);
   assert.match(html,/guide\.status=String\(signal\.text\|\|guide\.status\)/);
   assert.match(html,/stockMovementHtml\(item,q,'launch',launchDisplayAction\)/);
   assert.match(html,/hideDecisionBanner:true,actionOverride:launchDisplayAction/);
-  assert.match(html,/text:blocked\?'🔴 暫不進場｜風控待核對'/);
+  assert.match(html,/const rawStudyLabel=blocked\?'🔴 暫不進場｜風控待核對'/);
   assert.match(html,/String\(info\.row\?\.action\?\.text\|\|phaseInfo\.label\)/);
   assert.match(html,/const decision=holdingDisplay\(item,live\)/);
   assert.match(html,/stockMovementHtml\(item,live,'holding',\{text:actionLabel,detail:decision\.reminder\}\)/);
