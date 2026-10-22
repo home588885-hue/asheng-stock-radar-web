@@ -824,6 +824,41 @@ test('Foreign 10-day net and quarterly quality reuse the existing chip/revenue r
   assert.match(html,/fundamentals: \[chipText,revenueText,fundamentalChipBrief\(metrics\)\]/);
   assert.doesNotMatch(src,/fetch\s*\(|getLiveQuotes\s*\(|setInterval\s*\(/);
 });
+test('KD-high is an oscillator warning, not a high-price veto for 2633',()=>{
+  const source=section('      const newEntryRiskGate = (item, quote = null) => {',
+    '      const entryCandleGuard =');
+  const gate=new Function('chaseModelReady','liveSelloffRisk','validTodayQuote',
+    'chaseOver','chaseLimitNote','num',source+'\nreturn newEntryRiskGate;')(
+    ()=>true,()=>null,()=>false,(item,p)=>p>Number(item.metrics.ma20)*1.12,
+    ()=>'12%',(x,n=1)=>Number(x).toFixed(n));
+  const item={stock_id:'2633',metrics:{close:26.35,ma20:25.85,ma60:25.96,
+    position_1y_pct:35.2,daily_k:83.8,daily_d:82.6,
+    entry_candle_guard:{main_bull:true,weak_after_breakout:false},
+    holding_management:{strong_breakdown:false}},
+    cautions:['日KD偏高']};
+  assert.equal(gate(item),null,'KD 83.8 / D 82.6 must not be high-position risk');
+  assert.equal(gate({...item,metrics:{...item.metrics,daily_d:84.6}})?.kind,
+    'momentum','K < D may trigger the existing weakening check');
+  assert.equal(gate({...item,metrics:{...item.metrics,position_1y_pct:89}})?.kind,
+    'position','high one-year position must retain the original guard');
+  const high=section('          const high=(Number.isFinite(pos)&&pos>=85)||chaseOver(item,price)',
+    '          if(high){');
+  assert.doesNotMatch(high,/k>80|日KD偏高/);
+  assert.match(high,/risk\?\.kind==='position'/);
+});
+test('Compact summary, expanded decision and technical guide share one action',()=>{
+  assert.match(html,/const decisionText=activeFormal\?/);
+  assert.match(html,/const safeDisplayAction=\{\.\.\.originalAction,buyable:activeFormal,trialable:activeTrial,[\s\S]*?text:decisionText/);
+  assert.match(html,/const glanceSignal=String\(decisionText\)\.split/);
+  assert.match(html,/stockMovementHtml\(item,q,'entry',safeDisplayAction\)/);
+  assert.match(html,/guide\.status=String\(signal\.text\|\|guide\.status\)/);
+  assert.match(html,/stockMovementHtml\(item,q,'launch',launchDisplayAction\)/);
+  assert.match(html,/hideDecisionBanner:true,actionOverride:launchDisplayAction/);
+  assert.match(html,/text:blocked\?'🔴 暫不進場｜風控待核對'/);
+  assert.match(html,/String\(info\.row\?\.action\?\.text\|\|phaseInfo\.label\)/);
+  assert.match(html,/const decision=holdingDisplay\(item,live\)/);
+  assert.match(html,/stockMovementHtml\(item,live,'holding',\{text:actionLabel,detail:decision\.reminder\}\)/);
+});
 for(const g of html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi)){
   if(/\bsrc=/.test(g[1]))continue;
   new Function(g[2]);
