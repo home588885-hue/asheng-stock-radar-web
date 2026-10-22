@@ -15,8 +15,10 @@ with sync_playwright() as pw:
         page.goto(fixture.as_uri(), wait_until='domcontentloaded',timeout=15000)
         sections=page.locator('section[data-stable-key^="entry-simple-"]')
         assert sections.count()==4,(name,'expected three main sections plus collapsed history',sections.count())
-        assert page.locator('[data-entry-fold="simple-today"]').evaluate('(e)=>e.open') is True
-        assert page.locator('[data-entry-fold="simple-tracking"]').evaluate('(e)=>e.open') is True
+        # Current production UI keeps the two actionable/watch shelves flat,
+        # while risk and history remain collapsed. Do not require retired folds.
+        assert page.locator('[data-stable-key="entry-simple-today"] .entry-bucket-flat').count()==1
+        assert page.locator('[data-stable-key="entry-simple-tracking"] .entry-bucket-flat').count()==1
         assert page.locator('[data-entry-fold="simple-risk"]').evaluate('(e)=>e.open') is False
         assert page.locator('[data-entry-fold="simple-history"]').evaluate('(e)=>e.open') is False
         widthinfo=page.evaluate("""() => ({
