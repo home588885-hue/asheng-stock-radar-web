@@ -702,13 +702,13 @@ test('Pre-breakout signal survives live breakout without bypassing trade gates',
   assert.match(html,/quoteFreshForTrial\(row\.quote\)/);
   assert.doesNotMatch(src,/fetch\s*\(|getLiveQuotes\s*\(|savePullbackWatchRows\s*\(/);
 });
-test('First-bar active orphan stocks merge into LAUNCH cards, with archived history hidden but retained',()=>{
+test('Current and historical scouts render as one-level clickable stock cards without buy signals',()=>{
   const src=section('      let launchDisplayedIds=new Set();','      const flushScoutCloud=async()=>{');
   const rows=new Map([
     ['5521',{stock_id:'5521',stock_name:'工信',as_of:'2026-10-21',
       state:'prelaunch',label:'山川前哨',close:11.15,reason:'前高觀察'}],
     ['3062',{stock_id:'3062',stock_name:'建漢',as_of:'2026-10-21',
-      state:'prelaunch',label:'山川第一根前哨',close:23.1}],
+      state:'prelaunch',label:'山川第一根前哨',close:23.1,bias:2.4,first_bar_date:'2026-10-14'}],
     ['3013',{stock_id:'3013',stock_name:'晟銘電',as_of:'2026-10-21',
       state:'first_bar',label:'已轉進場雷達',close:95.6}],
     ['1609',{stock_id:'1609',stock_name:'大亞',as_of:'2026-10-21',
@@ -718,41 +718,53 @@ test('First-bar active orphan stocks merge into LAUNCH cards, with archived hist
   ]);
   const escape=v=>String(v).replace(/[&<>"']/g,c=>({
     '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const renderFn=new Function('scoutHistory','holdings','stage','esc','num','document',
-    src+'\nreturn {scoutOnlyLaunchRows,launchScoutOnlyHtml,renderScoutPanel,setVisible:xs=>{launchDisplayedIds=new Set(xs)}};');
-  const fakeNodes=[],list={
+  const savedOpen=new Set(['1609']);
+  const renderFn=new Function('scoutHistory','holdings','stage','esc','num',
+    'launchExpandedIds','document',src+
+    '\nreturn {scoutOnlyLaunchRows,launchScoutOnlyHtml,renderScoutPanel,setVisible:xs=>{launchDisplayedIds=new Set(xs)}};');
+  let content='',fakePresent=false;
+  const list={
     querySelector:selector=>selector==='.launch-mini-wrap'?{}:null,
-    querySelectorAll:()=>[...fakeNodes],
-    insertAdjacentHTML:(where,html)=>{
-      list.content=html;
-      fakeNodes.push({
-        dataset:{stockId:'3062'},
-        querySelector:()=>({open:false}),
-        remove:()=>{fakeNodes.splice(0,fakeNodes.length);list.content='';}
-      });
-    },
-    content:''
+    querySelectorAll:()=>fakePresent?[{
+      dataset:{stockId:'3062'},
+      querySelector:()=>({open:false}),
+      remove:()=>{content='';fakePresent=false;}
+    }]:[],
+    insertAdjacentHTML:(_where,html)=>{content=html;fakePresent=true;}
   };
   const sut=renderFn(rows,new Map(),'LAUNCH',escape,(n,p)=>Number(n).toFixed(p),
-    {getElementById:id=>id==='list'?list:null});
+    savedOpen,{getElementById:id=>id==='list'?list:null});
   sut.setVisible(['5521']);
-  assert.deepEqual(sut.scoutOnlyLaunchRows().map(x=>x.stock_id),['3062']);
+  const watch=sut.scoutOnlyLaunchRows();
+  assert.deepEqual(watch.map(x=>x.stock_id),['3062','3013','1609','1802']);
+  const cards=watch.map(x=>sut.launchScoutOnlyHtml(x));
+  for(const card of cards){
+    assert.match(card,/class="entry-mini" data-stock-key="/);
+    assert.match(card,/class="card radar-scout-detail"/);
+    assert.match(card,/歷史收盤（非即時）/);
+    assert.match(card,/歷史資料，非目前買點/);
+    assert.equal((card.match(/<details/g)||[]).length,1,'ONE fold level per historical stock');
+    assert.doesNotMatch(card,/data-holding-buy|buyable:true|trialable:true|🟢 正式買點/);
+  }
+  assert.doesNotMatch(cards[0],/data-stock-key="3062" open/);
+  assert.match(cards[1],/已轉進場/);
+  assert.match(cards[2],/結構失效/);
+  assert.match(cards[2],/data-stock-key="1609" open/);
+  assert.match(cards[3],/過熱觀察/);
+  assert.match(cards[0],/第一根紀錄：2026-10-14/);
+  assert.match(cards[0],/MA20 乖離（歷史）：\+2.40%/);
   sut.renderScoutPanel();
-  assert.match(list.content,/3062 建漢/);
-  assert.match(list.content,/尚非買點/);
-  assert.match(list.content,/S 2026-10-21（非即時）/);
-  assert.match(list.content,/不可直接試單或買進/);
-  assert.doesNotMatch(list.content,/5521 工信|3013 晟銘電|1609 大亞|1802 台玻/);
-  assert.doesNotMatch(list.content,/radar-scout-root|其他前哨追蹤|歷史紀錄（非買點）/);
-  assert.doesNotMatch(list.content,/🟠 可試單|🟢 正式買點/);
-  assert.equal(rows.size,5,'Keep the cloud-backed history; UI may not delete it');
-  sut.setVisible(['5521','3062']);
+  assert.match(content,/3062 建漢/);
+  assert.doesNotMatch(content,/5521 工信/);
+  assert.equal(rows.size,5,'Cloud history stays stored');
+  sut.setVisible(['5521','3062','3013','1609','1802']);
   sut.renderScoutPanel();
-  assert.equal(list.content,'','No orphan after main cards own all active names');
+  assert.equal(content,'','No duplicated rows after main list owns them');
   assert.doesNotMatch(html,/id="scoutPanel"/);
   assert.match(html,/scoutOnlyLaunchRows\(\)\.map\(x=>launchScoutOnlyHtml\(x\)\)/);
+  assert.match(html,/launchListHtml\(liveLaunchItems,liveQuoteMap\)/);
+  assert.match(html,/const launchListHtml = \(items,quoteMap=null\) =>/);
   assert.match(html,/launchScoutHistoryHtml\(item\)/);
-  assert.match(html,/const launchListHtml = items =>/);
   assert.doesNotMatch(src,/getLiveQuotes\s*\(|scanBatch\s*\(|setInterval\s*\(/);
 });
 test('Tomorrow ENTRY research and continued pullback share one nonduplicated card shelf',()=>{
