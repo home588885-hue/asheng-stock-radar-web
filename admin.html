@@ -5504,10 +5504,12 @@ h1 {
           const original=row.action||{},phaseInfo=overnightLifecycleState(item);
           const passive=item.__passive_monitor===true
             ?passiveWatchDescription(item,row?.quote):null;
+          const rawStudyLabel=blocked?'🔴 暫不進場｜風控待核對'
+            :passive?passive.label:String(original.text||phaseInfo.label);
+          const studyLabel=rawStudyLabel.includes('非買點')
+            ?rawStudyLabel:rawStudyLabel+'（非買點）';
           const studyAction={...original,buyable:false,trialable:false,
-            phase:blocked?'blocked':'observe',
-            text:blocked?'🔴 暫不進場｜風控待核對'
-              :passive?passive.label:String(original.text||phaseInfo.label),
+            phase:blocked?'blocked':'observe',text:studyLabel,
             detail:passive?passive.detail:'明日觀察：'+phaseInfo.tomorrow+'｜'
               +String(original.detail||original.text||'依盤後模型核對現階段')};
           const validatedQuote=bestTodayQuote(row?.quote,String(item.stock_id||''));
@@ -5534,7 +5536,7 @@ h1 {
                 +esc(String(item.stock_id||''))+'" data-research-kind="blocked">'
                 +'<summary class="entry-research-summary"><div class="entry-research-name"><strong>'
                 +esc(String(item.stock_id||'')+' '+String(item.stock_name||''))
-                +'</strong><span>🔴 暫不進場｜風控待核對 ▾</span></div>'
+                +'</strong><span>🔴 暫不進場｜風控待核對（非買點） ▾</span></div>'
                 +'<small>'+esc(quoteLabel)+'｜主要風險：'+esc(why)+'</small>'
                 +continuationRiskMiniHtml(item)
                 +'<small>🔎 '+esc(radarShortAdvice(item,{phase:'blocked'},bestTodayQuote(row?.quote,String(item.stock_id||''))))+'</small></summary>'
@@ -5548,8 +5550,10 @@ h1 {
           const live=validTodayQuote(candidateQuote)?candidateQuote:null;
           const s=quoteDisplayState(live,item);
           const compactPrice=s.label+' '+(live?num(Number(live.price),2):close>0?num(close,2):'-')+(s.today_trade?'｜'+s.moment:'');
-          const stageLabel=item.__passive_monitor===true?passiveWatchDescription(item,live).label
+          const rawStageLabel=item.__passive_monitor===true?passiveWatchDescription(item,live).label
             :String(info.row?.action?.text||phaseInfo.label);
+          const stageLabel=rawStageLabel.includes('非買點')
+            ?rawStageLabel:rawStageLabel+'（非買點）';
           const nextFocus=radarShortAdvice(item,{key:phaseInfo.key,
             detail:item.__passive_monitor===true?passiveWatchDescription(item,live).detail:phaseInfo.tomorrow},live);
           return '<details class="entry-research-stock entry-research-details" data-stock-key="'
