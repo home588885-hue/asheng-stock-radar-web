@@ -36,3 +36,4 @@ jobs:
 # Manual QA refresh 2026-10-22: verify consistent compact/expanded status and KD-high guard. Zero C/S scans.
 # 2026-10-22 rerun: regression baseline now checks shared decision text instead of the retired passive-only headline.
 # Read-only QA 2026-10-22: research watch now explicitly marks every non-actionable headline (non-buy).
+# QA rerun 2026-10-22: validate present flat today/tracking layout, risk/history folds and mobile width.
