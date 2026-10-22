@@ -27,7 +27,7 @@ function audit(history,forward) {
   for(const t of trades){
     const code=String(t.symbol||''),sig=String(t.signal_date||''),
       en=String(t.entry_date||''),ex=String(t.exit_date||'');
-    if(!/^\d{4,6}$/.test(code)||!(sig>CUT&&en>=sig&&ex>=en))
+    if(!/^\d{4,6}$/.test(code)||!(sig>CUT&&en>sig&&ex>=en))
       bad.push('Unverifiable dates or symbol');
     if(!Number.isFinite(t.net_profit_twd)||!Number.isFinite(t.buy_cost_twd)||
        t.buy_cost_twd<=0||t.buy_cost_twd>5000)
