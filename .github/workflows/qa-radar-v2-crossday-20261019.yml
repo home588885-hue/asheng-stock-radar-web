@@ -37,3 +37,4 @@ jobs:
 # 2026-10-22 rerun: regression baseline now checks shared decision text instead of the retired passive-only headline.
 # Read-only QA 2026-10-22: research watch now explicitly marks every non-actionable headline (non-buy).
 # QA rerun 2026-10-22: validate present flat today/tracking layout, risk/history folds and mobile width.
+# 2026-10-22 early-discovery bridge v58 and 2023 persisted pre-breakout regression; read-only QA run.
