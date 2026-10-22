@@ -4774,8 +4774,12 @@ h1 {
         if(m.entry_candle_guard?.main_bull===false)missing.push('MA10／20／60結構');
         if(chaseOver(item,close))missing.push('距MA20超過'+chaseLimitNote(item));
         const missingText=missing.length?'｜未達：'+missing.slice(0,4).join('、'):'';
+        const decisionText=activeFormal?'🟢 正式買點（當日驗證）'
+          :activeTrial?'🟠 可小量試單（當日驗證）'
+          :bucketLabel.includes('避開')?(originalAction.text||'🔴 風險警戒')
+          :originalAction.text||'🟡 模型候選';
         const safeDisplayAction={...originalAction,buyable:activeFormal,trialable:activeTrial,
-          text:bucketLabel.includes('避開')?(originalAction.text||'🔴 風險警戒'):originalAction.text||'🟡 模型候選',
+          text:decisionText,
           detail:(originalAction.detail||'模型條件待核對')+missingText + (q
             ? '｜今日成交 '+String(q.quote_time||'-')+'；技術模型沿用完整日K'
             : '｜尚無當日有效成交，非即時買進訊號')};
@@ -4788,13 +4792,10 @@ h1 {
           :patternChecklist.visible?patternChecklist.text:'';
         const tonight=overnightLifecycleState(item);
         const selected=entryExpandedIds.has(id)?' open':'';
-        const signal=activeFormal?'🟢 正式買點（當日驗證）':
-          activeTrial?'🟠 可小量試單（當日驗證）':
-          String(originalAction.text||bucketLabel||'🟡 追蹤觀察');
-        const attention=(!activeFormal&&!activeTrial&&originalAction.phase!=='blocked'
-          &&originalAction.stale_model!==true)?radarWatchAttentionState(item,q):null;
-        const glanceSignal=(activeFormal||activeTrial)?signal:
-          attention?.priority>=70?attention.label:String(signal).split('｜')[0].trim();
+        // Summary and expanded decision always share the same vetted action.
+        // Attention is already reflected in the next-step text, never a
+        // second independent headline that can contradict the card.
+        const glanceSignal=String(decisionText).split('｜')[0].trim();
         return `<details class="entry-mini" data-stock-key="${esc(id)}"${selected}>
           <summary class="entry-mini-summary radar-compact-summary">
             <span class="entry-mini-name"><strong>${esc(id)} ${esc(item.stock_name||'')}</strong><small>${esc(glanceSignal)}</small></span>
@@ -5304,9 +5305,11 @@ h1 {
           const price=Number(q?.price??m.close),ma20=Number(m.ma20);
           const gap=price>0&&ma20>0?(price/ma20-1)*100:null;
           const pos=Number(m.position_1y_pct),k=Number(m.daily_k),d=Number(m.daily_d);
+          // KD > 80 with K >= D is an elevated oscillator, not proof that
+          // price is extended. Keep actual overextension/position risk as the
+          // sole reason for the blue high-position category. K < D remains
+          // covered by newEntryRiskGate() above.
           const high=(Number.isFinite(pos)&&pos>=85)||chaseOver(item,price)
-            ||(Number.isFinite(k)&&k>80)
-            ||(item.cautions||[]).some(x=>String(x).includes('日KD偏高'))
             ||detail.includes('位置過高')||risk?.kind==='position';
           if(high){
             const reasons=[];
@@ -5503,7 +5506,8 @@ h1 {
             ?passiveWatchDescription(item,row?.quote):null;
           const studyAction={...original,buyable:false,trialable:false,
             phase:blocked?'blocked':'observe',
-            text:passive?passive.label:phaseInfo.label,
+            text:blocked?'🔴 暫不進場｜風控待核對'
+              :passive?passive.label:String(original.text||phaseInfo.label),
             detail:passive?passive.detail:'明日觀察：'+phaseInfo.tomorrow+'｜'
               +String(original.detail||original.text||'依盤後模型核對現階段')};
           const validatedQuote=bestTodayQuote(row?.quote,String(item.stock_id||''));
@@ -5530,7 +5534,7 @@ h1 {
                 +esc(String(item.stock_id||''))+'" data-research-kind="blocked">'
                 +'<summary class="entry-research-summary"><div class="entry-research-name"><strong>'
                 +esc(String(item.stock_id||'')+' '+String(item.stock_name||''))
-                +'</strong><span>🔴 暫不進場｜點開完整分析 ▾</span></div>'
+                +'</strong><span>🔴 暫不進場｜風控待核對 ▾</span></div>'
                 +'<small>'+esc(quoteLabel)+'｜主要風險：'+esc(why)+'</small>'
                 +continuationRiskMiniHtml(item)
                 +'<small>🔎 '+esc(radarShortAdvice(item,{phase:'blocked'},bestTodayQuote(row?.quote,String(item.stock_id||''))))+'</small></summary>'
@@ -5544,7 +5548,8 @@ h1 {
           const live=validTodayQuote(candidateQuote)?candidateQuote:null;
           const s=quoteDisplayState(live,item);
           const compactPrice=s.label+' '+(live?num(Number(live.price),2):close>0?num(close,2):'-')+(s.today_trade?'｜'+s.moment:'');
-          const stageLabel=item.__passive_monitor===true?passiveWatchDescription(item,live).label:phaseInfo.label;
+          const stageLabel=item.__passive_monitor===true?passiveWatchDescription(item,live).label
+            :String(info.row?.action?.text||phaseInfo.label);
           const nextFocus=radarShortAdvice(item,{key:phaseInfo.key,
             detail:item.__passive_monitor===true?passiveWatchDescription(item,live).detail:phaseInfo.tomorrow},live);
           return '<details class="entry-research-stock entry-research-details" data-stock-key="'
@@ -6019,6 +6024,11 @@ h1 {
           guide.shape=passivePresentation.modelPrefix+String(guide.shape||'型態待確認');
           guide.levels=passivePresentation.modelPrefix+String(guide.levels||'支撐壓力待確認');
           guide.note=passivePresentation.note;
+        } else if(options.actionOverride && !holdings.has(String(item.stock_id||''))){
+          // ENTRY/LAUNCH status is presented only once. The raw strategy
+          // signal stays visible as research inputs, not a rival buy action.
+          guide.status=String(signal.text||guide.status);
+          guide.note=String(signal.detail||guide.note);
         }
         const launch = metrics.launch_candidate || {};
         const launchQuality = launchQualityState(item);
@@ -7718,14 +7728,18 @@ h1 {
         const source=quoteDisplayState(q,item).label;
         const quoteTime=q?'｜成交 '+quoteDisplayState(q,item).moment:'｜S '+String(item.as_of||'待更新');
         const selected=launchExpandedIds.has(id)?' open':'';
+        const launchDisplayAction={key:'launch_observation',phase:'observe',
+          trialable:false,buyable:false,text:status,
+          detail:overnightLifecycleState(item).tomorrow};
         const detailed=item?.__passive_monitor===true
           ?'<div class="model-only-note">🟡 支撐追蹤，不是正式買點；請等待新版完整日K及C成交風控驗證。</div>'
-            +card(item,{hideSignal:true,historicalObservation:true,quote:q})
+            +card(item,{hideSignal:true,historicalObservation:true,quote:q,actionOverride:launchDisplayAction})
           :item?.__observation_only===true
           ?'<div class="model-only-note">⚪ 僅供觀察：尚未完成新版分級乖離驗證，不可依舊模型試單。</div>'
-            +card(item,{hideSignal:true,historicalObservation:true,quote:q})
-          :displayModelWarning(item)?card(item,{hideSignal:true,quote:q})
-          :q?intradayCard(item,q):card(item);
+            +card(item,{hideSignal:true,historicalObservation:true,quote:q,actionOverride:launchDisplayAction})
+          :displayModelWarning(item)?card(item,{hideSignal:true,quote:q,actionOverride:launchDisplayAction})
+          :q?intradayCard(item,q,{hideDecisionBanner:true,actionOverride:launchDisplayAction})
+            :card(item,{hideSignal:true,actionOverride:launchDisplayAction});
         return `<section class="launch-mini-wrap" data-stock-id="${esc(id)}">
           <details class="entry-mini" data-stock-key="${esc(id)}"${selected}>
             <summary class="entry-mini-summary radar-compact-summary" aria-label="${esc(id+' '+String(item?.stock_name||'')+' '+status)}">
@@ -7734,7 +7748,7 @@ h1 {
               <span class="entry-mini-metrics">${esc(source)} <b>${price!=null&&price>0?esc(num(price,2)):'-'}</b><small>${esc(quoteTime)}</small></span>
               <span class="radar-compact-next">下一步：${esc(radarShortAdvice(item,{text:status},q))}</span>
             </summary>
-            <div class="entry-mini-full">${launchScoutHistoryHtml(item)}${continuationRiskMiniHtml(item)}${stockMovementHtml(item,q,'launch',{text:status,detail:overnightLifecycleState(item).tomorrow})}
+            <div class="entry-mini-full">${launchScoutHistoryHtml(item)}${continuationRiskMiniHtml(item)}${stockMovementHtml(item,q,'launch',launchDisplayAction)}
               ${radarDeepDetailsHtml((trial?'<div class="model-only-note">'+esc(trial.detail)+'</div>':'')+detailed)}</div>
           </details>
         </section>`;
@@ -7759,7 +7773,7 @@ h1 {
         return null;
       };
 
-      const intradayCard = (item, quote) => {
+      const intradayCard = (item, quote, options = {}) => {
         const validQuote = validTodayQuote(quote) ? quote : null;
         const rawPrice = validQuote ? Number(validQuote.price) : null;
         if (holdings.has(String(item.stock_id))) return card(item, {hideSignal:true,quote:validQuote});
@@ -7770,11 +7784,12 @@ h1 {
         const volume = validQuote?.volume_lots == null ? null : Number(validQuote.volume_lots);
         const volumeText = Number.isFinite(volume) ? volume.toLocaleString('zh-TW') + '張' : '-';
         const pctText = pct == null ? '-' : `${pct >= 0 ? '+' : ''}${num(pct, 2)}%`;
-        const action = actionDecision(item, validQuote);
+        const action = options.hideDecisionBanner ? null : actionDecision(item, validQuote);
         const quoteUi = quoteDisplayState(validQuote, item);
         const quoteLabel = quoteUi.label;
         const priceText = Number.isFinite(price) ? num(price, 2) : (Number.isFinite(quoteUi.value) ? num(quoteUi.value,2) : quoteUi.text);
-        return `<section class="live-wrap" data-stock-id="${esc(item.stock_id)}"><div class="live-banner ${action.className}"><b>${esc(memberFacingText(action.title))}</b><span>${esc(memberFacingText(action.detail))}</span>${action.extra ? `<span>${esc(memberFacingText(action.extra))}</span>` : ''}<span>${quoteLabel} ${priceText}｜漲跌 ${pctText}｜量 ${volumeText}</span></div>${card(item,{hideSignal:true,quote:validQuote})}</section>`;
+        const banner=action?`<div class="live-banner ${action.className}"><b>${esc(memberFacingText(action.title))}</b><span>${esc(memberFacingText(action.detail))}</span>${action.extra ? `<span>${esc(memberFacingText(action.extra))}</span>` : ''}<span>${quoteLabel} ${priceText}｜漲跌 ${pctText}｜量 ${volumeText}</span></div>`:'';
+        return `<section class="live-wrap" data-stock-id="${esc(item.stock_id)}">${banner}${card(item,{hideSignal:true,quote:validQuote,actionOverride:options.actionOverride})}</section>`;
       };
 
       let detailInteractionLock = false;
