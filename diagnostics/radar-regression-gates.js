@@ -702,49 +702,50 @@ test('Pre-breakout signal survives live breakout without bypassing trade gates',
   assert.match(html,/quoteFreshForTrial\(row\.quote\)/);
   assert.doesNotMatch(src,/fetch\s*\(|getLiveQuotes\s*\(|savePullbackWatchRows\s*\(/);
 });
-test('First-bar records merge into main LAUNCH card and unmatched history remains folded',()=>{
+test('First-bar active orphan stocks merge into LAUNCH cards, with archived history hidden but retained',()=>{
   const src=section('      let launchDisplayedIds=new Set();','      const flushScoutCloud=async()=>{');
-  const panel={innerHTML:'',hidden:true,
-    querySelector:()=>null,querySelectorAll:()=>[]};
   const rows=new Map([
-    ['5521',{stock_id:'5521',stock_name:'工信',as_of:'2026-10-20',
-      score:80,state:'prelaunch',label:'山川前哨',close:11.15,bias:2.2,
-      reason:'觀察母子K壓力'}],
-    ['3062',{stock_id:'3062',stock_name:'建漢',as_of:'2026-10-20',
-      score:77,state:'prelaunch',label:'突破前哨',close:23.1,
-      reason:'等待前高'}],
-    ['3013',{stock_id:'3013',stock_name:'晟銘電',as_of:'2026-10-20',
-      score:74,state:'first_bar',label:'已轉進場雷達',close:95.6}],
-    ['1609',{stock_id:'1609',stock_name:'大亞',as_of:'2026-10-20',
-      score:50,state:'invalid',label:'結構轉弱',close:37.25}]
+    ['5521',{stock_id:'5521',stock_name:'工信',as_of:'2026-10-21',
+      state:'prelaunch',label:'山川前哨',close:11.15,reason:'前高觀察'}],
+    ['3062',{stock_id:'3062',stock_name:'建漢',as_of:'2026-10-21',
+      state:'prelaunch',label:'山川第一根前哨',close:23.1}],
+    ['3013',{stock_id:'3013',stock_name:'晟銘電',as_of:'2026-10-21',
+      state:'first_bar',label:'已轉進場雷達',close:95.6}],
+    ['1609',{stock_id:'1609',stock_name:'大亞',as_of:'2026-10-21',
+      state:'invalid',label:'結構轉弱',close:37.25}],
+    ['1802',{stock_id:'1802',stock_name:'台玻',as_of:'2026-10-21',
+      state:'overheated',label:'過熱',close:18.2}]
   ]);
   const escape=v=>String(v).replace(/[&<>"']/g,c=>({
     '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const renderFn=new Function('document','stage','expectedSignalDataDate',
-    'scoutHistory','holdings','esc','num',
-    src+'\nreturn {renderScoutPanel,setVisible:xs=>{launchDisplayedIds=new Set(xs)}};');
-  const sut=renderFn({getElementById:()=>panel},'LAUNCH',()=> '2026-10-21',
-    rows,new Map(),escape,(n,p)=>Number(n).toFixed(p));
+  const renderFn=new Function('scoutHistory','holdings','stage','esc','num','document',
+    src+'\nreturn {scoutOnlyLaunchRows,launchScoutOnlyHtml,renderScoutPanel,setVisible:xs=>{launchDisplayedIds=new Set(xs)}};');
+  const fakeNodes=[],list={
+    querySelector:selector=>selector==='.launch-mini-wrap'?{}:null,
+    querySelectorAll:()=>fakeNodes,
+    insertAdjacentHTML:(where,html)=>{list.content=html;},
+    content:''
+  };
+  const sut=renderFn(rows,new Map(),'LAUNCH',escape,(n,p)=>Number(n).toFixed(p),
+    {getElementById:id=>id==='list'?list:null});
   sut.setVisible(['5521']);
+  assert.deepEqual(sut.scoutOnlyLaunchRows().map(x=>x.stock_id),['3062']);
   sut.renderScoutPanel();
-  assert.equal(panel.hidden,false);
-  assert.doesNotMatch(panel.innerHTML,/5521 工信/);
-  assert.match(panel.innerHTML,/3062 建漢/);
-  assert.match(panel.innerHTML,/3013 晟銘電/);
-  assert.match(panel.innerHTML,/1609 大亞/);
-  assert.match(panel.innerHTML,/其他前哨追蹤 1 檔｜轉進場／風險歷史 2 檔/);
-  assert.match(panel.innerHTML,/class="radar-scout-compact-row"/);
-  assert.doesNotMatch(panel.innerHTML,/class="entry-mini|data-stock-key|<button/);
-  assert.doesNotMatch(panel.innerHTML,/class="radar-scout-root" open/);
-  panel.querySelector=selector=>selector==='details.radar-scout-root'?{open:true}:null;
+  assert.match(list.content,/3062 建漢/);
+  assert.match(list.content,/尚非買點/);
+  assert.match(list.content,/S 2026-10-21（非即時）/);
+  assert.match(list.content,/不可直接試單或買進/);
+  assert.doesNotMatch(list.content,/5521 工信|3013 晟銘電|1609 大亞|1802 台玻/);
+  assert.doesNotMatch(list.content,/radar-scout-root|其他前哨追蹤|歷史紀錄（非買點）/);
+  assert.doesNotMatch(list.content,/🟠 可試單|🟢 正式買點/);
+  assert.equal(rows.size,5,'Keep the cloud-backed history; UI may not delete it');
+  sut.setVisible(['5521','3062']);
   sut.renderScoutPanel();
-  assert.match(panel.innerHTML,/class="radar-scout-root" open/);
-  sut.setVisible(['5521','3062','3013','1609']);
-  sut.renderScoutPanel();
-  assert.equal(panel.hidden,true);
+  assert.equal(list.content,'','No orphan after main cards own all active names');
+  assert.doesNotMatch(html,/id="scoutPanel"/);
+  assert.match(html,/scoutOnlyLaunchRows\(\)\.map\(x=>launchScoutOnlyHtml\(x\)\)/);
   assert.match(html,/launchScoutHistoryHtml\(item\)/);
-  assert.match(html,/launchDisplayedIds=new Set\(rankedPicks\.map/);
-  assert.match(html,/<main class="list" id="list">[\s\S]*?<section id="scoutPanel"/);
+  assert.match(html,/const launchListHtml = items =>/);
   assert.doesNotMatch(src,/getLiveQuotes\s*\(|scanBatch\s*\(|setInterval\s*\(/);
 });
 test('Tomorrow ENTRY research and continued pullback share one nonduplicated card shelf',()=>{
