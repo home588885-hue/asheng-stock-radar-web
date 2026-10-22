@@ -12,7 +12,7 @@ function future(){
     const dt1=new Date(dt.getTime()+86400000);
     const as=v=>v.toISOString().slice(0,10);
     trades.push({symbol:String(1100+i),signal_date:as(dt),
-      entry_date:as(dt),exit_date:as(dt1),net_profit_twd:100,buy_cost_twd:4950});
+      entry_date:as(dt1),exit_date:as(new Date(dt.getTime()+2*86400000)),net_profit_twd:100,buy_cost_twd:4950});
   }
   return {model:'v5_precision_0050_gate_delay0',freeze_date:'2026-10-23',
     validated_source:'independent_broker_or_exchange_replay',
