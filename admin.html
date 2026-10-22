@@ -5608,10 +5608,17 @@ h1 {
           +'｜本輪候選 '+rows.length+' 檔，未掃到的股票不算淘汰。</small>'
           +'</section>';
         const actionableCount=starterRows.length+completedRows.length;
+        const latestCount=Number(latestScanProgress?.latest_count||0);
+        const stockTotal=Number(latestScanProgress?.total_stocks||0);
+        const scanIncomplete=stockTotal>0&&latestCount<stockTotal*.98;
+        const scanCoverage=stockTotal>0
+          ?(scanIncomplete?'｜⚠️ 盤後日K只更新 '+latestCount+'/'+stockTotal+' 檔，未掃齊':'｜盤後日K '+latestCount+'/'+stockTotal+' 檔')
+          :'';
         const banner='<div class="entry-list-overview" data-stable-key="entry-overview">'
           +'<strong>🎯 進場雷達｜先看可行動，再看追蹤</strong>'
           +'<span>🟢 正式買點 '+completedRows.length+'｜🟠 盤中試單 '+starterRows.length
-          +'｜📋 前次新版留存 '+retainedRows.length+'｜應更新日 '+esc(expectedSignalDataDate())+'</span>'
+          +'｜📋 前次新版留存 '+retainedRows.length+'｜應更新日 '+esc(expectedSignalDataDate())
+          +scanCoverage+'</span>'
           +'<small>只有當日有效成交與原風控全部通過才可試單／確認買點。未更新日K只供觀察；全部詳細判斷點開個股查看。'
           +(staleRows.length?'｜另有 '+staleRows.length+' 檔過期資料不列入':'')+'</small></div>';
         // The old '明日看盤清單' was a second full stock-card feed.
@@ -8356,6 +8363,9 @@ h1 {
           return value.data;
         };
         const v5Data=unwrap(settled[0]),launchData=unwrap(settled[1]);
+        // Display completeness of the source's latest complete-day models.
+        // This is informational; it cannot upgrade orange/green permission.
+        if(launchData?.progress)latestScanProgress=launchData.progress;
         if(launchData){
           ingestScoutObservations(launchData.scout_observations);
           overnightPassiveResearch=(launchData.observation_followups||[])
