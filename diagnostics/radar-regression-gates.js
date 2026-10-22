@@ -861,6 +861,43 @@ test('Compact summary, expanded decision and technical guide share one action',(
   assert.match(html,/const decision=holdingDisplay\(item,live\)/);
   assert.match(html,/stockMovementHtml\(item,live,'holding',\{text:actionLabel,detail:decision\.reminder\}\)/);
 });
+test('2023 signed pre-breakout gets cross-day observation without fictitious early alert or buy',()=>{
+  const src=section('      const ingestSignedPrebreakoutRows=rows=>{',
+    '      const ENTRY_QUOTE_REFRESH_MS =');
+  assert.doesNotMatch(src,/fetch\s*\(|getLiveQuotes\s*\(|scanBatch\s*\(|setInterval\s*\(|buyable:true|trialable:true/);
+  const hist=new Map(),pending=new Map(),held=new Map();
+  let renders=0,reads=0;
+  const ingest=new Function('scoutHistory','scoutPending','holdings',
+    'unifiedRadarGeneration','chaseModelReady','scoutNewer',
+    'scoutCleanHistory','renderScoutPanel','scoutCloudReady',
+    'flushScoutCloud','refreshScoutCloud',src+'\nreturn ingestSignedPrebreakoutRows;')(
+    hist,pending,held,()=>true,()=>true,
+    (old,next)=>String(old.as_of)>String(next.as_of),
+    ()=>{},()=>{renders++},false,()=>Promise.resolve(),()=>{reads++;return Promise.resolve()});
+  const make=(day,life,firstSeen,actionable=false)=>({
+    stock_id:'2023',stock_name:'燁輝',as_of:day,scanned_at:day+'T14:15:00Z',
+    metrics:{close:life==='ACTIVE'?14.7:13.9,
+      prebreakout_scout:{version:'2026-10-21-prebreakout-scout-v1',
+        as_of:day,eligible:true,actionable,score:72,reason:'模型均線轉強'},
+      scan_intelligence:{effective_lifecycle:life,
+        prebreakout_first_seen_as_of:firstSeen||day},
+      ma_cluster:{launch_sequence:{first_signal_date:'2026-10-16'}}}
+  });
+  ingest([make('2026-10-14','PRELAUNCH')]);
+  assert.equal(hist.get('2023').seen_as_of,'2026-10-14');
+  assert.equal(hist.get('2023').state,'prelaunch');
+  assert.match(hist.get('2023').label,/非買點/);
+  ingest([make('2026-10-21','ACTIVE','2026-10-14')]);
+  assert.equal(hist.get('2023').seen_as_of,'2026-10-14');
+  assert.equal(hist.get('2023').state,'followup');
+  assert.match(hist.get('2023').label,/已轉進場雷達/);
+  assert.equal(hist.get('2023').as_of,'2026-10-21');
+  assert.equal(pending.size,1);
+  ingest([make('2026-10-22','ACTIVE','2026-10-14',true)]);
+  assert.equal(hist.get('2023').as_of,'2026-10-21',
+    'actionable scout payload must never be saved as observation');
+  assert.ok(renders>=2&&reads>=2);
+});
 for(const g of html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi)){
   if(/\bsrc=/.test(g[1]))continue;
   new Function(g[2]);
