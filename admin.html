@@ -1234,21 +1234,6 @@ h1 {
 #app .holding-mini-summary .holding-mini-status{grid-column:1/-1;font-size:12px;color:#c3d4ea;line-height:1.45}
 #app .holding-mini-summary .holding-mini-date{font-size:11px;line-height:1.45}
 #app .holding-mini > summary .holding-ma20-days{min-height:0}
-#scoutPanel{margin:9px 0;padding:10px 12px}
-#scoutPanel summary{font-size:14px;line-height:1.5}
-#scoutPanel .radar-scout-history{margin:8px 0 0;padding:7px 8px;border-radius:9px;background:#17253b;border:1px solid #385073}
-#scoutPanel .radar-scout-list{display:grid;gap:8px;margin:8px 0}
-#scoutPanel .radar-scout-card{min-width:0}
-#scoutPanel .radar-scout-card>.entry-mini-summary{cursor:pointer;list-style:none}
-#scoutPanel .radar-scout-card>.entry-mini-summary::-webkit-details-marker{display:none}
-#scoutPanel .radar-scout-card .entry-mini-name strong{font-size:16px}
-#scoutPanel .radar-scout-card .entry-mini-metrics{font-size:12px}
-#scoutPanel .radar-scout-card .entry-mini-full{padding:10px 12px;font-size:13px;line-height:1.65;color:#cbd9ee;overflow-wrap:anywhere}
-#scoutPanel .radar-scout-card .radar-scout-reason{color:#e2e8f0}
-#scoutPanel .radar-scout-group-label{display:block;margin:10px 0 6px;font-size:13px}
-#scoutPanel .radar-scout-compact-row{padding:7px 4px;border-bottom:1px solid #30445e;font-size:12px;line-height:1.55;overflow-wrap:anywhere}
-#scoutPanel .radar-scout-compact-row:last-child{border-bottom:0}
-#scoutPanel .radar-scout-compact-row strong{font-size:13px;margin-right:6px}
 @media(max-width:640px){
 #app .radar-compact-summary,#app .holding-mini-summary{padding:10px;gap:4px 8px}
 #app .radar-compact-summary .entry-mini-name strong,#app .holding-mini-summary .holding-mini-name strong{font-size:17px}
@@ -1341,7 +1326,7 @@ h1 {
         <main class="list" id="list">
           <div class="box empty loading">正在載入候選股…</div>
         </main>
-        <section id="scoutPanel" class="box" hidden aria-label="其他前哨追蹤與歷史"></section>
+
 
         <dialog class="holding-dialog" id="holdingDialog">
           <form id="holdingForm">
@@ -2182,46 +2167,49 @@ h1 {
           for(const id of scoutHistory.keys())if(!keepIds.has(id)){scoutHistory.delete(id);scoutPending.delete(id);}
         }
       };
-      // Deduplicate historical first-bar observations against the SAME
-      // signed LAUNCH stock cards, and keep unmatched/history in ONE small
-      // folded shelf below the main radar (never an extra primary stock card).
+      // History is preserved in the existing account-scoped cloud table.
+      // No duplicate zone: current signed candidates take precedence; only
+      // active unmatched scouts appear as read-only mini cards in LAUNCH.
       let launchDisplayedIds=new Set();
+      const scoutOnlyLaunchRows=()=>[...scoutHistory.values()].filter(x=>{
+        const id=String(x.stock_id||'');
+        if(!id||holdings.has(id)||launchDisplayedIds.has(id))return false;
+        if(['invalid','overheated'].includes(String(x.state||'')))return false;
+        if(String(x.label||'').includes('已轉進場雷達'))return false;
+        const day=Date.parse(String(x.as_of||'')+'T00:00:00Z');
+        return Number.isFinite(day)&&Date.now()-day<14*86400000;
+      }).sort((a,b)=>String(b.as_of).localeCompare(String(a.as_of))
+        ||Number(b.score||0)-Number(a.score||0));
+      const launchScoutOnlyHtml=(x,expanded=false)=>{
+        const id=String(x.stock_id||''),name=String(x.stock_name||''),
+          sourceDay=String(x.as_of||'');
+        const price=Number(x.close);
+        const recordPrice=Number.isFinite(price)&&price>0?num(price,2):'-';
+        const why=String(x.reason||'等待完整日K確認').slice(0,140);
+        const desc=String(x.label||'突破前哨').slice(0,80);
+        // Historical S close can never become a live C buy/trial cue.
+        return '<section class="launch-mini-wrap launch-scout-inline" data-stock-id="'+esc(id)+'" data-scout-only="true">'
+          +'<details class="entry-mini" data-stock-key="'+esc(id)+'"'+(expanded?' open':'')+'>'
+          +'<summary class="entry-mini-summary radar-compact-summary">'
+          +'<span class="entry-mini-name"><strong>'+esc(id+' '+name)
+          +'</strong><small>⚪ 前哨追蹤｜尚非買點</small></span>'
+          +'<span class="entry-mini-expand">展開</span>'
+          +'<span class="entry-mini-metrics">S '+esc(sourceDay)+'（非即時） <b>'+esc(recordPrice)+'</b></span>'
+          +'<span class="radar-compact-next">下一步：等最新日K與量價確認</span>'
+          +'</summary><div class="entry-mini-full"><div class="model-only-note">'
+          +esc(desc+'｜'+why)+'｜歷史前哨紀錄，不可直接試單或買進'
+          +'</div></div></details></section>';
+      };
       const renderScoutPanel=()=>{
-        const panel=document.getElementById('scoutPanel');
-        if(!panel)return;
-        if(stage!=='LAUNCH'){panel.hidden=true;return;}
-        const rows=[...scoutHistory.values()].filter(x=>
-          !holdings.has(String(x.stock_id||''))
-          &&!launchDisplayedIds.has(String(x.stock_id||'')));
-        if(!rows.length){panel.hidden=true;return;}
-        const promoted=x=>String(x.label||'').includes('已轉進場雷達');
-        const history=x=>['invalid','overheated'].includes(String(x.state||''))||promoted(x);
-        const active=rows.filter(x=>!history(x))
-          .sort((a,b)=>String(b.as_of).localeCompare(String(a.as_of))||Number(b.score)-Number(a.score));
-        const archived=rows.filter(history)
-          .sort((a,b)=>String(b.as_of).localeCompare(String(a.as_of))||Number(b.score)-Number(a.score));
-        const wasOpen=!!panel.querySelector('details.radar-scout-root')?.open;
-        const rowHtml=x=>{
-          const id=String(x.stock_id||''),name=String(x.stock_name||'');
-          const p=Number(x.close),date=String(x.as_of||'');
-          const state=String(x.label||'待日K確認');
-          const price=p>0?'｜S '+num(p,2):'';
-          return '<div class="radar-scout-compact-row"><strong>'
-            +esc(id+' '+name)+'</strong>'+esc(state)+'｜'+esc(date)
-            +esc(price)
-            +(x.reason?'｜'+esc(String(x.reason).slice(0,70)):'')
-            +'</div>';
-        };
-        const html='<details class="radar-scout-root"'+(wasOpen?' open':'')+'>'
-          +'<summary>📂 其他前哨追蹤 '+active.length
-          +' 檔｜轉進場／風險歷史 '+archived.length+' 檔（點開）</summary>'
-          +'<div class="radar-scout-list">'
-          +(active.length?active.map(rowHtml).join(''):'')
-          +(archived.length?'<div class="radar-scout-group-label">歷史紀錄（非買點）</div>'
-            +archived.map(rowHtml).join(''):'')
-          +'</div></details>';
-        if(panel.innerHTML!==html)panel.innerHTML=html;
-        panel.hidden=false;
+        if(stage!=='LAUNCH')return;
+        const list=document.getElementById('list');
+        if(!list||!list.querySelector('.launch-mini-wrap'))return;
+        const previous=[...list.querySelectorAll('[data-scout-only="true"]')];
+        const expanded=new Set(previous.filter(n=>n.querySelector('details')?.open)
+          .map(n=>String(n.dataset.stockId||'')));
+        previous.forEach(n=>n.remove());
+        const html=scoutOnlyLaunchRows().map(x=>launchScoutOnlyHtml(x,expanded.has(String(x.stock_id)))).join('');
+        if(html)list.insertAdjacentHTML('beforeend',html);
       };
 
       const flushScoutCloud=async()=>{
@@ -6345,7 +6333,7 @@ h1 {
             // Only candidates actually rendered count as main cards; all
             // remaining cross-day/history items stay folded below the list.
             launchDisplayedIds=new Set(rankedPicks.map(x=>String(x.stock_id||'')));
-            renderScoutPanel();
+            // Cloud history still refreshes; no separate panel.
           }
           const launchTally = stage === 'LAUNCH' ? launchCandidateExplanation(data, rankedPicks) : null;
           if (stage === 'LAUNCH') {
@@ -6364,7 +6352,7 @@ h1 {
             $('#note').textContent = `🌱 發動前｜追蹤 ${rankedPicks.length} 檔（⚪ 待新版確認 ${historicalCount}）｜🔥發動中 ${activeCount}｜🟠發動前 ${pre}｜🟢突破 ${breakout}｜🔁回踩 ${add}｜${launchTally.text}${scanText}`;
           }
           const launchStillIncomplete = progress.latest_complete !== true || String(progress.latest_as_of || '') !== expectedSignalDataDate();
-          stableListRender(rankedPicks.length
+          stableListRender(rankedPicks.length || (stage==='LAUNCH'&&scoutOnlyLaunchRows().length)
             ? (stage === 'LAUNCH' ? launchListHtml(rankedPicks) : rankedPicks.map(card).join(''))
             : `<div class="box empty">${stage === 'LAUNCH'
                 ? '🌱 目前發動前可觀察 0 檔。' + launchTally.text + '。'
@@ -7724,7 +7712,11 @@ h1 {
           </details>
         </section>`;
       };
-      const launchListHtml = items => items.map(item=>launchMiniHtml(item)).join('');
+      const launchListHtml = items => {
+        launchDisplayedIds=new Set(items.map(item=>String(item.stock_id||'')));
+        return items.map(item=>launchMiniHtml(item)).join('')
+          +scoutOnlyLaunchRows().map(x=>launchScoutOnlyHtml(x)).join('');
+      };
       const recoveryPattern = (item, quote) => {
         const metrics = item.metrics || {};
         const priorOpen = Number(metrics.prev_open ?? metrics.open);
