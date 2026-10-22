@@ -722,8 +722,15 @@ test('First-bar active orphan stocks merge into LAUNCH cards, with archived hist
     src+'\nreturn {scoutOnlyLaunchRows,launchScoutOnlyHtml,renderScoutPanel,setVisible:xs=>{launchDisplayedIds=new Set(xs)}};');
   const fakeNodes=[],list={
     querySelector:selector=>selector==='.launch-mini-wrap'?{}:null,
-    querySelectorAll:()=>fakeNodes,
-    insertAdjacentHTML:(where,html)=>{list.content=html;},
+    querySelectorAll:()=>[...fakeNodes],
+    insertAdjacentHTML:(where,html)=>{
+      list.content=html;
+      fakeNodes.push({
+        dataset:{stockId:'3062'},
+        querySelector:()=>({open:false}),
+        remove:()=>{fakeNodes.splice(0,fakeNodes.length);list.content='';}
+      });
+    },
     content:''
   };
   const sut=renderFn(rows,new Map(),'LAUNCH',escape,(n,p)=>Number(n).toFixed(p),
