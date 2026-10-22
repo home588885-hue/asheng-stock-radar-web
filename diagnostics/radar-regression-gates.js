@@ -631,7 +631,8 @@ test('Unified passive C/S status is identical for mini, deep guide and next step
   assert.match(html,/radarShortAdvice\(item,safeDisplayAction,q\)/);
   assert.match(html,/radarShortAdvice\(item,\{text:status\},q\)/);
   assert.match(html,/radarShortAdvice\(item,action,q\)/);
-  assert.match(html,/text:passive\?passive\.label:phaseInfo\.label/);
+  assert.match(html,/text:blocked\?'🔴 暫不進場｜風控待核對'/);
+  assert.match(html,/passive\?passive\.label:String\(original\.text\|\|phaseInfo\.label\)/);
   assert.match(html,/S '\+esc\(item\.as_of\|\|'日期待更新'\)\+' 前次日K/);
 });
 test('Signed watch attention cannot invent a buy or hide a strong overextended stock',()=>{
