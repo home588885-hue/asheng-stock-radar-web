@@ -762,6 +762,16 @@ test('Tomorrow ENTRY research and continued pullback share one nonduplicated car
   assert.match(html,/compactEntryGroupHtml\('risk'/);
   assert.match(html,/data-entry-fold="simple-'\+key/);
 });
+test('ENTRY warns when newest signed daily-K coverage is partial',()=>{
+  assert.match(html,/if\(launchData\?\.progress\)latestScanProgress=launchData\.progress/);
+  assert.match(html,/latestCount<stockTotal\*\.98/);
+  assert.match(html,/⚠️ 盤後日K只更新/);
+  assert.match(html,/scanCoverage\+'<\/span>'/);
+  assert.match(html,/const outHtml=banner\+simplifiedEntryHtml/);
+  const source=section('        const latestCount=Number(latestScanProgress?.latest_count||0);',
+    '        const outHtml=banner+simplifiedEntryHtml(');
+  assert.doesNotMatch(source,/getLiveQuotes\s*\(|scanBatch\s*\(|buyable:true|trialable:true/);
+});
 test('Foreign 10-day net and quarterly quality reuse the existing chip/revenue row',()=>{
   const src=section('      const chipMergedSnapshotText =',
     '      const selectionGuide = (item, signal) => {');
