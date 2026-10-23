@@ -7228,7 +7228,7 @@ h1 {
         const strongNote = action.title.includes('強警示') ? '<div class="holding-rule-line"><b>強警示：</b>長黑、爆量、MA20 下方且籌碼偏弱，優先檢查是否提早處理。</div>' : '';
         const risk = holdingRiskPlan(item, quote);
         const riskNote=risk
-          ?'<div class="holding-rule-line"><b>成本風控：</b>成本 '+num(risk.cost,2)+'｜損益 <b class="'+holdingPnlClass(risk.pnl)+'">'+(risk.pnl>0?'+':'')+num(risk.pnl,2)+'%</b>｜-10%停損 '+num(risk.stopPrice,2)+'｜+20%後最高價回落5%停利+'</div>'
+          ?'<div class="holding-rule-line"><b>成本風控：</b>成本 '+num(risk.cost,2)+'｜損益 <b class="'+holdingPnlClass(risk.pnl)+'">'+(risk.pnl>0?'+':'')+num(risk.pnl,2)+'%</b>｜-10%停損 '+num(risk.stopPrice,2)+'｜+20%後最高價回落5%停利</div>'
           :'<div class="holding-rule-line"><b>成本風控：</b>有效報價或模型待確認。</div>';
         const profitGuard=holdingProfitProtection(item,quote);
         const profitNote=profitGuard
