@@ -36,4 +36,9 @@ x=sample();x.independent_cohort.cost_stress_0_30.net_twd=0;expectBlocked(x,/nega
 x=sample();const ok=check(x);
 assert.equal(ok.status,'MANUAL_REVIEW_REQUIRED');
 assert.equal(ok.production_change_authorized,false);
-console.log('PASS 11 independent stock risk/cost/forward veto tests; production/UI authorization always false');
+const observed=require('./vnext-growth-disjoint-2026-evidence.json');
+const evidence=check(observed);
+assert.equal(evidence.status,'BLOCKED');
+assert.match(evidence.reasons.join(' '),/negative_after_cost/);
+assert.equal(evidence.production_change_authorized,false);
+console.log('PASS 12 independent stock risk/cost/forward veto tests incl. verified 2026 disjoint NO-GO; production/UI authorization always false');
