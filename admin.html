@@ -6834,18 +6834,6 @@ h1 {
         // Only completed EOD volume, not an intraday raw volume comparison.
         const ratio=modelFresh&&avg>0&&dayLots>=0?dayLots/avg:null;
         if(highPosition&&ratio!=null&&ratio>=2.2)return {kind:'volume_exit_watch',risk,trail,title:'🟠 高檔爆量｜建議先走一趟',detail:'一年價格位階 '+num(position,1)+'%｜相對20日均量 '+num(ratio,2)+'倍｜先核對是否爆量轉弱'};
-        // Trend-change alert uses completed, fresh S daily price + volume only.
-        // A single pullback or low-volume dip is not treated as a trend reversal.
-        const close=Number(m.close),ma5=Number(m.ma5),ma10=Number(m.ma10),ma20=Number(m.ma20);
-        const prevClose=Number(m.prev_close);
-        const volumeRatio=ratio;
-        const trendChanged=modelFresh&&close>0&&ma5>0&&ma10>0&&ma20>0
-          &&prevClose>0&&volumeRatio!=null
-          &&close<ma5&&close<ma10&&close<prevClose
-          &&ma5<ma10&&ma10<ma20&&volumeRatio>=1.5;
-        if(trendChanged)return {kind:'volume_exit_watch',risk,trail,
-          title:'🟠 上漲趨勢轉變・量價轉弱｜建議先走一趟',
-          detail:'完整日K跌破MA5／MA10，短均線轉空且MA10低於MA20｜收黑、量達20日均量 '+num(volumeRatio,2)+'倍｜先評估獲利了結，非自動賣出'};
         if(risk.lossWarning)return {kind:'warning',risk,trail,title:'🟠 虧損警戒｜禁止攤平',detail:'損益 '+num(risk.pnl,2)+'%｜停損 '+num(risk.stopPrice,2)};
         return {kind:'hold',risk,trail,title:'🟢 趨勢續抱｜不受30天限制',detail:'損益 '+num(risk.pnl,2)+'%'+(trail?.armed?'｜移動停利 '+num(trail.floorPrice,2):'｜達+20%後啟動最高價回落5%')};
       };
