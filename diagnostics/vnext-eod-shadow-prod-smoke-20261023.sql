@@ -12,9 +12,9 @@ v AS (
 ), meta AS (
  SELECT
    COUNT(*) FILTER(WHERE reloptions @> ARRAY['security_invoker=true']::text[]) AS secured_views,
-   COUNT(*) FILTER(WHERE NOT has_table_privilege('anon',oid,'SELECT') AND
-                             NOT has_table_privilege('authenticated',oid,'SELECT') AND
-                             has_table_privilege('service_role',oid,'SELECT')) AS private_views
+   COUNT(*) FILTER(WHERE NOT has_table_privilege('anon',c.oid,'SELECT') AND
+                             NOT has_table_privilege('authenticated',c.oid,'SELECT') AND
+                             has_table_privilege('service_role',c.oid,'SELECT')) AS private_views
  FROM pg_class c JOIN pg_namespace n ON c.relnamespace=n.oid
  WHERE n.nspname='private'
    AND c.relname IN ('asheng_vnext_eod_shadow','asheng_vnext_eod_shadow_daily')
