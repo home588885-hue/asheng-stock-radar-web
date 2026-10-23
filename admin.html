@@ -5962,7 +5962,17 @@ h1 {
         if(labels[state?.kind])return labels[state.kind];
         const t=String(state?.text||'');
         if(t.includes('吞噬'))return t.slice(0,30);
-        if(state?.kind==='neutral')return '⚪ 尚無明確山川型態';
+        if(state?.kind==='neutral'){
+          const m=item?.metrics||{},box=m.box_strategy||{},life=m.shanchuan_v2?.mother_child?.lifecycle||{};
+          const bs=String(box.range_state||'');
+          if(['support_broken_3d','support_lost_warning','support_below_watch'].includes(bs))return '🟠 箱型支撐失守';
+          if(bs.includes('breakout'))return '🟢 箱型突破｜核對量能';
+          if(life.state==='mother_low_broken')return '🔴 跌破母K';
+          if(life.state==='child_low_broken')return '🟠 跌破子K';
+          if(!m.shanchuan_v2?.mother_child?.lifecycle)return '⚪ 山川完整模型待補算';
+          const vp=volumePriceState(item,quote);
+          return '⚪ 山川未觸發｜'+String(vp?.tag||'量價待確認').slice(0,18);
+        }
         return t?t.slice(0,34):'⚪ 山川資料待更新';
       };
       const volumePriceHtml = (item, quote = null) => {
