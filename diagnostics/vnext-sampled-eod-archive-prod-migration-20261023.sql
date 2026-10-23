@@ -52,9 +52,9 @@ BEGIN
       (NEW.as_of,NEW.stock_id,NEW.scanned_at,
        NULLIF(NEW.metrics #>> '{model,version}',''), NEW.stage,
        NEW.metrics #>> '{trade_lifecycle,entry,state}',
-       (NEW.metrics #>> '{v5,entry_confirmed}')='true',
-       (NEW.metrics #>> '{v5,precision_confirmed}')='true',
-       (NEW.metrics #>> '{v5,pending_ready}')='true',
+       COALESCE((NEW.metrics #>> '{v5,entry_confirmed}')='true',false),
+       COALESCE((NEW.metrics #>> '{v5,precision_confirmed}')='true',false),
+       COALESCE((NEW.metrics #>> '{v5,pending_ready}')='true',false),
        COALESCE((NEW.metrics #>> '{trade_lifecycle,entry,live_confirmation_required}')='true',true),
        md5(COALESCE(NEW.metrics::text,'')),
        jsonb_build_object(
