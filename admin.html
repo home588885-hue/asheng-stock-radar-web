@@ -4067,8 +4067,9 @@ h1 {
         }
         const watch=pullbackWatch.get(String(item.stock_id));
         if(watch?.active){
-          const watchText=watch.state==='pullback'?'🟠 回踩追蹤中':watch.state==='ready'?'🟢 回踩守住轉強':'🔵 等回踩守住再轉強';
-          return {key:'wait',rank:11,className:'wait',text:watchText,detail:'已加入持續追蹤池，不因下一輪篩選落榜而消失',keep_candidate:true,persistent_watch:true};
+          const reentry=String(watch.reason||'').includes('B方案停損後');
+          const watchText=reentry?'🟠 停損後追蹤｜等待重新轉強':watch.state==='pullback'?'🟠 回踩追蹤中':watch.state==='ready'?'🟢 回踩守住轉強':'🔵 等回踩守住再轉強';
+          return {key:'wait',rank:11,className:'wait',text:watchText,detail:reentry?'沿用現有追蹤卡片｜站回MA10／MA20、放量突破前高，且原買進條件全部通過才重新進場':'已加入持續追蹤池，不因下一輪篩選落榜而消失',keep_candidate:true,persistent_watch:true};
         }
         if(isNearMaTurnWatch(item))return {
           key:'ma_turn_watch',rank:24,className:'scout',
@@ -8941,6 +8942,16 @@ h1 {
         const data = await response.json();
         if (!response.ok || !data.ok) { alert('持股資料暫時無法更新，請稍後再試。'); return; }
         if (data.trade_log_saved === false) alert('持股已標記賣出，但成交紀錄寫入失敗。請核對後台，不要重複送出。');
+        // Reuse the existing entry/pullback watch and card; never create a new zone.
+        // Only explicit stop-loss sales enter the re-entry watch. Other sales remain removed.
+        const stopLossSale=confirm('這筆是停損賣出嗎？\n確定：加入現有回踩追蹤，等重新轉強才評估進場。\n取消：一般賣出，不新增追蹤。');
+        if(stopLossSale){
+          const saved=await savePullbackWatchRows([{
+            stock_id:String(stockId),state:'pullback',active:true,
+            reason:'B方案停損後重新轉強追蹤｜須重新站回MA10／MA20並放量突破前高；仍須通過原買進條件，不直接買回',
+          }]);
+          if(!saved)alert('持股賣出已完成，但追蹤清單寫入失敗，請核對現有追蹤卡片。');
+        }
         holdings.delete(String(stockId));
         holdingExpandedIds.delete(String(stockId));
         stageViewCache.delete('HOLDING');
