@@ -12,8 +12,8 @@ WITH archive AS (
   COUNT(*) FILTER(WHERE
     pg_get_functiondef(t.tgfoid) ILIKE '%ON CONFLICT (as_of,stock_id) DO NOTHING%'
     AND pg_get_functiondef(t.tgfoid) ILIKE '%EXCEPTION WHEN OTHERS%'
-    AND pg_get_functiondef(t.tgfoid) ILIKE '%SECURITY INVOKER%')::int AS validated_fail_open_funcs
- FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid
+    AND p.prosecdef IS FALSE)::int AS validated_fail_open_funcs
+ FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid JOIN pg_class c ON c.oid=t.tgrelid
  JOIN pg_namespace n ON n.oid=c.relnamespace
  WHERE n.nspname='public' AND c.relname='spring_swallow_scan_results'
  AND t.tgname='asheng_archive_vnext_sampled_eod_v1'
