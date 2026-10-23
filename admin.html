@@ -5941,14 +5941,29 @@ h1 {
       // Reuse the existing Shan-Chuan model; show one short research status under volume-price.
       const shanchuanBrief = (item, quote = null) => {
         const state=shanchuanState(item,quote);
-        const labels={mother_k_invalid:'🔴 跌破母K',child_k_broken:'🟠 跌破子K',mother_child_breakout:'🟢 母子K帶量突破',mother_child_weak_break:'🟡 突破量不足',mother_child_formed:'🟡 母子K成立待突破',mother_child_wait:'🟡 母子K整理',mother_child_holding:'🟢 突破後守住',mother_child_retest:'🟠 突破後回測',mother_child_watch:'🟡 母子K收斂'};
-        const label=labels[state?.kind];
-        if(label)return label;
+        const labels={
+          mother_k_invalid:'🔴 跌破母K',child_k_broken:'🟠 跌破子K',
+          mother_child_breakout:'🟢 母子K帶量突破',
+          mother_child_weak_break:'🟡 突破量不足',
+          mother_child_formed:'🟡 母子K待突破',
+          mother_child_wait:'🟡 母子K整理',
+          mother_child_holding:'🟢 突破後守住',
+          mother_child_retest:'🟠 突破後回測',
+          mother_child_watch:'🟡 母子K收斂',
+          distribution:'🔴 高檔放量回落',
+          lost_anchor:'🟠 突破支撐失守',
+          rebreak:'🟢 回踩放量再攻',
+          attack:'🟢 第一攻量價共振',
+          rest:'🟡 縮量守線待二攻',
+          base:'🌱 低檔蓄勢',
+          high_volume:'🟠 高位爆量',
+          near:'🟡 接近突破價'
+        };
+        if(labels[state?.kind])return labels[state.kind];
         const t=String(state?.text||'');
-        if(/吞噬/.test(t))return t.slice(0,36);
-        if(/跌破/.test(t))return '🟠 '+t.replace(/^[^\\p{L}\\p{N}]+/u,'').slice(0,28);
-        if(/帶量突破|放量突破/.test(t))return '🟢 帶量突破｜待原買點確認';
-        return '⚪ 型態觀察中';
+        if(t.includes('吞噬'))return t.slice(0,30);
+        if(state?.kind==='neutral')return '⚪ 尚無明確山川型態';
+        return t?t.slice(0,34):'⚪ 山川資料待更新';
       };
       const volumePriceHtml = (item, quote = null) => {
         const s = volumePriceState(item, quote);
