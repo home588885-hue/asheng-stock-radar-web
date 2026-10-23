@@ -6812,6 +6812,30 @@ h1 {
       };
       // Add-on candidate uses the locked box and the original holding risk checks.
       // No intraday fill assumptions, no second order, no new S/C requests.
+      // Single B-policy gateway shared by action, holding cards and overview.
+      // High-position heavy volume is a precautionary exit alert, not an
+      // automatic order or a change to the entry/selection core.
+      const HOLDING_B_POLICY='2026-10-23-B-hard10-trail20-5-highvolume-v2';
+      const holdingBDecision=(item,quote=null)=>{
+        const risk=holdingRiskPlan(item,quote);
+        const trail=holdingProfitProtection(item,quote);
+        if(!risk)return {kind:'pending',risk,trail,title:'🟡 持股價格待確認',detail:'等待有效成交或近期完整日K'};
+        if(risk.stopHard)return {kind:risk.confirmed?'exit':'verify',risk,trail,title:risk.confirmed?'🔴 -10%硬停損｜核對出場':'🔴 -10%停損待核對',detail:'成本 '+num(risk.cost,2)+'｜停損線 '+num(risk.stopPrice,2)+'｜現價 '+num(risk.price,2)};
+        if(trail?.triggered)return {kind:risk.confirmed?'exit':'verify',risk,trail,title:risk.confirmed?'🔴 +20%後移動停利｜核對出場':'🔴 移動停利待核對',detail:'最高已觀察 '+num(trail.highestPrice,2)+'｜回落5%保護價 '+num(trail.floorPrice,2)+'｜現價 '+num(trail.price,2)};
+        if(!risk.confirmed)return {kind:'pending',risk,trail,title:'🟡 持股資料待核對',detail:'S模型過期或早於買進日'};
+        const m=item?.metrics||{};
+        const position=Number(m.position_1y_pct);
+        const avg=Number(m.avg_volume_20_lots);
+        const dayLots=Number(m.current_volume_lots);
+        const date=String(item?.as_of||'').slice(0,10);
+        const modelFresh=date===expectedSignalDataDate();
+        const highPosition=Number.isFinite(position)&&position>=75;
+        // Only completed EOD volume, not an intraday raw volume comparison.
+        const ratio=modelFresh&&avg>0&&dayLots>=0?dayLots/avg:null;
+        if(highPosition&&ratio!=null&&ratio>=2.2)return {kind:'volume_exit_watch',risk,trail,title:'🟠 高檔爆量｜建議先走一趟',detail:'一年價格位階 '+num(position,1)+'%｜相對20日均量 '+num(ratio,2)+'倍｜先核對是否爆量轉弱'};
+        if(risk.lossWarning)return {kind:'warning',risk,trail,title:'🟠 虧損警戒｜禁止攤平',detail:'損益 '+num(risk.pnl,2)+'%｜停損 '+num(risk.stopPrice,2)};
+        return {kind:'hold',risk,trail,title:'🟢 趨勢續抱｜不受30天限制',detail:'損益 '+num(risk.pnl,2)+'%'+(trail?.armed?'｜移動停利 '+num(trail.floorPrice,2):'｜達+20%後啟動最高價回落5%')};
+      };
       const actionDecision = (item, quote = null) => {
         const metrics = item.metrics || {};
         const holding = holdings.get(String(item.stock_id));
@@ -6846,18 +6870,12 @@ h1 {
         const researchStarter = pullbackPass && v5.weekly_k_pass === true && v5.monthly_k_pass === true && v5.avg20_liquidity_pass === true && v5.chip_pass !== true && Number.isFinite(chipScore) && chipScore >= 50 && chipScore < 60 && volume >= 1000;
         const bottomState = bottomStartState(item, quote);
         if (holding) {
-          // B strategy: one exit decision for all holding views; no MA/box
-          // forced exit or 30-day forced sale. Alerts only, never broker orders.
-          const risk=holdingRiskPlan(item,quote);
-          const trail=holdingProfitProtection(item,quote);
-          if (!risk) return {className:'live-wait',title:'🟡 持股價格待確認',detail:'等待有效 C 成交或最近完整 S 日K',extra:'不可使用缺漏價格判斷出場；非自動下單'};
-          if (risk.stopHard) return {className:'live-late',title:risk.confirmed?'🔴 -10%硬停損｜核對出場':'🔴 -10%停損待核對',detail:'成本 '+num(risk.cost,2)+'｜停損線 '+num(risk.stopPrice,2)+'｜'+risk.source+' '+risk.observationDate+' 價 '+num(risk.price,2),extra:'禁止攤平；請先核對券商行情，跳空滑價可能擴大虧損；非自動下單'};
-          if (trail?.triggered) return {className:'live-late',title:risk.confirmed?'🔴 +20%後移動停利｜核對出場':'🔴 移動停利待核對',detail:'最高已觀察 '+num(trail.highestPrice,2)+'｜最高價回落5%保護價 '+num(trail.floorPrice,2)+'｜現價 '+num(trail.price,2),extra:'最高價依已保存的買進後有效觀察值；缺漏歷史高價不臆測；非自動下單'};
-          if (!risk.confirmed) return {className:'live-wait',title:'🟡 持股資料待核對',detail:'S模型資料過期或早於買進日',extra:'不以舊價判斷可續抱或加碼'};
-          if (risk.lossWarning) return {className:'live-warm',title:'🟠 虧損警戒｜禁止攤平',detail:'目前損益 '+num(risk.pnl,2)+'%｜-10%停損線 '+num(risk.stopPrice,2),extra:'未觸及停損前續抱觀察，不因MA或箱型訊號自動出場'};
-          const addPlan=holdingAddPlan(item,quote);
-          if (addPlan?.eligible) return {className:'live-wait',title:'🟡 加碼觀察｜趨勢續抱',detail:'已獲利 '+num(risk.pnl,2)+'%｜'+addPlan.kind,extra:'僅依既有MA5／MA10與量價加碼條件，不攤平；非自動下單'};
-          return {className:'live-launch',title:'🟢 趨勢續抱｜不受30天限制',detail:'目前損益 '+num(risk.pnl,2)+'%'+(trail?.armed?'｜移動停利 '+num(trail.floorPrice,2):'｜達+20%後啟動最高價回落5%保護'),extra:'MA／箱型作趨勢觀察，不再作獨立強制出場條件'};
+          const decision=holdingBDecision(item,quote);
+          return {className:decision.kind==='exit'?'live-late':decision.kind==='verify'||decision.kind==='volume_exit_watch'||decision.kind==='warning'?'live-warm':decision.kind==='hold'?'live-launch':'live-wait',
+            title:decision.title,detail:decision.detail,
+            extra:decision.kind==='volume_exit_watch'?'高檔爆量可能是換手也可能是出貨；建議先評估獲利了結，並核對價格與量能。此為提醒，非自動下單'
+              :decision.kind==='exit'?'請核對券商最新行情後自行出場；跳空與滑價可能造成損失。非自動下單'
+              :'B方案唯一出場條件為-10%停損或+20%後最高價回落5%；MA與箱型僅供觀察，禁止攤平，非自動下單'};
         }
         // The intraday selling veto outranks yesterday's attractive bottom/launch bar.
         // A passive early-turn stock remains WATCH, never an instant buy.
@@ -7228,7 +7246,7 @@ h1 {
         const strongNote = action.title.includes('強警示') ? '<div class="holding-rule-line"><b>強警示：</b>長黑、爆量、MA20 下方且籌碼偏弱，優先檢查是否提早處理。</div>' : '';
         const risk = holdingRiskPlan(item, quote);
         const riskNote=risk
-          ?'<div class="holding-rule-line"><b>成本風控：</b>成本 '+num(risk.cost,2)+'｜損益 <b class="'+holdingPnlClass(risk.pnl)+'">'+(risk.pnl>0?'+':'')+num(risk.pnl,2)+'%</b>｜-10%停損 '+num(risk.stopPrice,2)+'｜+20%後最高價回落5%停利</div>'
+          ?'<div class="holding-rule-line"><b>成本風控：</b>成本 '+num(risk.cost,2)+'｜損益 <b class="'+holdingPnlClass(risk.pnl)+'">'+(risk.pnl>0?'+':'')+num(risk.pnl,2)+'%</b>｜-10%停損 '+num(risk.stopPrice,2)+'｜+20%後最高價回落5%停利｜高檔爆量提醒先走</div>'
           :'<div class="holding-rule-line"><b>成本風控：</b>有效報價或模型待確認。</div>';
         const profitGuard=holdingProfitProtection(item,quote);
         const profitNote=profitGuard
@@ -7474,11 +7492,12 @@ h1 {
         const safeQuote=bestTodayQuote(validTodayQuote(quote)?quote:null,id);
         const live=validTodayQuote(safeQuote)?safeQuote:null;
         const held=holdings.get(id)||{},cost=Number(held.avg_cost),qty=Number(held.quantity);
-        const risk=holdingRiskPlan(item,live);
+        const bDecision=holdingBDecision(item,live);
+        const risk=bDecision.risk;
         const modelClose=Number(m.close),price=live?Number(live.price):(modelClose>0?modelClose:null);
         const pnl=price!=null&&cost>0?(price/cost-1)*100:null;
         const high=holdingProfitProtection(item,live);
-        const positionStatus=risk?.stopHard
+        const positionStatus=bDecision.kind==='volume_exit_watch'?'高檔爆量｜建議先走一趟':risk?.stopHard
           ?(risk.confirmed?'已達-10%硬停損':'-10%停損價格待核對')
           :high?.triggered&&risk?.confirmed
             ?'移動停利保護線已觸及'
@@ -7501,8 +7520,8 @@ h1 {
         const decision=holdingDisplay(item,live);
         const main=String(decision?.main||'續抱');
         const stopAlert=risk?.stopHard===true;
-        const actionLabel=stopAlert?decision.action.title:main;
-        const tone=stopAlert||main==='出清'?'exit':main==='減碼'?'reduce':main==='警戒'?'warn':'';
+        const actionLabel=bDecision.kind==='volume_exit_watch'?bDecision.title:stopAlert?decision.action.title:main;
+        const tone=stopAlert||main==='出清'?'exit':bDecision.kind==='volume_exit_watch'||main==='警戒'?'warn':'';
         const selected=holdingExpandedIds.has(id)?' open':'';
         const pending=!unifiedRadarGeneration(item);
         const researchNote=pending
@@ -7579,12 +7598,14 @@ h1 {
         .sort((a,b)=>holdingUrgencyRank(a.item)-holdingUrgencyRank(b.item)||a.index-b.index)
         .map(row=>row.item);
       const holdingOverviewHtml = (total,modelCount=0,modelItems=[]) => {
-        const plans=modelItems.map(item=>({item,risk:holdingRiskPlan(item,bestTodayQuote(null,String(item?.stock_id||'')))}));
-        const stops=plans.filter(x=>x.risk?.stopHard);
-        const trails=plans.filter(x=>x.risk?.confirmed && holdingProfitProtection(x.item,bestTodayQuote(null,String(x.item?.stock_id||'')))?.triggered);
-        const alert=(stops.length?'<strong class="holding-exit-alert" role="status">🔴 B方案 -10%停損線觸及 '+stops.length+' 檔｜請核對券商現價</strong>':'')
-          +(trails.length?'<strong class="holding-exit-alert" role="status">🔴 B方案移動停利觸及 '+trails.length+' 檔｜請核對券商現價</strong>':'');
-        return `<div class="holding-list-overview" data-stable-key="holding-overview"><strong>📌 已買進｜${Number(total)||0} 檔</strong>${alert}<span>持股日K已載入 ${Number(modelCount)||0}/${Number(total)||0} 檔｜B方案：-10%停損、+20%後回落5%移動停利、不限30天｜非自動下單</span></div>`;
+        const decisions=modelItems.map(item=>holdingBDecision(item,bestTodayQuote(null,String(item?.stock_id||''))));
+        const stops=decisions.filter(x=>x.risk?.stopHard).length;
+        const trails=decisions.filter(x=>x.trail?.triggered&&x.risk?.confirmed).length;
+        const volume=decisions.filter(x=>x.kind==='volume_exit_watch').length;
+        const alert=(stops?'<strong class="holding-exit-alert" role="status">🔴 -10%停損 '+stops+' 檔｜核對行情</strong>':'')
+          +(trails?'<strong class="holding-exit-alert" role="status">🔴 移動停利 '+trails+' 檔｜核對行情</strong>':'')
+          +(volume?'<strong class="holding-exit-alert" role="status">🟠 高檔爆量建議先走 '+volume+' 檔｜點卡片確認</strong>':'');
+        return `<div class="holding-list-overview" data-stable-key="holding-overview"><strong>📌 已買進｜${Number(total)||0} 檔</strong>${alert}<span>持股日K已載入 ${Number(modelCount)||0}/${Number(total)||0} 檔｜B方案統一出口：-10%停損、+20%後回落5%移動停利、不限30天｜非自動下單</span></div>`;
       };
 
             // UI-only launch folding. Keep ALL server model selection, ordering,
