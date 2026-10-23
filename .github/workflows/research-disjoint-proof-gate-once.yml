@@ -1,4 +1,4 @@
-name: Research once - validate independent-cohort NO-GO gate (recheck)
+name: Research once - validate independent-cohort NO-GO gate (actual evidence)
 on:
   push:
     branches: [research/core-vnext-evidence-gate-20261022]
