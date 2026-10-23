@@ -1,0 +1,77 @@
+name: Research only - disjoint 2026 fullmarket stock cohort
+on:
+  push:
+    branches: [research/core-vnext-evidence-gate-20261022]
+    paths: [.github/workflows/research-2026-disjoint-weekly-once.yml]
+permissions:
+  contents: read
+jobs:
+  prices:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Fetch read-only public weekly bars and dividend corrections
+        shell: bash
+        run: |
+          python - <<'PY'
+          import urllib.request, urllib.error,urllib.parse,zipfile,io,csv,json,time
+          from collections import defaultdict
+          CODES=set("""1447 1514 1560 1714 1785 1795 1808 2022 2236 2241 2308 2316 2327 2344 2356 2357 2376 2382 2425 2434 2449 2451 2460 2542 2548 2610 2820 2867 2882 2886 2887 3006 3017 3028 3036 3048 3088 3163 3209 3229 3264 3290 3360 3372 3491 3515 3533 3665 4142 4306 4534 4540 4541 4576 4912 4916 4989 4991 5284 5302 5351 5464 5475 5534 5864 6005 6117 6126 6129 6134 6138 6166 6234 6261 6282 6291 6435 6505 6584 6669 6691 6693 6712 6770 6830 6861 6947 8021 8028 8038 8040 8042 8046 8064 8358 8415 8996""".split())|{"0050"}
+          BASE="https://github.com/yukishirotsubasa/tw-stock-data-release/releases/download/daily-close-csv"
+          bars=defaultdict(dict);done=[];miss=[]
+          for week in range(1,43):
+              name=f"weekly_2026_W{week:02d}.zip"
+              try:
+                  req=urllib.request.Request(BASE+"/"+name,headers={"User-Agent":"AshengBacktestResearchOnly/1.0"})
+                  with urllib.request.urlopen(req,timeout=40) as res:zdata=res.read()
+                  with zipfile.ZipFile(io.BytesIO(zdata)) as z:
+                      for nm in z.namelist():
+                          if not nm.lower().endswith(".csv"):continue
+                          with z.open(nm) as fp:
+                              rd=csv.DictReader(io.TextIOWrapper(fp,encoding="utf-8-sig",errors="replace",newline=""))
+                              if not {"date","code","open","high","low","close"}.issubset(rd.fieldnames or []):continue
+                              for row in rd:
+                                  sym=str(row.get("code","")).strip()
+                                  if sym not in CODES:continue
+                                  dt=str(row.get("date","")).replace("-","").replace("/","")
+                                  try:
+                                      o,h,l,c=map(lambda k:float(str(row[k]).replace(",","")),("open","high","low","close"))
+                                  except Exception:continue
+                                  if not(len(dt)==8 and dt.isdigit() and o>0 and h>=max(o,c,l) and l>0 and c>0):continue
+                                  bars[sym][dt]=[dt,o,h,l,c]
+                  done.append(name)
+              except urllib.error.HTTPError as ex:
+                  if ex.code==404:continue
+                  miss.append([name,"HTTP"+str(ex.code)])
+              except Exception as ex:miss.append([name,str(ex)[:130]])
+              if week%8==0:print("WEEKLY_PRICE",week,"done",len(done),"symbols",len(bars),flush=True)
+          dividends=[];div_err=[]
+          for i,sym in enumerate(sorted(CODES-{"0050"})):
+              try:
+                  args=urllib.parse.urlencode({"dataset":"TaiwanStockDividendResult","data_id":sym,"start_date":"2026-01-01","end_date":"2026-10-22"})
+                  req=urllib.request.Request("https://api.finmindtrade.com/api/v4/data?"+args,headers={"User-Agent":"Asheng2026DividendResearch/1.0"})
+                  with urllib.request.urlopen(req,timeout=20) as res:j=json.load(res)
+                  if str(j.get("status"))!="200" or not isinstance(j.get("data"),list):
+                      div_err.append([sym,"unverified:"+str(j.get("status"))]);continue
+                  for row in j["data"]:
+                      try:
+                          dt=str(row["date"]).replace("-","");bef=float(row["before_price"]);aft=float(row["after_price"])
+                          if len(dt)==8 and 0.7<bef/aft<1.6 and str(row["stock_id"])==sym:
+                              dividends.append([sym,dt,bef,aft,round(bef/aft,9)])
+                      except Exception:pass
+              except Exception as ex:div_err.append([sym,str(ex)[:100]])
+              if (i+1)%20==0:print("DIV_PROGRESS",i+1,"errors",len(div_err),flush=True)
+          with zipfile.ZipFile("disjoint_2026_ohlc_dividend.zip","w",zipfile.ZIP_DEFLATED,compresslevel=8) as z:
+              for sym,b in bars.items():
+                  z.writestr(sym+".csv","date,open,high,low,close\n"+"\n".join(",".join(map(str,b[k])) for k in sorted(b))+"\n")
+              z.writestr("corporate_action_data.csv","stock_id,date,before_price,after_price,ratio\n"+"\n".join(",".join(map(str,row)) for row in dividends)+"\n")
+              z.writestr("audit.json",json.dumps({"weekly_archives":len(done),"price_symbols":len(bars),"desired_symbols":len(CODES),"bars":sum(map(len,bars.values())),"weekly_errors":miss,"dividends":len(dividends),"dividend_errors":div_err}))
+          print("DONE",json.dumps({"archives":len(done),"symbols":len(bars),"prices":sum(map(len,bars.values())),"dividends":len(dividends),"dividend_errors":len(div_err),"weekly_errors":len(miss)}),flush=True)
+          PY
+      - name: Upload limited-life offline research data
+        uses: actions/upload-artifact@v4
+        with:
+          name: disjoint-2026-bars-corporate-actions
+          path: disjoint_2026_ohlc_dividend.zip
+          retention-days: 1
+          if-no-files-found: error

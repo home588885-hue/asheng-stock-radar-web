@@ -1,0 +1,70 @@
+name: Research only - 2026 independent validation snapshot
+on:
+  push:
+    branches: [research/core-vnext-evidence-gate-20261022]
+    paths: [.github/workflows/research-2026-validation-bars-once.yml]
+permissions:
+  contents: read
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    steps:
+      - name: Free FinMind 2026 OHLC and ex-rights (no S C or Supabase requests)
+        shell: bash
+        run: |
+          python - <<'PY'
+          import csv,io,json,urllib.request,urllib.parse,zipfile,time
+          from pathlib import Path
+          CODES="""0050 2313 2360 3081 2891 6515 2485 3188 3131 2010 3105 2855 6026 6016 4958 6446 2851 2890 3135 4971""".split()
+          DATA_URL="https://api.finmindtrade.com/api/v4/data"
+          results={}; errors=[]
+          def get_data(dataset,sym):
+              args={"dataset":dataset,"data_id":sym,"start_date":"2026-01-01","end_date":"2026-10-22"}
+              url=DATA_URL+"?"+urllib.parse.urlencode(args)
+              req=urllib.request.Request(url,headers={"Accept":"application/json","User-Agent":"AshengReadOnly2026Validation/1.0"})
+              with urllib.request.urlopen(req,timeout=25) as resp: obj=json.load(resp)
+              if str(obj.get("status")) not in ("200","None"):raise ValueError("API status: "+str(obj.get("status")))
+              if not isinstance(obj.get("data"),list):raise ValueError("Missing data")
+              return obj["data"]
+          for i,code in enumerate(CODES):
+              for ds in ("TaiwanStockPrice","TaiwanStockDividendResult"):
+                  try:results[(code,ds)]=get_data(ds,code)
+                  except Exception as e:errors.append({"code":code,"dataset":ds,"error":str(e)[:140]})
+              if (i+1)%5==0:print("FINMIND_2026_PROGRESS",i+1,len(CODES),flush=True)
+          with zipfile.ZipFile("research_2026_snapshot.zip","w",zipfile.ZIP_DEFLATED,compresslevel=9) as zf:
+              divid=[]
+              for code in CODES:
+                  raw=results.get((code,"TaiwanStockPrice"),[])
+                  prices={}
+                  for r in raw:
+                      try:
+                          dt=str(r["date"]).replace("-","")
+                          o=float(r["open"]);h=float(r["max"]);l=float(r["min"]);c=float(r["close"])
+                          if o>0 and h>=max(l,o,c) and l<=min(o,c) and c>0 and len(dt)==8:
+                              prices[dt]=[dt,o,h,l,c]
+                      except (TypeError,ValueError,KeyError):pass
+                  if prices:
+                      csvs="date,open,high,low,close\n"+"\n".join(",".join(map(str,t)) for t in sorted(prices.values()))+"\n"
+                      zf.writestr("prices/"+code+".csv",csvs)
+                  rawdiv=results.get((code,"TaiwanStockDividendResult"),[])
+                  for it in rawdiv:
+                      try:
+                          dt=str(it["date"]).replace("-","")
+                          bef=float(it["before_price"]);aft=float(it["after_price"])
+                          if aft>0 and bef>0 and .65<bef/aft<1.65 and len(dt)==8:
+                              divid.append(dict(stock_id=code,date=dt,before_price=bef,after_price=aft,
+                                  ratio=round(bef/aft,9),event_type=str(it.get("stock_or_cache_dividend",""))))
+                      except (TypeError,ValueError,KeyError):pass
+              t=io.StringIO();w=csv.DictWriter(t,fieldnames=["stock_id","date","before_price","after_price","ratio","event_type"]);w.writeheader();w.writerows(divid)
+              zf.writestr("dividend_results_2026.csv",t.getvalue())
+              zf.writestr("status.json",json.dumps({"codes":CODES,"price_symbols":len([k for k in CODES if results.get((k,"TaiwanStockPrice"))]),"dividends":len(divid),"errors":errors},ensure_ascii=False))
+          print("2026_SNAPSHOT_DONE",json.dumps({"symbols":len(CODES),"price_symbols":sum(bool(results.get((k,"TaiwanStockPrice"))) for k in CODES),"dividend_events":len(divid),"errors":errors[:5]},ensure_ascii=False),flush=True)
+          PY
+      - name: Export short-lived research data
+        uses: actions/upload-artifact@v4
+        with:
+          name: asheng-2026-isolated-market-validation
+          path: research_2026_snapshot.zip
+          retention-days: 1
+          if-no-files-found: error
