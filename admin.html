@@ -5754,6 +5754,7 @@ h1 {
         // Independent Shan-Chuan discovery: ready box at LAUNCH; first bar at ENTRY.
         // Original V5 buy and risk checks are unchanged.
         const d=unifiedRadarGeneration(item)?m.box_strategy.discovery:{};
+        if(shanchuanState(item).highRisk===true)return 'RISK';
         if(recentModelForDisplay(item)&&d.first_bar_today===true)return 'ENTRY';
         if(recentModelForDisplay(item)&&d.ready_watch===true
           &&m.v5?.entry_confirmed!==true&&effective!=='ENTRY'&&effective!=='ACTIVE'
