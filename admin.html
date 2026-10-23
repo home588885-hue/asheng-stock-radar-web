@@ -8893,7 +8893,7 @@ h1 {
         if(data.admin_holding_synced===false)
           alert('持股紀錄已儲存，但管理員持股鏡像同步尚未確認。稍後請核對已買進清單，不要重複買入登錄。');
         if(boxAnchor&&data.box_anchor_saved!==true)
-          alert('⚠️ 這筆持股沒有成功鎖定山川箱頂／箱底，不會使用箱底3日停損。B方案-10%停損與移動停利仍有效；箱底僅供趨勢觀察。');
+          alert('⚠️ 這筆持股沒有成功鎖定山川箱頂／箱底，不會記錄箱型支撐參考價。B方案-10%停損與移動停利仍有效；箱底僅供趨勢觀察。');
         $('#holdingDialog').close();
         const savedHolding = data.holding || { stock_id: stockId, avg_cost: avgCost, quantity };
         holdings.set(String(stockId), savedHolding);
