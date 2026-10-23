@@ -1295,7 +1295,7 @@ h1 {
               <div class="risk-note"><b>3｜每天什麼時候更新？</b><br><b>交易日 09:00～13:30</b>：C 報價橋接成功後，🟠發動前、🎯進場雷達、📌已買進在網頁前景時約每 <b>3 分鐘</b>低頻更新今日有效成交價。沒有今日有效價時不顯示 0.00，也不以昨收冒充。<br><b>交易日 13:00～13:29</b>：📌已買進 12 分鐘存活觀察只在 <b>12:50～13:20</b> 累計有效成交；C 無有效報價時不會假裝通過。<br><b>交易日 21:00～21:55</b>：S 依原排程分批更新完整日 K 選股，並非每檔在 21:00 就全部更新完成。</div>
               <div class="risk-note"><b>4｜簡單看三區</b><br>🟠 <b>發動前</b>：底部整理、均線轉強及接近發動，也收錄原發動中 S 候選；🌱早期轉強代表低位階與量價改善、但三線未全轉強，只能優先追蹤，尚不可試單。<br>🎯 <b>進場雷達</b>：已起漲、突破或適合回踩觀察的候選，仍須判斷風險和位置，不代表每檔都能立刻買。<br>📌 <b>已買進</b>：只顯示自己已記錄的持股、成本與風控，沒有盤中報價時也不會刪除持股。每檔收合列都固定顯示「收盤跌破 MA20 連續天數（0/3、1/3、2/3、達3天）」；今天盤中首次跌破只顯示暫列，待盤後完整日K才正式累加。</div>
               <div class="risk-note"><b>5｜四種買點顏色與防追高</b><br>🔴 <b>暫不新買</b>：突破失敗、均線結構破壞，或今日有效成交價出現放量下跌且跌破短均線；今日紅燈優先於昨日橘色卡位／突破訊號。<br>🟡 <b>近買點／等確認</b>：條件缺量或位置，先觀察。<br>🟠 <b>可小量試單</b>：風險過濾通過，部位保守。<br>🟢 <b>正式買點</b>：完整條件成立，再評估分批進場。<br>還要核對 MA10／20／60、K 棒、KD／MACD、成交量至少 1,000 張與距 MA20 的乖離。防追高改採大型權值股 +8%、一般／強勢主流股 +12%、已確認中小型飆股 +15% 的 MA20 正乖離上限；盤後訊號不是即時成交保證。</div>
-              <div class="risk-note"><b>6｜已買進怎麼管理？</b><br>新風控：虧損嚴禁攤平、-5%立即停損、曾獲利+5%後守成本防線、+10%全數停利。未達+10%且完整收盤跌破MA5，提示獲利落袋。首筆獲利≥+3%且MA5／10／20／60多頭排列才評估加碼；加碼股數及資金都不超過首筆50%。MA20三日規則只是輔助，不可延遲-5%停損。系統不自動下單。</div>
+              <div class="risk-note"><b>6｜已買進怎麼管理？</b><br>B方案：禁止攤平，買進成本-10%停損；最高已觀察獲利達+20%後，最高價回落5%提示移動停利；強勢股不限30天。MA與箱型僅供趨勢觀察，不作獨立強制出場。系統不自動下單。</div>
               <div class="risk-note"><b>7｜看清三種時間</b><br><b>技術模型基準</b>：最新完整日 K 日期；盤中顯示上一有效交易日是正常的。<br><b>系統最新掃描</b>：S 最近一次模型快照掃描時間；排程執行成功不代表全市場更新完。<br><b>今日報價時間</b>：僅代表有效成交價取得時間，不等於 KD、MACD 等完整選股模型盤中重算。休市日不會有新的當日成交價。</div>
               <div class="risk-note"><b>8｜掃描資料完整率</b><br>以<b>最新完整交易日的模型筆數與最後完整掃描循環時間</b>判斷資料是否齊全；尚未掃齊時，顯示的候選檔數不能視為全市場結果。個股仍依 MA10／MA20／MA60、KD、MACD、量價、籌碼及持股風控判斷；不額外抓大盤指數。</div>
               <div class="risk-note"><b>9｜最簡單的每日流程</b><br><b>晚上盤後</b>看發動前、進場雷達與模型日期，整理隔日觀察名單。<br><b>盤中</b>若 C 報價橋接正常，核對今日價格、成交量與追高風險；若沒報價，手動核對券商行情。<br><b>已買進</b>看 MA20、今日動作及風控，必要時自行下單並更新持股。<br><b>資料仍舊</b>時先觀察，不把舊快照當作當日正式買點。</div>
@@ -6175,7 +6175,7 @@ h1 {
           +esc(num(shownBoxTop,2))+'｜20日箱底／支撐 '+esc(num(shownBoxBottom,2))
           +(fixedBox?'｜收盤跌破已鎖定箱底 '+(fixedBox.belowDays==null?'待更新':fixedBox.belowDays)+'/3天':'')
           +'｜'+(fixedBox?'持股固定價位，不跟著新區間上移':'箱型依最近完整日K，未帶量突破不等於買點')
-          +'｜原MA20出場規則並行</small></div>':'';
+          +'｜MA20僅供趨勢觀察</small></div>':'';
         // 三區共用同一組山川量價／箱型／母子K計算，折疊研究細節不修改訊號。
         // 持股固定箱底及 MA20 出場風險仍在持股主卡片。
         const shanchuanParts=shanchuanHtml+boxInfo+scPatternHtml+scConfluenceHtml;
@@ -6630,8 +6630,8 @@ h1 {
         const momentumWeak=g.two_black===true||g.kd_high_weak===true||g.macd_weak===true;
         const falling=Number.isFinite(prevClose)&&prevClose>0&&price<prevClose*.997;
         // Ratchet only UP as verified observed peaks rise. These are reference
-        // ALERTS, never broker orders. Existing +10% full-exit and -5% hard-stop
-        // precedence remains unchanged. Peak never uses unseen intraday highs.
+        // ALERTS, never broker orders. B strategy -10% hard stop and +20% peak trailing 5%
+        // are the only holding exit conditions. Peak never uses unseen intraday highs.
         const floorGainPct=maxGain>=19.999999?(peak*.95/cost-1)*100:null;
         const armed=floorGainPct!==null;
         // Round protection reference UP to cents so the visible two-decimal
@@ -7194,9 +7194,9 @@ h1 {
         const boxBanner=box?'<small class="model-only-note">📦 固定箱頂 '
           +esc(num(box.top,2))+'｜固定箱底 '+esc(num(box.bottom,2))
           +'｜箱底下方連續收盤 '+(box.belowDays==null?'模型待更新':box.belowDays+' 天')
-          +'｜同時保留MA20三日停損</small>':'';
+          +'｜MA20僅供趨勢觀察</small>':'';
         const givebackAlert=giveback?.armed&&main!=='出清'
-          ?'<small class="model-only-note">🛡 階梯鎖利：最高浮盈 +'
+          ?'<small class="model-only-note">🛡 B方案移動停利：最高浮盈 +'
             +esc(num(giveback.maxGain,2))+'%｜目前保護參考價 '
             +esc(num(giveback.floorPrice,2))+'（鎖定帳面 '
             +(giveback.floorGainPct>0?'+':'')+esc(num(giveback.floorGainPct,0))
@@ -7518,7 +7518,7 @@ h1 {
                 <span>${esc(quoteDisplayState(live,item).label)} <b>${price!=null?esc(num(price,2)):'-'}</b></span>
                 <span>損益 <b class="${holdingPnlClass(pnl)}">${pnl==null?'-':(pnl>0?'+':'')+esc(num(pnl,2))+'%'}</b></span></span>
               <span class="holding-mini-status">${esc(positionStatus)}</span>
-              ${holdingMa20DaysHtml(item,live)}
+              <span class="holding-mini-date">MA20／箱型僅供趨勢觀察，不獨立觸發出場</span>
               <span class="holding-mini-date">S 模型 ${esc(item.as_of||'待更新')}｜${live?'C 成交時間 '+esc(quoteDisplayState(live,item).moment)+(quoteDisplayState(live,item).live?'｜盤中即時':'｜非即時'):'無有效 C 成交，非即時模型價'}</span>
             </summary>
             <div class="holding-mini-body">
@@ -7541,12 +7541,12 @@ h1 {
         const trade=validTodayQuote(cached)?cached:null;
         const todayPrice=trade?Number(trade.price):null;
         const pnl=todayPrice>0&&cost>0?(todayPrice/cost-1)*100:null;
-        const stopHit=pnl!=null&&todayPrice<=cost*.95+Math.max(cost,1)*1e-10;
+        const stopHit=pnl!=null&&todayPrice<=cost*.90+Math.max(cost,1)*1e-10;
         return `<section class="holding-mini-wrap" data-stock-id="${esc(id)}">
           <details class="holding-mini" data-stock-key="${esc(id)}"${holdingExpandedIds.has(id)?' open':''}>
             <summary class="holding-mini-summary">
               <span class="holding-mini-name"><strong>${esc(id)} ${esc(displayName||'')}</strong><small>持股已核對｜新版模型補算中</small></span>
-              <span class="holding-mini-action ${stopHit?'exit':'warn'}">${stopHit?'🔴 -5%硬停損｜立即核對出場':'⚪ 模型待更新'}</span><span class="holding-mini-expand">詳情</span>
+              <span class="holding-mini-action ${stopHit?'exit':'warn'}">${stopHit?'🔴 -10%硬停損｜立即核對出場':'⚪ 模型待更新'}</span><span class="holding-mini-expand">詳情</span>
               <span class="holding-mini-stats">成本 <b>${Number.isFinite(cost)&&cost>0?esc(num(cost,2)):'-'}</b>${todayPrice>0
                 ?'｜今日有效成交 <b>'+esc(num(todayPrice,2))+'</b>'
                   +(pnl!=null?'｜損益 <b class="'+holdingPnlClass(pnl)+'">'+(pnl>0?'+':'')+esc(num(pnl,2))+'%</b>':'')
@@ -7554,7 +7554,7 @@ h1 {
               <span class="holding-ma20-days pending"><strong>⚪ MA20 跌破天數：模型載入中</strong><small>後台連續交易日計數載入後才顯示，不以舊股價冒充</small></span>
               <span class="holding-mini-date">持有 ${Number.isFinite(qty)&&qty>0?esc(qty.toLocaleString('zh-TW')):'-'} 股｜點擊查看狀態</span>
             </summary>
-            <div class="holding-mini-body"><div class="box empty ${isError?'error':''}">${stopHit?'🔴 今日C有效成交已達成本-5%，不等模型更新或MA20三日；請核對券商行情自行停損。 ':''}${esc(note)}</div></div>
+            <div class="holding-mini-body"><div class="box empty ${isError?'error':''}">${stopHit?'🔴 今日C有效成交已達成本-10%；請核對券商行情自行停損。 ':''}${esc(note)}</div></div>
           </details>
         </section>`;
       };
@@ -8872,7 +8872,7 @@ h1 {
         if(data.admin_holding_synced===false)
           alert('持股紀錄已儲存，但管理員持股鏡像同步尚未確認。稍後請核對已買進清單，不要重複買入登錄。');
         if(boxAnchor&&data.box_anchor_saved!==true)
-          alert('⚠️ 這筆持股沒有成功鎖定山川箱頂／箱底，不會使用箱底3日停損。原MA20風控仍有效；請勿以為箱底停損已啟用。');
+          alert('⚠️ 這筆持股沒有成功鎖定山川箱頂／箱底，不會使用箱底3日停損。B方案-10%停損與移動停利仍有效；箱底僅供趨勢觀察。');
         $('#holdingDialog').close();
         const savedHolding = data.holding || { stock_id: stockId, avg_cost: avgCost, quantity };
         holdings.set(String(stockId), savedHolding);
