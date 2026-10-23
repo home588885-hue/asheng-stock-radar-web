@@ -1,4 +1,4 @@
-name: Research once - validate independent-cohort NO-GO gate (actual evidence)
+name: Research once - validate independent-cohort and range-shadow QA
 on:
   push:
     branches: [research/core-vnext-evidence-gate-20261022]
@@ -15,3 +15,5 @@ jobs:
         run: node diagnostics/vnext-growth-disjoint-guard-20261023.test.js
       - name: Verify prior future-proof gate remains safe
         run: node diagnostics/vnext-proof-gate-20261023.test.js
+      - name: Verify no-lookahead range10 research screen
+        run: python3 -m unittest discover -s diagnostics -p 'test_vnext_lowrange_shadow_20261023.py' -v
