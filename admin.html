@@ -1244,6 +1244,10 @@ h1 {
 }
 
 #app .entry-bucket-flat > .entry-bucket-head::after{display:none;content:none}
+
+/* First-layer volume-price readability: 3x the previous 12px/11px labels. */
+#app .radar-compact-summary .radar-compact-next.volume-price-first{font-size:36px!important;line-height:1.2!important;display:block!important;-webkit-line-clamp:unset!important;overflow:visible!important;overflow-wrap:anywhere}
+#app .holding-mini-summary .holding-mini-date.volume-price-first{font-size:33px!important;line-height:1.2!important;overflow-wrap:anywhere}
 </style>
   
     <link rel="manifest" href="./admin.webmanifest">
@@ -4843,7 +4847,7 @@ h1 {
             <span class="entry-mini-name"><strong>${esc(id)} ${esc(item.stock_name||'')}</strong><small>${esc(glanceSignal)}</small></span>
             <span class="entry-mini-expand">展開</span>
             <span class="entry-mini-metrics">${esc(quoteDisplayState(q,item).label)} <b>${close>0?esc(num(close,2)):'-'}</b><small>${q?'｜'+esc(quoteDisplayState(q,item).moment):'｜S '+esc(String(item.as_of||'待更新'))}</small></span>
-            <span class="radar-compact-next">量價：${esc(volumePriceState(item,q).tag)}｜${esc(volumePriceState(item,q).note)}</span><span class="radar-compact-next">下一步：${esc(radarShortAdvice(item,safeDisplayAction,q))}</span>
+            <span class="radar-compact-next volume-price-first">量價：${esc(volumePriceState(item,q).tag)}｜${esc(volumePriceState(item,q).note)}</span><span class="radar-compact-next">下一步：${esc(radarShortAdvice(item,safeDisplayAction,q))}</span>
           </summary>
           <div class="entry-mini-full">${continuationRiskMiniHtml(item)}${expanded}${(activeTrial||activeFormal)
             ?'<div class="entry-survival-status '+esc(survival.tone)+'" data-entry-survival-id="'+esc(id)+'" data-entry-survival-trial="'+(activeTrial?'1':'0')+'">'+esc(survival.text)+'</div>':''}</div>
@@ -4918,7 +4922,7 @@ h1 {
             +'<span class="entry-mini-expand">展開</span>'
             +'<span class="entry-mini-metrics">'+esc(quoteLabel)+'｜S '+esc(day)+'</span>'
             +continuationRiskMiniHtml(item)
-            +'<span class="radar-compact-next">量價：'+esc(existing?volumePriceState(item,q).tag:'待最新模型')+'</span>'+'<span class="radar-compact-next">🔎 '+esc(next)+'</span></summary>'
+            +'<span class="radar-compact-next volume-price-first">量價：'+esc(existing?volumePriceState(item,q).tag:'待最新模型')+'</span>'+'<span class="radar-compact-next">🔎 '+esc(next)+'</span></summary>'
             +'<div class="entry-mini-full">'+movement+(detail?radarDeepDetailsHtml(detail):'')+'</div></details>';
         };
         let pendingCount=0;
@@ -7538,7 +7542,7 @@ h1 {
                 <span>${esc(quoteDisplayState(live,item).label)} <b>${price!=null?esc(num(price,2)):'-'}</b></span>
                 <span>損益 <b class="${holdingPnlClass(pnl)}">${pnl==null?'-':(pnl>0?'+':'')+esc(num(pnl,2))+'%'}</b></span></span>
               <span class="holding-mini-status">${esc(positionStatus)}</span>
-              <span class="holding-mini-date">量價｜${esc(volumePriceState(item,live).tag)}｜${esc(volumePriceState(item,live).note)}</span>
+              <span class="holding-mini-date volume-price-first">量價｜${esc(volumePriceState(item,live).tag)}｜${esc(volumePriceState(item,live).note)}</span>
               <span class="holding-mini-date">S 模型 ${esc(item.as_of||'待更新')}｜${live?'C 成交時間 '+esc(quoteDisplayState(live,item).moment)+(quoteDisplayState(live,item).live?'｜盤中即時':'｜非即時'):'無有效 C 成交，非即時模型價'}</span>
             </summary>
             <div class="holding-mini-body">
@@ -7676,7 +7680,7 @@ h1 {
               <span class="entry-mini-name"><strong>${esc(id)} ${esc(item?.stock_name||'')}</strong><small>${esc(glanceStatus)}</small></span>
               <span class="entry-mini-expand">展開</span>
               <span class="entry-mini-metrics">${esc(source)} <b>${price!=null&&price>0?esc(num(price,2)):'-'}</b><small>${esc(quoteTime)}</small></span>
-              <span class="radar-compact-next">量價：${esc(volumePriceState(item,q).tag)}｜${esc(volumePriceState(item,q).note)}</span><span class="radar-compact-next">下一步：${esc(radarShortAdvice(item,{text:status},q))}</span>
+              <span class="radar-compact-next volume-price-first">量價：${esc(volumePriceState(item,q).tag)}｜${esc(volumePriceState(item,q).note)}</span><span class="radar-compact-next">下一步：${esc(radarShortAdvice(item,{text:status},q))}</span>
             </summary>
             <div class="entry-mini-full">${launchScoutHistoryHtml(item)}${continuationRiskMiniHtml(item)}${stockMovementHtml(item,q,'launch',launchDisplayAction)}
               ${radarDeepDetailsHtml((trial?'<div class="model-only-note">'+esc(trial.detail)+'</div>':'')+detailed)}</div>
