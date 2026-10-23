@@ -28,7 +28,7 @@ function check(report) {
   }
   if(ids.size!==1||ids.has(undefined))fail.push('inconsistent_universe_id');
   const f=report?.future_forward;
-  if(!f||!/^20\\d{2}-\\d{2}-\\d{2}$/.test(String(f.first_trade_signal_date||''))||
+  if(!f||!/^20[0-9]{2}-[0-9]{2}-[0-9]{2}$/.test(String(f.first_trade_signal_date||''))||
      f.first_trade_signal_date<='2026-10-23'||!Number.isInteger(f.verified_fills)||f.verified_fills<20||
      !Number.isFinite(f.span_calendar_days)||f.span_calendar_days<90||!Number.isFinite(f.net_twd)||f.net_twd<=0)
      fail.push('insufficient_forward_proof');
