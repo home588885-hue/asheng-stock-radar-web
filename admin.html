@@ -4844,7 +4844,7 @@ h1 {
             <span class="entry-mini-name"><strong>${esc(id)} ${esc(item.stock_name||'')}</strong><small>${esc(glanceSignal)}</small></span>
             <span class="entry-mini-expand">展開</span>
             <span class="entry-mini-metrics">${esc(quoteDisplayState(q,item).label)} <b>${close>0?esc(num(close,2)):'-'}</b><small>${q?'｜'+esc(quoteDisplayState(q,item).moment):'｜S '+esc(String(item.as_of||'待更新'))}</small></span>
-            <span class="radar-compact-next">量價：${esc(volumePriceState(item,q).tag)}｜${esc(volumePriceState(item,q).note)}</span><span class="radar-compact-next">下一步：${esc(radarShortAdvice(item,safeDisplayAction,q))}</span>
+            <span class="radar-compact-next">量價：${esc(volumePriceState(item,q).tag)}｜${esc(volumePriceState(item,q).note)}</span><span class="radar-compact-next">山川：${esc(shanchuanBrief(item,q))}</span><span class="radar-compact-next">下一步：${esc(radarShortAdvice(item,safeDisplayAction,q))}</span>
           </summary>
           <div class="entry-mini-full">${continuationRiskMiniHtml(item)}${expanded}${(activeTrial||activeFormal)
             ?'<div class="entry-survival-status '+esc(survival.tone)+'" data-entry-survival-id="'+esc(id)+'" data-entry-survival-trial="'+(activeTrial?'1':'0')+'">'+esc(survival.text)+'</div>':''}</div>
@@ -4919,7 +4919,7 @@ h1 {
             +'<span class="entry-mini-expand">展開</span>'
             +'<span class="entry-mini-metrics">'+esc(quoteLabel)+'｜S '+esc(day)+'</span>'
             +continuationRiskMiniHtml(item)
-            +'<span class="radar-compact-next">量價：'+esc(existing?volumePriceState(item,q).tag:'待最新模型')+'</span>'+'<span class="radar-compact-next">🔎 '+esc(next)+'</span></summary>'
+            +'<span class="radar-compact-next">量價：'+esc(existing?volumePriceState(item,q).tag:'待最新模型')+'</span>'+'<span class="radar-compact-next">山川：'+esc(existing?shanchuanBrief(item,q):'待最新模型')+'</span>'+'<span class="radar-compact-next">🔎 '+esc(next)+'</span></summary>'
             +'<div class="entry-mini-full">'+movement+(detail?radarDeepDetailsHtml(detail):'')+'</div></details>';
         };
         let pendingCount=0;
@@ -5937,6 +5937,18 @@ h1 {
         }
         const intraday = !!q && String(q.quote_time || '') < '13:30:00';
         return { tag, tone, note, changePct, volumeRatio, pos1y, intraday };
+      };
+      // Reuse the existing Shan-Chuan model; show one short research status under volume-price.
+      const shanchuanBrief = (item, quote = null) => {
+        const state=shanchuanState(item,quote);
+        const labels={mother_k_invalid:'🔴 跌破母K',child_k_broken:'🟠 跌破子K',mother_child_breakout:'🟢 母子K帶量突破',mother_child_weak_break:'🟡 突破量不足',mother_child_formed:'🟡 母子K成立待突破',mother_child_wait:'🟡 母子K整理',mother_child_holding:'🟢 突破後守住',mother_child_retest:'🟠 突破後回測',mother_child_watch:'🟡 母子K收斂'};
+        const label=labels[state?.kind];
+        if(label)return label;
+        const t=String(state?.text||'');
+        if(/吞噬/.test(t))return t.slice(0,36);
+        if(/跌破/.test(t))return '🟠 '+t.replace(/^[^\\p{L}\\p{N}]+/u,'').slice(0,28);
+        if(/帶量突破|放量突破/.test(t))return '🟢 帶量突破｜待原買點確認';
+        return '⚪ 型態觀察中';
       };
       const volumePriceHtml = (item, quote = null) => {
         const s = volumePriceState(item, quote);
@@ -7539,7 +7551,7 @@ h1 {
                 <span>${esc(quoteDisplayState(live,item).label)} <b>${price!=null?esc(num(price,2)):'-'}</b></span>
                 <span>損益 <b class="${holdingPnlClass(pnl)}">${pnl==null?'-':(pnl>0?'+':'')+esc(num(pnl,2))+'%'}</b></span></span>
               <span class="holding-mini-status">${esc(positionStatus)}</span>
-              <span class="holding-mini-date">量價｜${esc(volumePriceState(item,live).tag)}｜${esc(volumePriceState(item,live).note)}</span>
+              <span class="holding-mini-date">量價｜${esc(volumePriceState(item,live).tag)}｜${esc(volumePriceState(item,live).note)}</span><span class="holding-mini-date">山川｜${esc(shanchuanBrief(item,live))}</span>
               <span class="holding-mini-date">S 模型 ${esc(item.as_of||'待更新')}｜${live?'C 成交時間 '+esc(quoteDisplayState(live,item).moment)+(quoteDisplayState(live,item).live?'｜盤中即時':'｜非即時'):'無有效 C 成交，非即時模型價'}</span>
             </summary>
             <div class="holding-mini-body">
@@ -7677,7 +7689,7 @@ h1 {
               <span class="entry-mini-name"><strong>${esc(id)} ${esc(item?.stock_name||'')}</strong><small>${esc(glanceStatus)}</small></span>
               <span class="entry-mini-expand">展開</span>
               <span class="entry-mini-metrics">${esc(source)} <b>${price!=null&&price>0?esc(num(price,2)):'-'}</b><small>${esc(quoteTime)}</small></span>
-              <span class="radar-compact-next">量價：${esc(volumePriceState(item,q).tag)}｜${esc(volumePriceState(item,q).note)}</span><span class="radar-compact-next">下一步：${esc(radarShortAdvice(item,{text:status},q))}</span>
+              <span class="radar-compact-next">量價：${esc(volumePriceState(item,q).tag)}｜${esc(volumePriceState(item,q).note)}</span><span class="radar-compact-next">山川：${esc(shanchuanBrief(item,q))}</span><span class="radar-compact-next">下一步：${esc(radarShortAdvice(item,{text:status},q))}</span>
             </summary>
             <div class="entry-mini-full">${launchScoutHistoryHtml(item)}${continuationRiskMiniHtml(item)}${stockMovementHtml(item,q,'launch',launchDisplayAction)}
               ${radarDeepDetailsHtml((trial?'<div class="model-only-note">'+esc(trial.detail)+'</div>':'')+detailed)}</div>
