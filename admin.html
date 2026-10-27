@@ -5432,6 +5432,13 @@ h1 {
         const completedRows=byRank(allSignal.filter(row=>row.action?.phase==='confirmed'
           &&row.action?.buyable===true&&formalEntryValidation.enabled&&quoteFreshForTrial(row.quote)));
         persistVerifiedTrialRows(starterRows);
+        // Exact live-trial bucket already passed C freshness, risk, model and trialable gates.
+        // No extra quote/scanner request. Never log EOD preparation as an actionable trial.
+        starterRows.forEach(row=>void auditSignalObserved(
+          row.item,row.quote,'trial',
+          '🟠 可小量試單｜'+String(row.action?.text||'C盤中條件已確認'),
+          String(row.action?.detail||row.action?.text||'完整盤中試單條件通過')
+        ));
         // One stock appears in exactly ONE category; live actionable signals
         // retain their priority. Completed-EOD first bars get their own section.
         // A yellow candidate cannot be counted as today's opportunity.
@@ -6791,6 +6798,67 @@ h1 {
           pnl:plan.pnl,price,ratio,referenceDate:plan.observationDate,suggestedQty,
           secondTrigger:secondBreakout?secondLevel:null};
       };
+      // Audit only the signal actually shown by an existing verified radar decision.
+      // Nothing here changes scan quotas, prices, holdings, entry gates or risk rules.
+      const TRADE_SIGNAL_AUDIT_API = SUPABASE_URL + '/functions/v1/asheng-signal-audit';
+      const auditedTradeSignals = new Set(), auditingTradeSignals = new Set();
+      const auditSignalObserved = (item,quote,kind,label,reason,extra={}) => {
+        const id=String(item?.stock_id||''), m=item?.metrics||{};
+        const asOf=String(item?.as_of||'').slice(0,10);
+        const live=validTodayQuote(quote);
+        const rawDate=String(live?quote?.quote_date:'').replace(/[^0-9]/g,'').slice(0,8);
+        const signalDate=live&&rawDate.length===8
+          ?rawDate.slice(0,4)+'-'+rawDate.slice(4,6)+'-'+rawDate.slice(6,8):asOf;
+        const source=live?'C':'S',text=String(label||'').slice(0,160);
+        // Old models and past candidates must never be relabelled as today's trade signal.
+        if(!/^[0-9A-Z.-]{2,12}$/.test(id)|| !/^\d{4}-\d{2}-\d{2}$/.test(asOf)
+          ||!['trial','add'].includes(kind)||!text||!unifiedRadarGeneration(item))return;
+        if(kind==='trial' && (holdings.has(id)||asOf!==expectedSignalDataDate()))return;
+        if(kind==='add' && !holdings.has(id))return;
+        if(!live && asOf!==expectedSignalDataDate())return;
+        if(live && signalDate!==todayQuoteDate().replace(/(\d{4})(\d{2})(\d{2})/,'$1-$2-$3'))return;
+        const price=Number(live?quote.price:m.close);
+        if(!(Number.isFinite(price)&&price>0))return;
+        const key=[portfolioId,id,kind,signalDate,source,text].join('|');
+        if(auditedTradeSignals.has(key)||auditingTradeSignals.has(key))return;
+        try{if(sessionStorage.getItem('asheng-signal-saved-v1-'+key)==='1'){auditedTradeSignals.add(key);return;}}catch(e){}
+        const avg=Number(m.avg_volume_20_lots);
+        const lots=Number(live?quote.volume_lots:m.current_volume_lots);
+        const ratio=live&&avg>0?lots/Math.max(1,avg*marketFraction(quote?.quote_time))
+          :Number(m.holding_management?.day_volume_ratio??m.ma_cluster?.day_volume_ratio);
+        const cost=Number(holdings.get(id)?.avg_cost);
+        const numeric=value=>Number.isFinite(value)?value:null;
+        const payload={
+          stock_id:id,stock_name:item.stock_name,signal_type:kind,signal_label:text,
+          signal_date:signalDate,model_as_of:asOf,source,
+          quote_time:live?String(quote.quote_time||''):null,price,
+          ma5:numeric(Number(m.ma5)),ma10:numeric(Number(m.ma10)),
+          ma20:numeric(Number(m.ma20)),ma60:numeric(Number(m.ma60)),
+          volume_lots:numeric(lots),avg20_volume_lots:numeric(avg),
+          volume_ratio:numeric(ratio),holding_cost:cost>0?cost:null,
+          pnl_pct:cost>0?(price/cost-1)*100:null,
+          ma20_distance_pct:Number(m.ma20)>0?(price/Number(m.ma20)-1)*100:null,
+          model_version:String(m.model?.version||''),reason:String(reason||'').slice(0,700),
+          holding_add_kind:String(extra?.holding_add_kind||'')
+        };
+        auditingTradeSignals.add(key);
+        void (async()=>{
+          const {data}=await authClient.auth.getSession();
+          const token=data?.session?.access_token;
+          if(!token)return;
+          const response=await fetch(TRADE_SIGNAL_AUDIT_API,{
+            method:'POST',headers:{'Content-Type':'application/json',
+              Authorization:'Bearer '+token},
+            body:JSON.stringify(payload),cache:'no-store'
+          });
+          if(!response.ok)return;
+          const result=await response.json().catch(()=>null);
+          if(result?.ok===true){
+            auditedTradeSignals.add(key);
+            try{sessionStorage.setItem('asheng-signal-saved-v1-'+key,'1');}catch(e){}
+          }
+        })().catch(()=>{}).finally(()=>auditingTradeSignals.delete(key));
+      };
       // Clear yesterday's short-term warning only with a verified next-day C trade.
       // Pure UI decision, never touches MA20 exits, holdings, or S/C quotas.
       const holdingPriorLowRecoveryState = (item, quote = null) => {
@@ -7555,6 +7623,17 @@ h1 {
           ?'｜第二平台 '+num(Number(platform.trigger),2)+(platform.status==='watch'?' 待突破':' 放量已突破')
           :'';
         const decision=holdingDisplay(item,live);
+        // Existing strict holdingAddPlan is observational only: preserve B stop/exit priority.
+        const addPlan=holdingAddPlan(item,live);
+        const addReady=addPlan?.eligible===true
+          &&risk?.stopHard!==true &&high?.triggered!==true;
+        const addObservation=addReady
+          ?'｜🟠 '+String(addPlan.kind)+'：可評估第二筆，原停損優先':'';
+        if(addReady)void auditSignalObserved(item,live,'add',
+          '🟠 可評估加碼｜'+String(addPlan.kind),
+          '原判斷 '+String(addPlan.kind)+'｜成本損益 '+num(addPlan.pnl,2)+'%｜'
+            +'量比 '+num(addPlan.ratio,2)+'x｜MA20回踩／箱型突破及原風控需全部成立',
+          {holding_add_kind:addPlan.kind});
         const main=String(decision?.main||'續抱');
         const stopAlert=risk?.stopHard===true;
         const actionLabel=bDecision.kind==='volume_exit_watch'?bDecision.title:stopAlert?decision.action.title:main;
@@ -7573,13 +7652,13 @@ h1 {
               <span class="holding-mini-stats"><span>成本 <b>${cost>0?esc(num(cost,2)):'-'}</b></span>
                 <span>${esc(quoteDisplayState(live,item).label)} <b>${price!=null?esc(num(price,2)):'-'}</b></span>
                 <span>損益 <b class="${holdingPnlClass(pnl)}">${pnl==null?'-':(pnl>0?'+':'')+esc(num(pnl,2))+'%'}</b></span></span>
-              <span class="holding-mini-status">${esc(positionStatus)}</span>
+              <span class="holding-mini-status">${esc(positionStatus+addObservation)}</span>
               <span class="holding-mini-date">量價｜${esc(volumePriceState(item,live).tag)}｜${esc(volumePriceState(item,live).note)}</span><span class="holding-mini-date">山川｜${esc(shanchuanBrief(item,live))}</span>
               <span class="holding-mini-date">S 模型 ${esc(item.as_of||'待更新')}｜${live?'C 成交時間 '+esc(quoteDisplayState(live,item).moment)+(quoteDisplayState(live,item).live?'｜盤中即時':'｜非即時'):'無有效 C 成交，非即時模型價'}</span>
             </summary>
             <div class="holding-mini-body">
               ${researchNote}
-              <div class="holding-mini-status">${esc(positionStatus+protectionDetail+positionDetail)}</div>
+              <div class="holding-mini-status">${esc(positionStatus+addObservation+protectionDetail+positionDetail)}</div>
               ${holdingMa20DaysHtml(item,live)}
               ${continuationRiskMiniHtml(item)}
               ${stockMovementHtml(item,live,'holding',{text:actionLabel,detail:decision.reminder})}
