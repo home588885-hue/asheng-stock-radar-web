@@ -6727,7 +6727,12 @@ h1 {
         if (!boughtDate || rec.added) return blocked(!boughtDate?'買進日期不足，暫不加碼':'已觀察到加碼，停止重複加碼提示');
         const plan = holdingRiskPlan(item, quote);
         if (!plan?.confirmed) return blocked('有效成交或買進後完整日K不足，暫不加碼');
-        if (plan.pnl < 3) return blocked('首筆未獲利+3%或處於虧損，絕不加碼攤平');
+        const bottomRebreak=plan.pnl<0 && plan.price>plan.cost*.90
+          &&Number(item?.metrics?.box_strategy?.levels?.top)>0
+          &&plan.price>Number(item.metrics.box_strategy.levels.top)*1.003
+          &&Number(item?.metrics?.ma10)>Number(item?.metrics?.ma20)
+          &&Number(item?.metrics?.ma20)>Number(item?.metrics?.ma60);
+        if(plan.pnl<3&&!bottomRebreak)return blocked('未達獲利3%或虧損持股完整底部突破條件，暫不加碼');
         if (plan.stopHard || holdingProfitProtection(item,quote)?.triggered) return blocked('B方案停損或移動停利已觸發，禁止加碼');
         const m=item?.metrics||{},hm=m.holding_management||{};
         const ma5=Number(m.ma5),ma10=Number(m.ma10),ma20=Number(m.ma20),ma60=Number(m.ma60);
@@ -6777,11 +6782,11 @@ h1 {
           &&price>=secondLevel*1.003&&price<=secondLevel*1.04
           &&ma20>0&&price<=ma20*1.05
           &&Number.isFinite(Number(m.daily_k))&&Number(m.daily_k)<=85;
-        if (!ma5Retest&&!ma10Retest&&!secondBreakout) return null;
+        if (!ma5Retest&&!ma10Retest&&!secondBreakout&&!bottomRebreak) return null;
         const base=Number(rec.baseQty||qty);
         const suggestedQty=Math.floor(Math.min(base*.5,base*plan.cost*.5/price));
         if (!(suggestedQty>0)) return blocked('原始部位過小，50%加碼上限不足一股');
-        return {eligible:true,live,kind:secondBreakout?'第二平台放量突破':ma5Retest?'MA5回測放量轉強':'MA10回測放量轉強',
+        return {eligible:true,live,kind:bottomRebreak?'虧損持股底部重新突破':secondBreakout?'第二平台放量突破':ma5Retest?'MA5回測放量轉強':'MA10回測放量轉強',
           pnl:plan.pnl,price,ratio,referenceDate:plan.observationDate,suggestedQty,
           secondTrigger:secondBreakout?secondLevel:null};
       };
