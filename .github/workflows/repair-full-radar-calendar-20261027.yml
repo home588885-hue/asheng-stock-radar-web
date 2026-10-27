@@ -72,6 +72,12 @@ jobs:
               };
           """
           s=s[:i]+expected+s[j:]
+          # Existing holdings MA20 streak renderer was defined but omitted from
+          # the expanded holding card; restore the display-only readout.
+          needle='              ${continuationRiskMiniHtml(item)}'
+          assert s.count(needle)==1, 'holding panel boundary drifted'
+          assert '${holdingMa20DaysHtml(item,live)}' not in s, 'already rendered'
+          s=s.replace(needle,'              ${holdingMa20DaysHtml(item,live)}\n'+needle,1)
           p.write_text(s,encoding='utf-8')
           print('Shared full-radar date logic corrected, no trading rule changed')
           PY
