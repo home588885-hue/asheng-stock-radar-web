@@ -6734,7 +6734,7 @@ h1 {
           &&Number(item?.metrics?.ma20)>Number(item?.metrics?.ma60);
         if(plan.pnl<3&&!bottomRebreak)return blocked('未達獲利3%或虧損持股完整底部突破條件，暫不加碼');
         const priorExitAlert=plan.stopHard || holdingProfitProtection(item,quote)?.triggered;
-        if(priorExitAlert&&!bottomRebreak)return blocked('已觸發出場警示；僅仍持有且重新完整築底突破才可評估，出場風險仍有效');
+        if(priorExitAlert&&!bottomRebreak)return blocked('已觸發出場警示；系統僅在完整築底重新突破時自動重新評估，停損警示仍有效');
         const m=item?.metrics||{},hm=m.holding_management||{};
         const ma5=Number(m.ma5),ma10=Number(m.ma10),ma20=Number(m.ma20),ma60=Number(m.ma60);
         const price=plan.price,live=plan.live;
@@ -6787,7 +6787,7 @@ h1 {
         const base=Number(rec.baseQty||qty);
         const suggestedQty=Math.floor(Math.min(base*.5,base*plan.cost*.5/price));
         if (!(suggestedQty>0)) return blocked('原始部位過小，50%加碼上限不足一股');
-        return {eligible:true,live,kind:bottomRebreak?(priorExitAlert?'人工續抱｜停損警示仍有效｜底部重新突破':'虧損持股底部重新突破'):secondBreakout?'第二平台放量突破':ma5Retest?'MA5回測放量轉強':'MA10回測放量轉強',
+        return {eligible:true,live,kind:bottomRebreak?(priorExitAlert?'停損警示仍有效｜系統確認底部重新突破':'虧損持股底部重新突破'):secondBreakout?'第二平台放量突破':ma5Retest?'MA5回測放量轉強':'MA10回測放量轉強',
           pnl:plan.pnl,price,ratio,referenceDate:plan.observationDate,suggestedQty,
           secondTrigger:secondBreakout?secondLevel:null};
       };
