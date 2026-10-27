@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 6
     steps:
-      - name: Check Cloudflare, TWSE live trades and FinMind candle dates
+      - name: Check Cloudflare, TWSE / TPEx trades and FinMind candle dates
         shell: bash
         run: |
           python - <<'PY'
@@ -25,7 +25,7 @@ jobs:
                   return data
           c=get('Cloudflare C health','https://asheng-market-bridge.home588885.workers.dev/health')
           assert c.get('ok') and c.get('service')=='asheng-market-bridge','C health/route unavailable'
-          q=get('TWSE live fallback',root+'asheng-live-quotes?symbols=4533:tse,2330:tse')
+          q=get('TWSE live fallback',root+'asheng-live-quotes?symbols=4533:otc,2330:tse')
           assert q.get('ok') and isinstance(q.get('quotes'),list),'TWSE MIS source unavailable'
           expected=datetime.datetime.now(ZoneInfo('Asia/Taipei')).strftime('%Y%m%d')
           for item in q['quotes']:
