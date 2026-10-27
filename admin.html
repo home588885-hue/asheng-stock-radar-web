@@ -7626,7 +7626,8 @@ h1 {
         // Existing strict holdingAddPlan is observational only: preserve B stop/exit priority.
         const addPlan=holdingAddPlan(item,live);
         const addReady=addPlan?.eligible===true
-          &&risk?.stopHard!==true &&high?.triggered!==true;
+          &&risk?.stopHard!==true &&high?.triggered!==true
+          &&!['exit','verify','volume_exit_watch'].includes(bDecision.kind);
         const addObservation=addReady
           ?'｜🟠 '+String(addPlan.kind)+'：可評估第二筆，原停損優先':'';
         if(addReady)void auditSignalObserved(item,live,'add',
