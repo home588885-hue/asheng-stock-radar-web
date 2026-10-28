@@ -939,6 +939,14 @@ test('Bottom-first v2 separates early base observation from verified C trial and
   const forming={...model,metrics:{...model.metrics,current_volume_lots:380,avg_volume_20_lots:600}};
   assert.equal(q(forming).prelaunch,true,'forming stock should be visible before volume reaches 1000');
   assert.equal(q(forming).trialBase,false,'forming watch must never be an actionable trade');
+  assert.equal(q({...model,metrics:{...model.metrics,quality_gate:{mode:'warning_only_for_bc',pass:false}}}).prelaunch,
+    true,'B/C warning-only quality gate is NOT an early-watch veto');
+  assert.equal(q({...model,metrics:{...model.metrics,
+    quality_gate:{mode:'warning_only_for_bc',pass:false}}},live).trial,
+    true,'warning-only does not override live trade-quality/risk gate');
+  const ultraLow={...model,metrics:{...model.metrics,current_volume_lots:100,avg_volume_20_lots:300}};
+  assert.equal(q(ultraLow).prelaunch,false,'very low daily liquidity stays excluded');
+  assert.match(html,/const BOTTOM_FIRST_QUALITY_VERSION='2026-10-28-bottom-first-quality-v2'/);
   const unlabeled=f(...Object.values({...calls,benchmark0050Quote:null})).bottomFirstQuality;
   assert.equal(unlabeled(model,live).trial,true,'missing 0050 does not veto strong C trade');
   assert.equal(unlabeled(model,live).relativePct,null,'do not invent proxy outperformance');
