@@ -1277,7 +1277,7 @@ h1 {
 
         <section class="box">
           <div class="stats">
-            <div class="stat"><small>已取得模型資料</small><b id="done">-</b><span class="stat-explain">近期可用的股票快照</span></div>
+            <div class="stat"><small>最新日K已重算</small><b id="done">-</b><span class="stat-explain" id="doneInfo">最新完整日K的重算數，並非資料庫全部模型</span></div>
             <div class="stat"><small>市場追蹤範圍</small><b id="total">-</b><span class="stat-explain">目前追蹤的股票總數</span></div>
             <div class="stat stat-signal"><small>🌱 高品質發動前</small><b id="cCount">載入中</b><span class="stat-explain" id="cCountInfo">依最近完整日K篩選</span></div>
             <div class="stat stat-signal"><small>🎯 進場雷達候選</small><b id="bCount">查看名單</b><span class="stat-explain" id="bCountInfo">切換進場雷達查看</span></div>
@@ -2391,6 +2391,20 @@ h1 {
       // 進場雷達僅保留最近完整日K快照，不建立盤中存活計時器。
       const scanProgressSuffix = () => latestScanProgress?.latest_complete === false ? `｜🔄 最新資料 ${Number(latestScanProgress.latest_count || 0)}/${Number(latestScanProgress.total_stocks || 0)}，訊號數尚未代表全市場` : '';
       const $ = selector => document.querySelector(selector);
+      // Progress is partial daily-model coverage, not the entire cached universe.
+      // Reuse existing picks telemetry: no new requests, scans, or data writes.
+      const renderModelScanProgress = progress => {
+        const latest = Number(progress?.latest_count ?? progress?.scanned_fresh);
+        const recent = Number(progress?.scanned_recent);
+        const date = String(progress?.latest_as_of || '');
+        const done = $('#done'), info = $('#doneInfo');
+        if (done) done.textContent = Number.isFinite(latest) && latest >= 0 ? String(latest) : '-';
+        if (info) info.textContent = (date || '最新完整日K') + ' 已重算'
+          + (Number.isFinite(latest) && latest >= 0 ? ' ' + latest + ' 檔' : '，數量待確認')
+          + '｜近6日掃描 ' + (Number.isFinite(recent) && recent >= 0 ? recent + ' 檔' : '待確認')
+          + '；非全市場完成數';
+      };
+
 
       // C official bulk EOD observation: read-only, no Supabase scanning or writes.
       // Do NOT classify this liquid preview as a model-validated first-bar buy signal.
@@ -6651,7 +6665,7 @@ h1 {
           latestScanProgress = progress;
           renderCoverageWarning(progress);
           const counts = data.stage_counts || {};
-          $('#done').textContent = progress.latest_count ?? progress.scanned_fresh ?? 0;
+          renderModelScanProgress(progress);
           $('#total').textContent = progress.total_stocks ?? 0;
           $('#bar').style.width =
             Math.min(100, Number(progress.latest_percent ?? progress.percent ?? 0)) + '%';
@@ -8860,7 +8874,7 @@ h1 {
               const progress = launchData.progress || {};
               latestScanProgress = progress;
               renderCoverageWarning(progress);
-              $('#done').textContent = progress.latest_count ?? progress.scanned_fresh ?? 0;
+              renderModelScanProgress(progress);
               $('#total').textContent = progress.total_stocks ?? 0;
               $('#bar').style.width = Math.min(100, Number(progress.latest_percent ?? progress.percent ?? 0)) + '%';
             }
@@ -8902,7 +8916,7 @@ h1 {
           }).slice(0, stage === 'ENTRY' ? 50 : 30);
           const progress = cData.progress || {};
           const counts = cData.stage_counts || {};
-          $('#done').textContent = progress.latest_count ?? progress.scanned_fresh ?? 0;
+          renderModelScanProgress(progress);
           $('#total').textContent = progress.total_stocks ?? 0;
           $('#bar').style.width = Math.min(100, Number(progress.latest_percent ?? progress.percent ?? 0)) + '%';
           await refreshLiveQuotes();
