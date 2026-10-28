@@ -3532,6 +3532,27 @@ h1 {
           phase:'blocked',className:'wait',text:'⚪ 舊版防追高模型｜僅供觀察',
           detail:'需新版 +8%／+12%／+15% 完整日K重新掃描，舊模型不能判定新買進'};
         const m=item?.metrics||{}, g=m.entry_candle_guard||{}, hm=m.holding_management||{};
+        // Official entry/trial authority is gated by the SAME new TDCC weekly cached policy.
+        // Never promote older/analyzer-unsigned snapshots or missing holder data into a buy.
+        const holderFlow=m.tdcc_holder_flow||{};
+        const holderVersion='2026-10-28-tdcc-ma20-0-8-two-weeks-v1';
+        const holderConfirmed=holderFlow.version===holderVersion&&holderFlow.entry_gate_verified===true
+          &&holderFlow.pass===true&&holderFlow.covered===true
+          &&holderFlow.as_of===String(item?.as_of||'');
+        if(!holderConfirmed)return {kind:'hard',key:'tdcc_holder_flow_guard',phase:'blocked',
+          rank:9,className:'wait',buyable:false,trialable:false,keep_candidate:true,
+          text:'🟡 集保大戶＋MA20條件待確認｜暫不試單',
+          detail:'新版要求：400張／1000張以上持股比例各連增兩週＋MA20正乖離0～8%；'
+            +'集保週資料缺漏、過期、未經新版分析或條件不符，一律保留觀察而不核發買點。'
+            +' 最新已核對快照 '+String(holderFlow.snapshot_date||'無')};
+        if(quote&&validTodayQuote(quote)){
+          const livePrice=Number(quote.price),refMa20=Number(m.ma20);
+          const liveBias=livePrice>0&&refMa20>0?(livePrice/refMa20-1)*100:null;
+          if(liveBias===null||liveBias<0||liveBias>8)return {kind:'hard',key:'tdcc_intraday_ma20_bias_guard',
+            phase:'blocked',rank:10,className:'wait',buyable:false,trialable:false,keep_candidate:true,
+            text:'🟡 即時價距MA20不在0～8%｜等安全位置',
+            detail:'最新有效成交相對MA20偏離 '+(liveBias===null?'缺資料':num(liveBias,2)+'%')+'，保持觀察、不試單'};
+        }
         const intraday=liveSelloffRisk(item,quote);
         if(intraday)return intraday;
         const price=validTodayQuote(quote)?Number(quote.price):Number(m.close);
