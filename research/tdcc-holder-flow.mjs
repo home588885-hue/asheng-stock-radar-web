@@ -47,7 +47,9 @@ function parseDate(value){
   return d.toISOString().slice(0,10);
 }
 function n(value){
-  const x=Number(String(value??'').replace(/,/g,''));
+  const raw=String(value??'').replace(/,/g,'').trim();
+  if(!raw)return NaN; // Missing price/return must not become a fictitious zero.
+  const x=Number(raw);
   return Number.isFinite(x)?x:NaN;
 }
 // Conservative publication lag: no snapshot can inform a signal before the
