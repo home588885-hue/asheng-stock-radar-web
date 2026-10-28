@@ -4493,7 +4493,7 @@ h1 {
         const modelRatio=avg>0?lots/avg:NaN;
         const bias20=ma20>0?(price/ma20-1)*100:NaN;
         const weak=g.weak_after_breakout===true||g.macd_weak===true||g.kd_high_weak===true
-          ||g.main_bull===false||m.holding_management?.strong_breakdown===true
+          ||m.holding_management?.strong_breakdown===true
           ||m.quality_gate?.pass===false
           ||['child_low_broken','mother_low_broken','invalid','broken'].includes(
             String(m.shanchuan_v2?.mother_child?.lifecycle?.state||''));
@@ -4514,6 +4514,7 @@ h1 {
           &&chasePass(item,close)&&(shape||nearHigh);
         const trialReasons=[];
         if(!goodBase)trialReasons.push('尚缺底部、均線、日K量能或低位階確認');
+        if(g.main_bull===false)trialReasons.push('盤後主要多頭尚未確認，先列發動前觀察');
         if(!live)trialReasons.push('缺當日5分鐘內有效成交');
         if(live){
           const open=Number(quote.open),prev=Number(quote.prev_close);
@@ -4747,24 +4748,9 @@ h1 {
           detail:'S前日靠近'+earlyStarterTrial.support+'，C當日已站穩MA10 '+num(earlyStarterTrial.ma10,2)
             +'｜量速 '+num(earlyStarterTrial.pace,2)+'x｜有效累計 '+num(earlyStarterTrial.lots,0)+'張'
             +'｜MA20乖離 '+num(earlyStarterTrial.gap20,2)+'%｜僅小量評估，非V5正式買點'};
-        // The old early-starter edge, fused into today's V2 action pipeline.
-        // Only the orange trial tier; never label a candidate as green.
-        const legacyStarter=legacyEarlyStarterTrial(item,quote,earlyEligible);
-        if(legacyStarter)return {...baseAction,key:'legacy_early_starter_trial',
-          phase:'trial',rank:Math.max(94,Number(baseAction.rank||0)),
-          className:'trial',buyable:false,trialable:true,live_quote_verified:true,
-          text:'🟠 舊版第一根節奏｜新版安全試單',
-          detail:'舊版提早量速 '+num(legacyStarter.pace,2)+'x，C有效成交 '
-            +num(legacyStarter.lots,0)+'張｜MA20乖離 '+num(legacyStarter.gap20,2)
-            +'%｜新版風控已核對，僅小量試單；非V5正式買點'};
-        const legacyBurst=legacyVolumeBreakoutTrial(item,quote,earlyEligible);
-        if(legacyBurst)return {...baseAction,key:legacyBurst.kind==='low'?'legacy_low_volume_trial':'legacy_mid_breakout_trial',
-          phase:'trial',rank:Math.max(95,Number(baseAction.rank||0)),
-          className:'trial',buyable:false,trialable:true,live_quote_verified:true,
-          text:legacyBurst.kind==='low'?'🟠 低檔爆量第一根｜新版安全試單':'🟠 中位箱型突破｜新版安全試單',
-          detail:'舊版特殊放量辨識｜一年位階 '+num(legacyBurst.pos,1)+'%｜C量速 '
-            +num(legacyBurst.pace,2)+'x｜MA20乖離 '+num(legacyBurst.gap20,2)
-            +'%｜新版風控通過；非V5正式買點'};
+        // Retired 2026-10-28: legacy orange starter/burst paths remain research-only
+        // and must not grant an independent trial. Box/first-bar/MA10 paths
+        // share one bottomFirstQuality confirmation and cannot bypass the gate.
         // Preserve the user's original strict MA10 pullback trial route.
         // Never convert the NEW research-rejected MA20 observation to orange.
         const originalTrial=eligible&&originalMa10Watch
@@ -5981,9 +5967,10 @@ h1 {
         }
         if (volumeRatio == null && Number.isFinite(Number(m.holding_management?.day_volume_ratio))) volumeRatio = Number(m.holding_management.day_volume_ratio);
         const ma20 = Number(m.ma20);
-        if(ma20>0&&price<ma20&&q==null)return {tag:'🔴 MA20下方｜尚未轉強',tone:'weak',
-          note:'僅是最後完整日K，等待重新站回MA20與量價確認',
-          changePct,volumeRatio,pos1y,intraday:false};
+        if(ma20>0&&price<ma20)return {
+          tag:q?'🟠 盤中仍在MA20下方':'🔴 MA20下方｜尚未轉強',tone:'weak',
+          note:q?'盤中反彈尚未收復MA20；不當成有效起漲':'最後完整日K尚未站回MA20，等量價重新轉強',
+          changePct,volumeRatio,pos1y,intraday:!!q&&String(q.quote_time||'')<'13:30:00'};
         const bottom = Number.isFinite(pos1y) && pos1y <= 35;
         const high = Number.isFinite(pos1y) && pos1y >= 80;
         let tag='⚪ 量價中性', tone='neutral', note='方向不明｜先觀察';
