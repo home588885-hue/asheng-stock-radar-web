@@ -900,14 +900,14 @@ test('2023 signed pre-breakout gets cross-day observation without fictitious ear
     'actionable scout payload must never be saved as observation');
   assert.ok(renders>=2&&reads>=2);
 });
-test('Bottom-first v4 is ONE quality gate shared across LAUNCH, ENTRY and HOLDING',()=>{
+test('Bottom-first v2 separates early base observation from verified C trial and holding',()=>{
   const source=section('      const BOTTOM_FIRST_QUALITY_VERSION=', '      // Entry radar is night-snapshot-only');
   const date=()=> '2026-10-27';
   const marketProxy={stock_id:'0050',price:150,prev_close:149.5,quote_date:'20261027',quote_time:'09:05:00'};
   const calls={
     validTodayQuote:q=>!!q,quoteFreshForTrial:q=>!!q,
     expectedSignalDataDate:date,unifiedRadarGeneration:()=>true,
-    chaseModelReady:()=>true,chasePass:()=>true,marketFraction:()=>.25,
+    chaseModelReady:()=>true,chasePass:()=>true,marketFraction:()=>.5,
     benchmark0050Quote:marketProxy,
     num:(v,n=2)=>Number(v).toFixed(n)
   };
@@ -925,15 +925,24 @@ test('Bottom-first v4 is ONE quality gate shared across LAUNCH, ENTRY and HOLDIN
       box_strategy:{discovery:{ready_watch:true}}}
   };
   const live={price:101,open:100,prev_close:99.5,high:101.1,
-    volume_lots:600,quote_time:'09:05:00',quote_date:'20261027'};
+    volume_lots:1200,quote_time:'09:05:00',quote_date:'20261027'};
   assert.equal(q(model).prelaunch,true);
   assert.equal(q(model,live).trial,true);
   assert.ok(q(model,live).relativePct>0.5);
   marketProxy.price=154;
   assert.equal(q(model,live).trial,false,'index proxy outruns stock, no trial');
   marketProxy.price=150;
-  assert.equal(q({...model,metrics:{...model.metrics,close:97.9}},live).prelaunch,false,'no MA20 support');
-  assert.equal(q({...model,metrics:{...model.metrics,close:97}},live).prelaunch,false,'no MA10 support');
+  assert.equal(q({...model,metrics:{...model.metrics,close:97.9}},live).prelaunch,true,'near MA20 can be WATCH');
+  assert.equal(q({...model,metrics:{...model.metrics,close:97}},live).prelaunch,true,'unfinished base stays WATCH');
+  assert.equal(q({...model,metrics:{...model.metrics,close:97}},live).trialBase,false,'unfinished base not a trial');
+  assert.equal(q({...model,metrics:{...model.metrics,close:95}},live).prelaunch,false,'support lost');
+  const forming={...model,metrics:{...model.metrics,current_volume_lots:380,avg_volume_20_lots:600}};
+  assert.equal(q(forming).prelaunch,true,'forming stock should be visible before volume reaches 1000');
+  assert.equal(q(forming).trialBase,false,'forming watch must never be an actionable trade');
+  const unlabeled=f(...Object.values({...calls,benchmark0050Quote:null})).bottomFirstQuality;
+  assert.equal(unlabeled(model,live).trial,true,'missing 0050 does not veto strong C trade');
+  assert.equal(unlabeled(model,live).relativePct,null,'do not invent proxy outperformance');
+  assert.equal(unlabeled(model,{...live,price:100.1}).trial,false,'without proxy require stronger stock gain');
   const heldRecovery={...model,metrics:{...model.metrics,
     position_1y_pct:78,
     box_strategy:{...model.metrics.box_strategy,levels:{top:99}},
@@ -960,6 +969,9 @@ test('Bottom-first v4 is ONE quality gate shared across LAUNCH, ENTRY and HOLDIN
   assert.equal(q({...model,as_of:'2026-10-24'},live).trial,false);
   assert.equal(q({...model,metrics:{...model.metrics,position_1y_pct:85}},live).trial,false);
   assert.equal(q({...model,metrics:{...model.metrics,current_volume_lots:450}},live).trial,false);
+  assert.equal(q(model,{...live,volume_lots:999}).trial,false,'actual 1000-lot floor not relaxed');
+  assert.equal(q({...model,metrics:{...model.metrics,entry_candle_guard:{main_bull:false}}},live).prelaunch,true);
+  assert.equal(q({...model,metrics:{...model.metrics,entry_candle_guard:{main_bull:false}}},live).trial,false);
   assert.equal(q({...model,metrics:{...model.metrics,entry_candle_guard:{weak_after_breakout:true}}},live).trial,false);
   const watch={phase:'observe',trialable:false,text:'🌱 低檔追蹤'};
   assert.equal(guard(model,live,watch),watch);
@@ -994,7 +1006,11 @@ test('Launch and entry labels cannot bypass bottom-first trial and EOD preparati
   assert.match(launch,/q&&ma20>0&&price<ma20\?'🟠 今日已知成交低於MA20/);
   assert.doesNotMatch(launch,/:[ ]?trial\?trial\.text/);
   assert.doesNotMatch(launch,/ma10PullbackTrialState\(item,q\)[\s\S]{0,100}\?trial\.text/);
-  assert.match(entry,/const eodTrialWatchReady=row=>eodStarterWatchEligible\(row.item\)\s*&&bottomFirstQuality\(row.item\)\.prelaunch/);
+  assert.match(entry,/const eodTrialWatchReady=row=>\([\s\S]*?bottomFirstQuality\(row.item\)\.trialBase[\s\S]*?bottomFirstQuality\(row.item\)\.prelaunch/);
+  assert.match(html,/const relaxedQuality=bottomFirstQuality\(item,quote\)/);
+  assert.match(html,/key:'bottom_first_live_trial',phase:'trial'/);
+  assert.match(html,/formalEntryValidation\.enabled&&m\.v5\?\.entry_confirmed===true/);
+  assert.match(html,/if \(earlyQuality\.prelaunch&&!earlyQuality\.trialBase\)/);
   assert.match(entry,/rows=rows\.map\(row=>\(\{\.\.\.row,action:guardBottomFirstAction\(row.item,row.quote,row.action\)\}\)\)/);
   assert.match(html,/const addReady=addPlan\?\.eligible===true[\s\S]{0,220}risk\?\.stopHard!==true/);
 });
