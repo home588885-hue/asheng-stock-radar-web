@@ -980,6 +980,11 @@ test('Bottom-first v2 separates early base observation from verified C trial and
   assert.equal(q(model,{...live,volume_lots:999}).trial,false,'actual 1000-lot floor not relaxed');
   assert.equal(q({...model,metrics:{...model.metrics,entry_candle_guard:{main_bull:false}}},live).prelaunch,true);
   assert.equal(q({...model,metrics:{...model.metrics,entry_candle_guard:{main_bull:false}}},live).trial,false);
+  const slowing={...model,metrics:{...model.metrics,entry_candle_guard:{main_bull:true,macd_weak:true}}};
+  assert.equal(q(slowing).prelaunch,true,'slowing MACD stays visible for early research');
+  assert.equal(q(slowing,live).trial,false,'slowing MACD cannot buy on a small bounce');
+  assert.equal(q(slowing,{...live,price:102,high:102.1}).trial,true,
+    'stronger fresh C reversal plus 1000 real traded lots may become orange trial');
   assert.equal(q({...model,metrics:{...model.metrics,entry_candle_guard:{weak_after_breakout:true}}},live).trial,false);
   const watch={phase:'observe',trialable:false,text:'🌱 低檔追蹤'};
   assert.equal(guard(model,live,watch),watch);
