@@ -908,7 +908,8 @@ test('Bottom-first v4 is ONE quality gate shared across LAUNCH, ENTRY and HOLDIN
     validTodayQuote:q=>!!q,quoteFreshForTrial:q=>!!q,
     expectedSignalDataDate:date,unifiedRadarGeneration:()=>true,
     chaseModelReady:()=>true,chasePass:()=>true,marketFraction:()=>.25,
-    benchmark0050Quote:marketProxy
+    benchmark0050Quote:marketProxy,
+    num:(v,n=2)=>Number(v).toFixed(n)
   };
   const f=new Function(...Object.keys(calls),source+
     '\nreturn {bottomFirstQuality,guardBottomFirstAction,BOTTOM_FIRST_QUALITY_VERSION};');
