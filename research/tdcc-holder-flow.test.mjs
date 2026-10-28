@@ -67,3 +67,29 @@ test('research summary does not reclassify a trading signal',()=>{
   assert.equal(r.every(x=>x.research_only===true),true);
   assert.equal(a[0].trialable,undefined);
 });
+
+
+test('real published 2330 2026-10-22 grade shares yield 400+/1000+ ratios',()=>{
+  // Public TDCC distribution as reproduced in HiStock; this fixture tests
+  // the grade arithmetic. It does NOT replace full official-file validation.
+  const csvReal=[
+    '資料日期,證券代號,持股分級,人數,股數,占集保庫存數比例%',
+    '20261022,2330,12,576,282066601,1.08',
+    '20261022,2330,13,339,235659808,0.90',
+    '20261022,2330,14,222,199192502,0.76',
+    '20261022,2330,15,1476,21893080824,84.42',
+    '20261022,2330,17,3166709,25932378067,100.00',
+  ].join('\n')+'\n';
+  const rec=tdccSnapshots([{name:'2026-10-22.csv',csv:csvReal}])[0];
+  assert.ok(Math.abs(rec.large400_pct-87.1883)<.001);
+  assert.ok(Math.abs(rec.large1000_pct-84.4237)<.001);
+  assert.equal(rec.usable_from,'2026-10-27');
+  assert.notEqual(rec.large400_pct,87.16,'shares-based percentage differs from sum of rounded grade ratios');
+});
+test('unknown r10 is missing, never fabricated as zero return',()=>{
+  const snap=tdccSnapshots(files);
+  const a=alignEvents([
+    {stock_id:'2330',signal_date:'2026-07-21',family:'FIRST_BREAKOUT',r10:'',mae10:''},
+  ],snap);
+  assert.equal(summarize(a).length,0);
+});
