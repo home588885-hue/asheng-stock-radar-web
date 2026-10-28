@@ -108,7 +108,7 @@ export function tdccSnapshots(files){
     const lookback=hist.length>=4?hist[hist.length-4]:null;
     const fourGap=lookback?dateGap(row.as_of,lookback.as_of):NaN;
     row.four_week400_change_pp=lookback&&fourGap>=24&&fourGap<=40
-      ?row.large400_pct-lookback.large400_pct:null;
+      ?+(row.large400_pct-lookback.large400_pct).toFixed(6):null;
     hist.push(row);before.set(row.stock_id,hist);
     last.set(row.stock_id,row);
   }
