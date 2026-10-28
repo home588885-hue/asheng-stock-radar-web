@@ -6295,25 +6295,33 @@ h1 {
           &&f.covered===true&&String(f.usable_from||'')<=day
           &&/^20\d{2}-\d{2}-\d{2}$/.test(String(f.snapshot_date||''));
         const val=n=>n===null||n===undefined||n===''?null:(Number.isFinite(Number(n))?Number(n):null);
+        const streak=n=>{const v=val(n);return v===null?null:Math.max(0,Math.min(4,Math.floor(v)));};
         const up400=covered&&f.two_week400_up===true,up1000=covered&&f.two_week1000_up===true;
         return {covered,up400,up1000,both:up400&&up1000,date:String(f.snapshot_date||''),day,
           p400:covered?val(f.holder_400_pct):null,p1000:covered?val(f.holder_1000_pct):null,
           delta400:covered?val(f.delta_400_pp):null,delta1000:covered?val(f.delta_1000_pp):null,
+          streak400:covered?streak(f.streak_400_weeks):null,
+          streak1000:covered?streak(f.streak_1000_weeks):null,
+          streakBoth:covered?streak(f.streak_both_weeks):null,
+          streakHistory:covered?val(f.streak_history_snapshots):null,
           bias:covered?val(f.bias20_pct):null,ma20Pass:covered&&f.ma20_bias_0_8_pass===true,
           signed:covered&&f.entry_gate_verified===true};
+      }
+      function tdccStreakLabel(weeks) {
+        return weeks===null?'週數待更新':weeks>=4?'連增4週以上':weeks>0?'連增'+weeks+'週':'未連續增加';
       }
       function tdccHolderBrief(item) {
         const s=tdccHolderState(item);
         if(!s.covered)return '🐋 集保大戶｜該模型日資料待更新';
-        if(s.both)return '🐋 集保大戶｜400張↑、1,000張↑，連增2週';
-        const tag=(yes,n)=>yes?'連增2週':n===null?'未確認':n>0?'近週增加':n<0?'近週減少':'近週持平';
-        return '🐋 集保大戶｜400張 '+tag(s.up400,s.delta400)+'・1,000張 '+tag(s.up1000,s.delta1000);
+        if(s.streakBoth!==null&&s.streakBoth>=1)
+          return '🐋 集保大戶｜400與1,000張雙級'+tdccStreakLabel(s.streakBoth);
+        if(s.streakBoth===0)return '🐋 集保大戶｜雙級未同步連增（400張'+tdccStreakLabel(s.streak400)+'、1,000張'+tdccStreakLabel(s.streak1000)+'）';
+        return '🐋 集保大戶｜連增週數待更新';
       }
       function tdccHolderDetailHtml(item) {
         const s=tdccHolderState(item);
         const value=n=>n===null?'-':num(n,2)+'%';
         const delta=n=>n===null?'變化待補':(n>0?'+':'')+num(n,3)+' 個百分點';
-        const trend=(yes,n)=>yes?'↑ 連增2週':n===null?'未確認':n>0?'↑ 近週增加':n<0?'↓ 近週減少':'→ 近週持平';
         if(!s.covered)return '<div class="tdcc-holder-flow" data-tdcc-flow="unavailable">'
           +'<b>🐋 集保大戶持股動向｜資料待確認</b><small>目前模型日 '+esc(s.day||'未知')
           +' 尚無可用的集保週資料；不能拿後來公布的快照倒補歷史買點。'
@@ -6321,17 +6329,18 @@ h1 {
         const bias=s.bias===null?'MA20偏離待補':'MA20偏離 '+(s.bias>0?'+':'')+num(s.bias,2)+'%'
           +(s.ma20Pass?'（符合0～8%）':'（不符0～8%）');
         return '<div class="tdcc-holder-flow" data-tdcc-flow="available">'
-          +'<b>🐋 集保大戶持股動向｜'+(s.both?'雙級持股比例連增2週':'持股比例變化觀察')+'</b>'
-          +'<small>400張以上 '+esc(value(s.p400))+'｜'+esc(trend(s.up400,s.delta400))
+          +'<b>🐋 集保大戶｜'+esc(tdccStreakLabel(s.streakBoth))+'（兩級同步）</b>'
+          +'<small>400張以上 '+esc(value(s.p400))+'｜'+esc(tdccStreakLabel(s.streak400))
             +'｜最近一週 '+esc(delta(s.delta400))+'</small>'
-          +'<small>1,000張以上 '+esc(value(s.p1000))+'｜'+esc(trend(s.up1000,s.delta1000))
+          +'<small>1,000張以上 '+esc(value(s.p1000))+'｜'+esc(tdccStreakLabel(s.streak1000))
             +'｜最近一週 '+esc(delta(s.delta1000))+'</small>'
           +'<small>集保資料日 '+esc(s.date)+'｜模型日 '+esc(s.day)
             +'｜'+esc(bias)+(s.signed?'｜新版分析已驗證':'｜待新版分析確認')+'</small>'
-          +'<small>持股比例為每週數據，400張以上包含1,000張以上；不代表每日實際買進金額或獨立買點。</small></div>';
+          +'<small>週數由最近5份連續有效快照計算，最多辨識4週以上；連增週數僅供觀察。正式買點仍以至少2週與既有風控確認。</small>'
+          +'<small>400張以上包含1,000張以上；不是每日實際買進金額，也不是上漲勝率。</small></div>';
       }
 
-      function card(item, options = {}) {
+            function card(item, options = {}) {
         const metrics = item.metrics || {};
         const displayQuote = bestTodayQuote(options.quote, item?.stock_id);
         const todayOnly = ['LAUNCH','ENTRY','HOLDING'].includes(stage);
