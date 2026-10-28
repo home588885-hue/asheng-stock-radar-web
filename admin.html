@@ -5111,7 +5111,8 @@ h1 {
           ...add(labels.tomorrowResearchRows,'🌙 明日研究追蹤｜非買點'),
           ...add((labels.completedRows||[]).filter(row=>!safeCompleted.includes(row)),'🟡 正式買點待重新確認｜非買點'),
           ...add((labels.starterRows||[]).filter(row=>!safeStarter.includes(row)),'🟡 試單待重新確認｜非買點'),
-          ...add(labels.eodTrialRows,'🟠 明日試單觀察｜目前非買點'),
+          ...add(labels.eodTrialRows,taipeiMarketState().open
+            ?'🟡 盤中試單待確認｜非買點':'🌙 下個交易日試單觀察｜非買點'),
           ...add(labels.boxFirstRows,'📦 箱型突破第一根｜等確認'),
           ...add(labels.focusRows,'⭐ 優先觀察｜非買點'),
           ...add(labels.signalRows,'🟠 訊號待核對｜非買點'),
@@ -5438,6 +5439,45 @@ h1 {
             &&['starter','near'].includes(String(row.item?.metrics?.trade_lifecycle?.entry?.state||''))))
           &&bottomFirstQuality(row.item).prelaunch
           &&row.action?.stale_model!==true&&row.action?.candle_guard!==true;
+        // EOD starter is a tracked *candidate*, not a trial. Its wording must
+        // follow the live Taiwan market session, never say "open and verify"
+        // after 09:00. Explain precisely whether C is absent, stale or failed.
+        const entryTrialPreparationCopy=(item,quote,starterSetup=null)=>{
+          const now=taipeiMarketState();
+          const modelDay=String(item?.as_of||'待確認');
+          const setup=starterSetup
+            ?'盤後模型接近'+starterSetup.support+'支撐'
+            :'盤後日K列為試單候選';
+          if(now.open&&now.totalMinutes>=800)return {
+            text:'🟡 盤中試單確認已截止｜僅供觀察（非買點）',
+            detail:setup+'｜13:20後不重新確認盤中試單，等下一交易日最新成交及風控'};
+          if(now.open){
+            const todayQuote=validTodayQuote(quote);
+            if(!todayQuote)return {
+              text:'🟡 已開盤｜尚未取得今日C成交（非買點）',
+              detail:setup+'｜台股已開盤；交易所實際成交報價未取得或來源無效，不能宣稱已達試單條件'};
+            if(!quoteFreshForTrial(quote))return {
+              text:'🟡 已開盤｜C成交已超過5分鐘（非買點）',
+              detail:setup+'｜今日最後成交 '+String(quote.quote_time||'時間不明')
+                +'，尚無5分鐘內有效成交；請待原行情更新，不用再等開盤'};
+            const quality=bottomFirstQuality(item,quote);
+            const price=Number(quote.price),lots=Number(quote.volume_lots);
+            const current='C當日成交 '+num(price,2)+'｜累計量 '+num(lots,0)
+              +'張｜成交時間 '+String(quote.quote_time||'待確認');
+            return quality.trial
+              ?{text:'🟡 已開盤｜盤中量價初步符合，原進場條件未確認（非買點）',
+                detail:setup+'｜'+current+'｜候選仍在準備區，尚未獲原進場策略試單確認，不可視為橘色可試單'}
+              :{text:'🟡 已開盤｜試單條件尚未達標（非買點）',
+                detail:setup+'｜'+current+'｜'+quality.reasons.join('；')
+                  +'｜保留追蹤，勿把候選當作當日試單'};
+          }
+          const premarket=now.weekday&&now.totalMinutes<540;
+          return premarket
+            ?{text:'🟠 盤前試單準備｜09:00後核對（非買點）',
+              detail:setup+'｜目前尚未進入交易時段，須等當日C有效成交及量價風控確認'}
+            :{text:'🌙 盤後試單候選｜下個交易日確認（非買點）',
+              detail:setup+'｜目前非交易時段，最新完整日K僅供觀察，下個交易日再核對C成交與風控'};
+        };
         const assign=row=>{
           const item=row.item||{},m=item.metrics||{},a=row.action||{};
           const date=String(item.as_of||''),q=validTodayQuote(row.quote)?row.quote:null;
@@ -5533,14 +5573,10 @@ h1 {
           }
           if(eodTrialWatchReady(row)&&!['trial','confirmed'].includes(String(a.phase||''))){
             const starterSetup=ma10StarterSetup(item);
+            const status=entryTrialPreparationCopy(item,q,starterSetup);
             b.eodTrial.push(safeRow(row,{
               key:'eod_trial_watch',phase:'observe',rank:44,className:'scout',
-              text:starterSetup?'🟡 '+starterSetup.support+'回踩｜待C轉強確認':'🟠 試單準備｜開盤再確認',
-              detail:starterSetup
-                ?'S盤後ACTIVE／starter且靠近'+starterSetup.support+'支撐；'
-                  +'目前只有盤後觀察，必須等C當日有效成交收復MA10、量價轉強且不追高才可小量試單（目前非買點）'
-                :'盤後日K starter符合既有分數／量能／MA10、20、60及不追高條件；'
-                  +'仍須C當日有效成交、量價與原風控確認，未確認不可當買點'
+              text:status.text,detail:status.detail
             }));
             return;
           }
@@ -5625,7 +5661,7 @@ h1 {
         // One symbol, one decision area: risk bucket always wins over the overnight shortlist.
         const overnightRiskIds=new Set([...avoidRows,...waitRows].map(row=>String(row?.item?.stock_id||'')).filter(Boolean));
         const researchGroups=[
-          {label:'盤後試單準備',weight:8,rows:eodTrialRows},
+          {label:taipeiMarketState().open?'盤中試單待確認':'盤後試單準備',weight:8,rows:eodTrialRows},
           {label:'箱型第一根觀察',weight:7,rows:boxFirstRows},
           {label:'回踩守穩觀察',weight:6,rows:reclaimRows},
           {label:'轉強候選',weight:5,rows:focusRows},
@@ -8374,7 +8410,7 @@ h1 {
             const view=renderEntrySections(rows);
             setCandidateSummary('bCount', view.displayedTotal, '最近完整日K追蹤名單');
             $('#note').textContent = taipeiMarketState().open
-              ? `⚠️ Cloudflare C 尚未通過健康檢查｜進場雷達 ${view.displayedTotal} 檔僅顯示盤後模型（明日試單觀察 ${view.eodTrialRows.length} 檔），無法確認即時買點；依既有三分鐘節奏重試。${scanProgressSuffix()}`
+              ? `⚠️ Cloudflare C 尚未通過健康檢查｜進場雷達 ${view.displayedTotal} 檔僅顯示盤後模型（已開盤、C尚不可用；待確認 ${view.eodTrialRows.length} 檔，非買點），無法確認即時買點；依既有三分鐘節奏重試。${scanProgressSuffix()}`
               : `🎯 進場雷達｜追蹤 ${view.displayedTotal} 檔｜🟠明日試單觀察 ${view.eodTrialRows.length} 檔（非買點）｜已起漲追蹤 ${view.eodTrackRows.length} 檔（非買點）｜進場待核對 ${view.signalRows.length}｜待發動 ${view.queuedDisplayRows.length}｜等確認 ${view.waitRows.length}｜待補算 ${view.recalcDisplayRows.length}｜晚上9點起分批更新日K。${scanProgressSuffix()}`;
           } else {
             stableListRender(liveBasePicks.map(item => card(item)).join(''));
@@ -8463,7 +8499,7 @@ h1 {
             const finalWait = rows.filter(row => row.action.phase === 'final_wait').length;
             $('#note').textContent = finalQuoteWindow
               ? `🎯 盤後整理｜📌明日優先 ${groups.completedRows.length}｜🟠盤後試單觀察 ${groups.eodTrialRows.length}｜⚡日K補算 ${groups.recalcRows.length}｜🔵等回踩 ${groups.pullbackRows.length}｜🟠轉弱 ${groups.avoidRows.length}｜過期排除 ${groups.staleRows.length}｜資料完成後自動更新。${scanProgressSuffix()}`
-              : `🎯 進場雷達｜🚀起漲追蹤 ${groups.earlyRows.length}｜🟠有當日成交之小量試單 ${groups.starterRows.length}｜🟢驗證正式買點 ${groups.completedRows.length}｜🟠盤後試單觀察 ${groups.eodTrialRows.length}｜🟡等確認 ${groups.waitRows.length}｜🔵等回踩 ${groups.pullbackRows.length}｜🟠轉弱 ${groups.avoidRows.length}${quoteCoverage}｜有效試單優先看最上方。${scanProgressSuffix()}`;
+              : `🎯 進場雷達｜🚀起漲追蹤 ${groups.earlyRows.length}｜🟠有當日成交之小量試單 ${groups.starterRows.length}｜🟢驗證正式買點 ${groups.completedRows.length}｜🟡盤中試單待確認 ${groups.eodTrialRows.length}｜🟡等確認 ${groups.waitRows.length}｜🔵等回踩 ${groups.pullbackRows.length}｜🟠轉弱 ${groups.avoidRows.length}${quoteCoverage}｜有效試單優先看最上方。${scanProgressSuffix()}`;
             return;
           }
           const ranked = liveBasePicks.map(item => ({ item, quote: quoteMap.get(String(item.stock_id)) })).filter(row => row.quote).sort((a, b) => {
