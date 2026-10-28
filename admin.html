@@ -4474,6 +4474,79 @@ h1 {
         if (rows.length) await savePullbackWatchRows(rows);
       };
 
+      // Single bottom-first quality gate for LAUNCH, ENTRY and holding add-ons.
+      // Caution: "trial" is a conservative permission check, not a fitted win-rate
+      // model. No index-relative-strength feed is available here, so do not invent
+      // a bullish market/sector confirmation from the index's headline gain.
+      const BOTTOM_FIRST_QUALITY_VERSION='2026-10-28-bottom-first-quality-v1';
+      const bottomFirstQuality = (item, quote = null) => {
+        const m=item?.metrics||{},mc=m.ma_cluster||{},g=m.entry_candle_guard||{};
+        const base=m.bottom_start||{},pre=m.prebreakout_scout||{},box=m.box_strategy?.discovery||{};
+        const live=validTodayQuote(quote)&&quoteFreshForTrial(quote);
+        const modelDay=String(item?.as_of||''),fresh=modelDay===expectedSignalDataDate();
+        const signed=unifiedRadarGeneration(item)&&chaseModelReady(item);
+        const close=Number(m.close),ma5=Number(m.ma5),ma10=Number(m.ma10),
+          ma20=Number(m.ma20),ma60=Number(m.ma60);
+        const avg=Number(m.avg_volume_20_lots),lots=Number(m.current_volume_lots);
+        const pos=Number(m.position_1y_pct),high=Number(m.high20_prev||mc.breakout_price||m.recent_high20);
+        const price=live?Number(quote.price):close;
+        const modelRatio=avg>0?lots/avg:NaN;
+        const bias20=ma20>0?(price/ma20-1)*100:NaN;
+        const weak=g.weak_after_breakout===true||g.macd_weak===true||g.kd_high_weak===true
+          ||g.main_bull===false||m.holding_management?.strong_breakdown===true
+          ||m.quality_gate?.pass===false
+          ||['child_low_broken','mother_low_broken','invalid','broken'].includes(
+            String(m.shanchuan_v2?.mother_child?.lifecycle?.state||''));
+        const shape=!!(pre.eligible===true&&String(pre.as_of||'')===modelDay
+          ||base.current_base===true||base.confirmed===true
+          ||box.ready_watch===true||box.first_bar_today===true
+          ||mc.watch_ready===true||mc.breakout_first_bar===true
+          ||m.first_breakout20===true||g.ma20_pullback===true
+          ||m.v5?.entry_confirmed===true);
+        const nearHigh=high>0&&close>=high*.94&&close<=high*1.012;
+        const structure=ma10>0&&ma20>0&&ma60>0
+          &&ma10>=ma20*.985&&ma20>=ma60*.97;
+        const liquid=lots>=1000&&avg>=500;
+        const goodBase=fresh&&signed&&!weak&&close>0&&structure&&liquid
+          &&Number.isFinite(pos)&&pos>=0&&pos<=55
+          &&close>=ma20*.985&&close<=ma20*1.05
+          &&Number.isFinite(modelRatio)&&modelRatio>=.6&&modelRatio<=2.5
+          &&chasePass(item,close)&&(shape||nearHigh);
+        const trialReasons=[];
+        if(!goodBase)trialReasons.push('尚缺底部、均線、日K量能或低位階確認');
+        if(!live)trialReasons.push('缺當日5分鐘內有效成交');
+        if(live){
+          const open=Number(quote.open),prev=Number(quote.prev_close);
+          const todayHigh=Number(quote.high),nowVol=Number(quote.volume_lots);
+          const fraction=marketFraction(quote.quote_time);
+          const pace=avg>0&&fraction>0?nowVol/(avg*fraction):NaN;
+          const projected=fraction>0?nowVol/fraction:NaN;
+          if(!(open>0&&prev>0&&todayHigh>0&&price>0
+            &&price>open*1.003&&price>prev*1.002&&price>=todayHigh*.99
+            &&price>=Math.max(ma5,ma10,ma20,ma60)
+            &&Number.isFinite(pace)&&pace>=1.2&&pace<=3.0
+            &&nowVol>=200&&projected>=1000
+            &&price<=ma20*1.05
+            &&price<=open*1.045&&price<=prev*1.055
+            &&chasePass(item,price)))
+            trialReasons.push('盤中價格未收強、上影過長、量速不足或已偏離支撐');
+        }
+        return {version:BOTTOM_FIRST_QUALITY_VERSION,prelaunch:goodBase,
+          trial:goodBase&&live&&trialReasons.length===0,
+          support:ma20>0?ma20:null,bias20:Number.isFinite(bias20)?bias20:null,
+          position:Number.isFinite(pos)?pos:null,reasons:trialReasons};
+      };
+      const guardBottomFirstAction=(item,quote,action)=>{
+        if(!action||!['trial','confirmed'].includes(String(action.phase||'')))return action;
+        const quality=bottomFirstQuality(item,quote);
+        if(quality.trial)return {...action,quality_version:BOTTOM_FIRST_QUALITY_VERSION};
+        return {...action,key:'bottom_first_quality_wait',phase:'observe',rank:18,
+          className:'wait',buyable:false,trialable:false,
+          live_quote_verified:false,
+          text:'🟡 底部量價尚未確認｜取消本次試單',
+          detail:'新版統一守門：'+quality.reasons.join('；')+
+            '｜維持追蹤，MA20回踩守住與成交價、持續量速確認後再評估；原停損不變'};
+      };
       // Entry radar is night-snapshot-only; the old intraday 12-minute gate is retired.
       // Never turn an EOD candidate into a live buy instruction based on a page timer.
       // The S launch API owns the formal strategy approval; no approval = no green entry.
@@ -5257,6 +5330,7 @@ h1 {
           return !stale;
         });
 
+        rows=rows.map(row=>({...row,action:guardBottomFirstAction(row.item,row.quote,row.action)}));
         // Existing C snapshots update ENTRY observation samples, once per unique
         // quote minute. No new C polls, no model/buy-status changes.
         rows.forEach(recordEntrySurvival);
@@ -5797,6 +5871,10 @@ h1 {
         const d=m.box_strategy.discovery||{};
         if(d.first_bar_today===true)
           return {keep:false,rank:0,className:'box-promoted',label:'📦 山川第一根已轉進場雷達'};
+        const earlyQuality=bottomFirstQuality(item);
+        if(!earlyQuality.prelaunch)
+          return {keep:false,rank:0,className:'bottom-quality-wait',
+            label:'⚪ 底部結構／量價未齊｜觀察，不列可發動名單'};
         const preScout=radarPreBreakoutState(item);
         const preLife=String(m.scan_intelligence?.effective_lifecycle||'');
         const preEntry=String(m.trade_lifecycle?.entry?.state||'');
@@ -5902,6 +5980,10 @@ h1 {
           volumeRatio = volume / Math.max(1, avg20 * marketFraction(q.quote_time));
         }
         if (volumeRatio == null && Number.isFinite(Number(m.holding_management?.day_volume_ratio))) volumeRatio = Number(m.holding_management.day_volume_ratio);
+        const ma20 = Number(m.ma20);
+        if(ma20>0&&price<ma20&&q==null)return {tag:'🔴 MA20下方｜尚未轉強',tone:'weak',
+          note:'僅是最後完整日K，等待重新站回MA20與量價確認',
+          changePct,volumeRatio,pos1y,intraday:false};
         const bottom = Number.isFinite(pos1y) && pos1y <= 35;
         const high = Number.isFinite(pos1y) && pos1y >= 80;
         let tag='⚪ 量價中性', tone='neutral', note='方向不明｜先觀察';
@@ -7626,6 +7708,7 @@ h1 {
         // Existing strict holdingAddPlan is observational only: preserve B stop/exit priority.
         const addPlan=holdingAddPlan(item,live);
         const addReady=addPlan?.eligible===true
+          &&(Number(addPlan?.pnl)>=0||bottomFirstQuality(item).prelaunch)
           &&risk?.stopHard!==true &&high?.triggered!==true
           &&!['exit','verify','volume_exit_watch'].includes(bDecision.kind);
         const addObservation=addReady
@@ -8281,7 +8364,7 @@ h1 {
                   ?{key:'passive_breakout_watch',phase:'observe',rank:2,stale_model:true,
                     buyable:false,trialable:false,...passiveWatchDescription(row.item,row.quote),
                     text:passiveWatchDescription(row.item,row.quote).label}
-                  :entrySnapshotState(row.item,baseAction,row.quote) };
+                  :guardBottomFirstAction(row.item,row.quote,entrySnapshotState(row.item,baseAction,row.quote)) };
               })
               .filter(row => row.action)
               .sort((a,b)=>b.action.rank-a.action.rank);
@@ -8316,7 +8399,7 @@ h1 {
               action:item.__observation_only===true
                 ?{key:'historical_screen_only',phase:'observe',stale_model:true,
                   buyable:false,trialable:false,text:'⚪ 舊日K初選｜待新版確認',detail:'即時報價未取得，僅供觀察'}
-                :entrySnapshotState(item,simpleActionState(item),null)
+                :guardBottomFirstAction(item,null,entrySnapshotState(item,simpleActionState(item),null))
             })).filter(row=>row.action);
             const view=renderEntrySections(rows);
             $('#note').textContent='⚠️ C 報價暫時無法讀取｜仍保留 '+view.displayedTotal
@@ -8961,7 +9044,7 @@ h1 {
         const rawQuote = liveQuoteCache.get(stockId);
         const observedQuote = validTodayQuote(rawQuote) ? rawQuote : null;
         const modelAction = stage === 'ENTRY' && model
-          ? entrySnapshotState(model, simpleActionState(model, observedQuote), observedQuote)
+          ? guardBottomFirstAction(model,observedQuote,entrySnapshotState(model, simpleActionState(model, observedQuote), observedQuote))
           : null;
         const observedBox=model?.metrics?.box_strategy||null;
         const observedBoxTop=Number(observedBox?.anchor?.top||observedBox?.box_range?.top);
