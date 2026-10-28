@@ -903,10 +903,12 @@ test('2023 signed pre-breakout gets cross-day observation without fictitious ear
 test('Bottom-first v4 is ONE quality gate shared across LAUNCH, ENTRY and HOLDING',()=>{
   const source=section('      const BOTTOM_FIRST_QUALITY_VERSION=', '      // Entry radar is night-snapshot-only');
   const date=()=> '2026-10-27';
+  const marketProxy={stock_id:'0050',price:150,prev_close:149.5,quote_date:'20261027',quote_time:'09:05:00'};
   const calls={
     validTodayQuote:q=>!!q,quoteFreshForTrial:q=>!!q,
     expectedSignalDataDate:date,unifiedRadarGeneration:()=>true,
-    chaseModelReady:()=>true,chasePass:()=>true,marketFraction:()=>.25
+    chaseModelReady:()=>true,chasePass:()=>true,marketFraction:()=>.25,
+    benchmark0050Quote:marketProxy
   };
   const f=new Function(...Object.keys(calls),source+
     '\nreturn {bottomFirstQuality,guardBottomFirstAction,BOTTOM_FIRST_QUALITY_VERSION};');
@@ -925,6 +927,12 @@ test('Bottom-first v4 is ONE quality gate shared across LAUNCH, ENTRY and HOLDIN
     volume_lots:600,quote_time:'09:05:00',quote_date:'20261027'};
   assert.equal(q(model).prelaunch,true);
   assert.equal(q(model,live).trial,true);
+  assert.ok(q(model,live).relativePct>0.5);
+  marketProxy.price=154;
+  assert.equal(q(model,live).trial,false,'index proxy outruns stock, no trial');
+  marketProxy.price=150;
+  assert.equal(q({...model,metrics:{...model.metrics,close:97.9}},live).prelaunch,false,'no MA20 support');
+  assert.equal(q({...model,metrics:{...model.metrics,close:97}},live).prelaunch,false,'no MA10 support');
   const action={key:'legacy_early_starter_trial',phase:'trial',trialable:true,buyable:false,text:'🟠 舊版試單'};
   assert.equal(guard(model,live,action).trialable,true);
   for(const bad of [
@@ -951,6 +959,10 @@ test('Bottom-first v4 is ONE quality gate shared across LAUNCH, ENTRY and HOLDIN
   assert.match(html,/const addReady=addPlan\?\.eligible===true[\s\S]{0,190}bottomFirstQuality\(item\)\.prelaunch/);
   assert.match(html,/guardBottomFirstAction\(model,observedQuote,entrySnapshotState/);
   assert.doesNotMatch(source,/fetch\s*\(|getLiveQuotes\s*\(|setInterval\s*\(|scanBatch\s*\(/);
+  assert.match(html,/existingSymbols\.length<30/);
+  assert.match(html,/benchmarkInBatch[\s\S]*?0050:tse/);
+  assert.match(html,/fetchLiveQuoteChunk\(symbols\)/);
+  assert.match(html,/i \+= 30/);
 });
 for(const g of html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi)){
   if(/\bsrc=/.test(g[1]))continue;
