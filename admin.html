@@ -2664,9 +2664,18 @@ h1 {
           el.textContent='🔴 '+cQuoteLastCheck.status+'｜來源原始 '+cQuoteLastCheck.returned+' 檔。';
         }
       };
+      // 0050 serves only as a verifiable large-cap market proxy, NOT the TAIEX.
+      // Reuse a spare slot in the existing authenticated C quote batch; never
+      // add a request, exceed the 30-symbol limit, or assume a benchmark print.
+      let benchmark0050Quote=null;
       const fetchLiveQuoteChunk = async symbols => {
         if (document.hidden || !cQuoteReadWindow()) return [];
-        const suffix = '?' + new URLSearchParams({ symbols }).toString();
+        const existingSymbols=String(symbols||'').split(',').filter(Boolean);
+        const benchmarkInBatch=stage==='ENTRY'&&existingSymbols.length<30
+          &&!existingSymbols.some(x=>/^0050(?::|$)/.test(x));
+        const requestSymbols=benchmarkInBatch
+          ?String(symbols)+',0050:tse':String(symbols);
+        const suffix = '?' + new URLSearchParams({ symbols:requestSymbols }).toString();
         if (!marketBridgeReady()) {
           cQuoteLastCheck={status:'C Worker 健康檢查未通過',at:new Date().toISOString(),returned:0,valid:0};
           showCQuoteDiagnostic();return [];
@@ -2691,6 +2700,10 @@ h1 {
           }
           const data=await response.json().catch(()=>null);
           const arr=Array.isArray(data?.quotes)?data.quotes:[];
+          if(response.ok&&data?.ok&&stage==='ENTRY'){
+            const proxy=arr.find(x=>String(x?.stock_id||'')==='0050');
+            if(validTodayQuote(proxy))benchmark0050Quote=proxy;
+          }
           cQuoteLastCheck={
             status:response.ok&&data?.ok?'C 已回應':response.status===401?'C 拒絕管理員驗證':
               response.status===502?'C 無法取得交易所報價':
@@ -4509,12 +4522,24 @@ h1 {
         const liquid=lots>=1000&&avg>=500;
         const goodBase=fresh&&signed&&!weak&&close>0&&structure&&liquid
           &&Number.isFinite(pos)&&pos>=0&&pos<=55
-          &&close>=ma20*.985&&close<=ma20*1.05
+          &&close>=ma20&&close>=ma10*.995&&close<=ma20*1.05
           &&Number.isFinite(modelRatio)&&modelRatio>=.6&&modelRatio<=2.5
           &&chasePass(item,close)&&(shape||nearHigh);
         const trialReasons=[];
         if(!goodBase)trialReasons.push('尚缺底部、均線、日K量能或低位階確認');
         if(g.main_bull===false)trialReasons.push('盤後主要多頭尚未確認，先列發動前觀察');
+        // Same-session 0050 return is a proxy for the broad large-cap tape;
+        // absent or stale proxy is UNKNOWN, never a fabricated outperformance.
+        const benchmarkFresh=live&&quoteFreshForTrial(benchmark0050Quote)
+          &&Number(benchmark0050Quote?.prev_close)>0;
+        const stockDayPct=live&&Number(quote?.prev_close)>0
+          ?(price/Number(quote.prev_close)-1)*100:null;
+        const benchmarkDayPct=benchmarkFresh
+          ?(Number(benchmark0050Quote.price)/Number(benchmark0050Quote.prev_close)-1)*100:null;
+        const relativePct=stockDayPct!=null&&benchmarkDayPct!=null
+          ?stockDayPct-benchmarkDayPct:null;
+        if(live&&relativePct==null)trialReasons.push('缺0050同時段大盤代理行情，無法確認相對強勢');
+        else if(live&&relativePct<.5)trialReasons.push('漲幅未領先0050至少0.5個百分點');
         if(!live)trialReasons.push('缺當日5分鐘內有效成交');
         if(live){
           const open=Number(quote.open),prev=Number(quote.prev_close);
@@ -4534,13 +4559,16 @@ h1 {
         }
         return {version:BOTTOM_FIRST_QUALITY_VERSION,prelaunch:goodBase,
           trial:goodBase&&live&&trialReasons.length===0,
+          relativePct:relativePct==null?null:relativePct,
           support:ma20>0?ma20:null,bias20:Number.isFinite(bias20)?bias20:null,
           position:Number.isFinite(pos)?pos:null,reasons:trialReasons};
       };
       const guardBottomFirstAction=(item,quote,action)=>{
         if(!action||!['trial','confirmed'].includes(String(action.phase||'')))return action;
         const quality=bottomFirstQuality(item,quote);
-        if(quality.trial)return {...action,quality_version:BOTTOM_FIRST_QUALITY_VERSION};
+        if(quality.trial)return {...action,quality_version:BOTTOM_FIRST_QUALITY_VERSION,
+          detail:String(action.detail||'')+'｜相對0050超額 '+num(quality.relativePct,2)
+            +'個百分點（0050為代理，非加權指數）'};
         return {...action,key:'bottom_first_quality_wait',phase:'observe',rank:18,
           className:'wait',buyable:false,trialable:false,
           live_quote_verified:false,
