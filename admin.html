@@ -4508,7 +4508,10 @@ h1 {
       // Caution: "trial" is a conservative permission check, not a fitted win-rate
       // model. No index-relative-strength feed is available here, so do not invent
       // a bullish market/sector confirmation from the index's headline gain.
-      const BOTTOM_FIRST_QUALITY_VERSION='2026-10-28-bottom-first-quality-v1';
+      // Two-step separation: early WATCH is not TRADE. v2 removes the v1
+      // bottleneck (1000 previous-day lots + MA20 already reclaimed + 0050 >.5pp)
+      // from prelaunch discovery, while actual trade keeps C, risk and liquidity.
+      const BOTTOM_FIRST_QUALITY_VERSION='2026-10-28-bottom-first-quality-v2';
       const bottomFirstQuality = (item, quote = null) => {
         const m=item?.metrics||{},mc=m.ma_cluster||{},g=m.entry_candle_guard||{};
         const base=m.bottom_start||{},pre=m.prebreakout_scout||{},box=m.box_strategy?.discovery||{};
@@ -4522,43 +4525,51 @@ h1 {
         const price=live?Number(quote.price):close;
         const modelRatio=avg>0?lots/avg:NaN;
         const bias20=ma20>0?(price/ma20-1)*100:NaN;
-        const weak=g.weak_after_breakout===true||g.macd_weak===true||g.kd_high_weak===true
+        const hardWeak=g.weak_after_breakout===true
           ||m.holding_management?.strong_breakdown===true
           ||m.quality_gate?.pass===false
           ||['child_low_broken','mother_low_broken','invalid','broken'].includes(
             String(m.shanchuan_v2?.mother_child?.lifecycle?.state||''));
+        const weakForHolding=hardWeak||g.macd_weak===true||g.kd_high_weak===true;
         const shape=!!(pre.eligible===true&&String(pre.as_of||'')===modelDay
           ||base.current_base===true||base.confirmed===true
           ||box.ready_watch===true||box.first_bar_today===true
           ||mc.watch_ready===true||mc.breakout_first_bar===true
           ||m.first_breakout20===true||g.ma20_pullback===true
           ||m.v5?.entry_confirmed===true);
-        const nearHigh=high>0&&close>=high*.94&&close<=high*1.012;
+        const nearHigh=high>0&&close>=high*.93&&close<=high*1.012;
         const structure=ma10>0&&ma20>0&&ma60>0
-          &&ma10>=ma20*.985&&ma20>=ma60*.97;
-        const liquid=lots>=1000&&avg>=500;
-        const goodBase=fresh&&signed&&!weak&&close>0&&structure&&liquid
-          &&Number.isFinite(pos)&&pos>=0&&pos<=55
-          &&close>=ma20&&close>=ma10*.995&&close<=ma20*1.05
-          &&Number.isFinite(modelRatio)&&modelRatio>=.6&&modelRatio<=2.5
+          &&ma10>=ma20*.97&&ma20>=ma60*.96;
+        // Early preparation does NOT imply 1000 actual traded lots or a buy:
+        // it can watch a still-forming MA20 reclaim while funding builds.
+        const prelaunch=fresh&&signed&&!hardWeak&&close>0&&structure
+          &&avg>=400&&lots>=300&&Number.isFinite(modelRatio)
+          &&modelRatio>=.45&&modelRatio<=3.6
+          &&Number.isFinite(pos)&&pos>=0&&pos<=75
+          &&close>=ma20*.98&&close<=ma20*1.075
           &&chasePass(item,close)&&(shape||nearHigh);
-        // Holdings have a separate re-break setup: a losing position can
-        // rebuild a base even after its 1Y percentile has risen. Apply the
-        // same freshness/MA20/volume/risk protections, not the NEW-entry
-        // <=55 percentile early-discovery cap. holdingAddPlan remains the
-        // final price/cost/quantity/stop authority.
+        // A stricter setup can progress to a trial, ONLY with today's actual
+        // traded lots >=1000, strong current candle, and original entry-risk gate.
+        const trialBase=prelaunch&&g.main_bull!==false
+          &&g.macd_weak!==true&&g.kd_high_weak!==true
+          &&avg>=500&&lots>=500&&ma10>=ma20*.985
+          &&close>=ma20*.995&&close<=ma20*1.065
+          &&modelRatio>=.55&&modelRatio<=3.6;
+        // Holdings keep their independent cost / -10% hard stop / trailing
+        // profit checks. Do not loosen a losing position's add-on gate here.
         const boxTop=Number(m.box_strategy?.levels?.top);
-        const holdingRebreak=fresh&&signed&&!weak&&g.main_bull!==false
+        const holdingRebreak=fresh&&signed&&!weakForHolding&&g.main_bull!==false
           &&ma5>ma10&&ma10>ma20&&ma20>ma60
           &&price>=ma5&&price>=ma20&&price<=ma20*1.05
           &&boxTop>0&&price>boxTop*1.003
-          &&liquid&&modelRatio>=.6&&modelRatio<=2.5
+          &&lots>=1000&&avg>=500&&modelRatio>=.6&&modelRatio<=2.5
           &&chasePass(item,price);
         const trialReasons=[];
-        if(!goodBase)trialReasons.push('尚缺底部、均線、日K量能或低位階確認');
-        if(g.main_bull===false)trialReasons.push('盤後主要多頭尚未確認，先列發動前觀察');
-        // Same-session 0050 return is a proxy for the broad large-cap tape;
-        // absent or stale proxy is UNKNOWN, never a fabricated outperformance.
+        if(!trialBase)trialReasons.push('盤後尚缺MA20支撐、整理量價或轉強結構');
+        if(!live)trialReasons.push('尚無今日5分鐘內有效成交');
+        // 0050 is a market proxy only. Its missing quote is NOT proof that
+        // every individual stock failed. Known relative weakness still vetoes
+        // a trial; unknown proxy requires stronger self-confirmation.
         const benchmarkFresh=live&&quoteFreshForTrial(benchmark0050Quote)
           &&Number(benchmark0050Quote?.prev_close)>0;
         const stockDayPct=live&&Number(quote?.prev_close)>0
@@ -4567,27 +4578,27 @@ h1 {
           ?(Number(benchmark0050Quote.price)/Number(benchmark0050Quote.prev_close)-1)*100:null;
         const relativePct=stockDayPct!=null&&benchmarkDayPct!=null
           ?stockDayPct-benchmarkDayPct:null;
-        if(live&&relativePct==null)trialReasons.push('缺0050同時段大盤代理行情，無法確認相對強勢');
-        else if(live&&relativePct<.5)trialReasons.push('漲幅未領先0050至少0.5個百分點');
-        if(!live)trialReasons.push('缺當日5分鐘內有效成交');
+        if(live&&relativePct!=null&&relativePct<-.3)
+          trialReasons.push('今日漲勢明顯落後0050，暫不試單');
         if(live){
           const open=Number(quote.open),prev=Number(quote.prev_close);
           const todayHigh=Number(quote.high),nowVol=Number(quote.volume_lots);
           const fraction=marketFraction(quote.quote_time);
           const pace=avg>0&&fraction>0?nowVol/(avg*fraction):NaN;
           const projected=fraction>0?nowVol/fraction:NaN;
+          const minRise=relativePct==null?1.01:1.003;
           if(!(open>0&&prev>0&&todayHigh>0&&price>0
-            &&price>open*1.003&&price>prev*1.002&&price>=todayHigh*.99
-            &&price>=Math.max(ma5,ma10,ma20,ma60)
-            &&Number.isFinite(pace)&&pace>=1.2&&pace<=3.0
-            &&nowVol>=200&&projected>=1000
-            &&price<=ma20*1.05
-            &&price<=open*1.045&&price<=prev*1.055
+            &&price>=open*1.001&&price>=prev*minRise&&price>=todayHigh*.985
+            &&price>=Math.max(ma20,ma60,ma10*.997,ma5*.995)
+            &&Number.isFinite(pace)&&pace>=1&&pace<=3.6
+            &&nowVol>=1000&&projected>=1000
+            &&price<=ma20*1.065
+            &&price<=open*1.055&&price<=prev*1.065
             &&chasePass(item,price)))
-            trialReasons.push('盤中價格未收強、上影過長、量速不足或已偏離支撐');
+            trialReasons.push('盤中成交未達1000張／支撐、量速或價格轉強不足');
         }
-        return {version:BOTTOM_FIRST_QUALITY_VERSION,prelaunch:goodBase,
-          holdingRebreak,trial:goodBase&&live&&trialReasons.length===0,
+        return {version:BOTTOM_FIRST_QUALITY_VERSION,prelaunch,trialBase,
+          holdingRebreak,trial:trialBase&&live&&trialReasons.length===0,
           relativePct:relativePct==null?null:relativePct,
           support:ma20>0?ma20:null,bias20:Number.isFinite(bias20)?bias20:null,
           position:Number.isFinite(pos)?pos:null,reasons:trialReasons};
@@ -4596,14 +4607,15 @@ h1 {
         if(!action||!['trial','confirmed'].includes(String(action.phase||'')))return action;
         const quality=bottomFirstQuality(item,quote);
         if(quality.trial)return {...action,quality_version:BOTTOM_FIRST_QUALITY_VERSION,
-          detail:String(action.detail||'')+'｜相對0050超額 '+num(quality.relativePct,2)
-            +'個百分點（0050為代理，非加權指數）'};
+          detail:String(action.detail||'')+'｜'+(quality.relativePct==null
+            ?'0050同期資料不足，採用更嚴格個股價格確認'
+            :'相對0050 '+num(quality.relativePct,2)+'個百分點（代理指標）')};
         return {...action,key:'bottom_first_quality_wait',phase:'observe',rank:18,
           className:'wait',buyable:false,trialable:false,
           live_quote_verified:false,
-          text:'🟡 底部量價尚未確認｜取消本次試單',
-          detail:'新版統一守門：'+quality.reasons.join('；')+
-            '｜維持追蹤，MA20回踩守住與成交價、持續量速確認後再評估；原停損不變'};
+          text:'🟡 當日量價未確認｜暫停本次試單',
+          detail:'新版試單確認：'+quality.reasons.join('；')+
+            '｜保留追蹤；未取得有效成交，不發出買點'};
       };
       // Entry radar is night-snapshot-only; the old intraday 12-minute gate is retired.
       // Never turn an EOD candidate into a live buy instruction based on a page timer.
@@ -4762,6 +4774,20 @@ h1 {
           live_quote_verified:true,text:'🟢 正式買點｜V5與有效成交確認',
           detail:'歷史驗證已開放＋既有V5成立＋當日5分鐘內成交與均線／位置風控通過｜'
           +String(baseAction.detail||'仍須自行控管部位')};
+        // An orange early trial can be issued from signed starter/ACTIVE/ENTRY
+        // with fresh C and 1000 ACTUAL traded lots. Formal green still
+        // requires the independently validated backend entry_validation PASS.
+        const relaxedQuality=bottomFirstQuality(item,quote);
+        const entryLife=String(m.trade_lifecycle?.entry?.state||'');
+        if(relaxedQuality.trial&&['starter','near','formal_candidate'].includes(entryLife)
+          &&['ACTIVE','ENTRY'].includes(modelLaunchPhase(item))
+          &&Number(quote?.volume_lots)>=1000)
+          return {...baseAction,key:'bottom_first_live_trial',phase:'trial',
+            buyable:false,trialable:true,rank:96,className:'trial',
+            live_quote_verified:true,
+            text:'🟠 底部回踩轉強｜可小量試單',
+            detail:'最新C實際成交量 '+num(quote.volume_lots,0)+'張｜MA20支撐／K棒重新轉強'
+              +'｜原風控及相對0050檢查｜僅限小部位評估，非正式買點'};
         // Box top comes from the completed EOD model; only an actual fresh
         // Cloudflare trade can promote it to an orange trial.
         const boxTop=Number(boxModel?.anchor?.top||boxModel?.box_range?.top);
@@ -5403,7 +5429,10 @@ h1 {
         };
         // EOD starter is a preparation shelf, not an orange trade confirmation.
         // Same original MA/volume/position thresholds; never relax C quote or buy gates.
-        const eodTrialWatchReady=row=>eodStarterWatchEligible(row.item)
+        const eodTrialWatchReady=row=>(
+          eodStarterWatchEligible(row.item)
+          ||(bottomFirstQuality(row.item).trialBase
+            &&['starter','near'].includes(String(row.item?.metrics?.trade_lifecycle?.entry?.state||''))))
           &&bottomFirstQuality(row.item).prelaunch
           &&row.action?.stale_model!==true&&row.action?.candle_guard!==true;
         const assign=row=>{
@@ -5956,6 +5985,9 @@ h1 {
         if (earlyTurnWatchState(item)) return {keep:true,rank:125,className:'early-turn-watch',
           label:'🌱 早期轉強｜優先追蹤，尚不可試單'};
         if (isEntryRadarItem(item)) return { keep:false, rank:0, className:'promoted', label:'🎯 已進進場雷達' };
+        if (earlyQuality.prelaunch&&!earlyQuality.trialBase)
+          return {keep:true,rank:35,className:'early-base-watch',
+            label:'🌱 底部蓄勢｜量價待放大，僅觀察（非買點）'};
         if (ma10PullbackWatchState(item)) return {keep:true,rank:95,className:'ma10-pullback-watch',
           label:'🟡 縮量回踩 MA10 守住｜優先觀察，尚非買點'};
         if (lowBaseWatchState(item)) return {keep:true,rank:35,className:'low-base-watch',label:'🌱 底部蓄勢｜提前觀察，尚無買點'};
