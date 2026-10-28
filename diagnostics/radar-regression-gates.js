@@ -1027,6 +1027,43 @@ test('Launch and entry labels cannot bypass bottom-first trial and EOD preparati
   assert.match(entry,/rows=rows\.map\(row=>\(\{\.\.\.row,action:guardBottomFirstAction\(row.item,row.quote,row.action\)\}\)\)/);
   assert.match(html,/const addReady=addPlan\?\.eligible===true[\s\S]{0,220}risk\?\.stopHard!==true/);
 });
+test('Open-market EOD trial candidate shows live C status, never preopen instructions',()=>{
+  const snippet=section('        const entryTrialPreparationCopy=(item,quote,starterSetup=null)=>{','        const assign=row=>{');
+  let current={open:true,weekday:true,totalMinutes:646};
+  let trial=false;
+  const factory=new Function('taipeiMarketState','validTodayQuote','quoteFreshForTrial','bottomFirstQuality','num',
+    snippet+'\nreturn entryTrialPreparationCopy;');
+  const label=factory(()=>current,q=>q?.valid===true,q=>q?.fresh===true,
+    ()=>({trial,reasons:['累計成交量未達1,000張','支撐未確認']}),
+    (v,d=2)=>Number(v).toFixed(d));
+  const model={stock_id:'5521',as_of:'2026-10-27'};
+  const missing=label(model,null);
+  assert.match(missing.text,/已開盤｜尚未取得今日C成交/);
+  assert.match(missing.detail,/不是|不能宣稱/);
+  const stale=label(model,{valid:true,fresh:false,quote_time:'10:24:00'});
+  assert.match(stale.text,/已開盤｜C成交已超過5分鐘/);
+  assert.match(stale.detail,/10:24:00/);
+  const fresh={valid:true,fresh:true,price:11.35,volume_lots:860,quote_time:'10:46:00'};
+  const notYet=label(model,fresh);
+  assert.match(notYet.text,/已開盤｜試單條件尚未達標/);
+  assert.match(notYet.detail,/860/);
+  assert.match(notYet.detail,/累計成交量未達1,000張/);
+  assert.doesNotMatch(notYet.text,/開盤再確認/);
+  assert.doesNotMatch(notYet.detail,/開盤再確認/);
+  trial=true;
+  const eligibleButNotPromoted=label(model,{...fresh,volume_lots:1100});
+  assert.match(eligibleButNotPromoted.text,/原進場條件未確認/);
+  assert.match(eligibleButNotPromoted.detail,/非買點|不可視為橘色/);
+  current={open:true,weekday:true,totalMinutes:805};
+  assert.match(label(model,fresh).text,/盤中試單確認已截止/);
+  current={open:false,weekday:true,totalMinutes:530};
+  assert.match(label(model,null).text,/盤前試單準備｜09:00後核對/);
+  current={open:false,weekday:true,totalMinutes:845};
+  assert.match(label(model,null).text,/盤後試單候選｜下個交易日確認/);
+  assert.doesNotMatch(html,/🟠 試單準備｜開盤再確認/);
+  assert.match(html,/const status=entryTrialPreparationCopy\(item,q,starterSetup\)/);
+  assert.match(html,/盤中試單待確認 \${groups\.eodTrialRows\.length}/);
+});
 for(const g of html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi)){
   if(/\bsrc=/.test(g[1]))continue;
   new Function(g[2]);
