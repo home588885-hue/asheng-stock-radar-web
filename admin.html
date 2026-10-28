@@ -5404,6 +5404,7 @@ h1 {
         // EOD starter is a preparation shelf, not an orange trade confirmation.
         // Same original MA/volume/position thresholds; never relax C quote or buy gates.
         const eodTrialWatchReady=row=>eodStarterWatchEligible(row.item)
+          &&bottomFirstQuality(row.item).prelaunch
           &&row.action?.stale_model!==true&&row.action?.candle_guard!==true;
         const assign=row=>{
           const item=row.item||{},m=item.metrics||{},a=row.action||{};
@@ -7882,7 +7883,10 @@ h1 {
         const preScout=radarPreBreakoutState(item,q);
         const lowBase=lowBaseWatchState(item);
         const pullback=ma10PullbackWatchState(item);
-        const trial=item.__passive_monitor===true||item.__observation_only===true?null:ma10PullbackTrialState(item,q);
+        // LAUNCH is strictly observational. A standalone old MA10 trial helper
+        // must never display an actionable trial without ENTRY's unified gate.
+        const ma10Preliminary=item.__passive_monitor===true||item.__observation_only===true
+          ?null:ma10PullbackTrialState(item,q);
         const status=item?.__passive_monitor===true?passiveWatchDescription(item,q).label
           :item?.__observation_only===true?'⚪ 舊日K初選｜等新版補算（非買點）'
           :displayModelWarning(item)?displayModelWarning(item)
@@ -7891,9 +7895,10 @@ h1 {
           :risk?.kind==='position'&&radarWatchAttentionState(item,q).priority>=70
             ?radarWatchAttentionState(item,q).label
           :risk?.kind==='position'?String(risk.text||'🔵 位置偏高｜等回踩')
+          :q&&ma20>0&&price<ma20?'🟠 今日已知成交低於MA20｜等待重新轉強（非買點）'
           :preScout.eligible?radarPreBreakoutState(item,q).label
           :early?'🌱 早期轉強｜優先追蹤，不可直接試單'
-          :trial?trial.text
+          :ma10Preliminary?'🟡 MA10初步轉強｜進場區待確認（非試單）'
           :pullback?'🟡 縮量回踩 MA10 守住｜優先觀察，尚非買點'
           :lowBase?'🌱 底部蓄勢｜提前觀察，尚無買點'
           :risk?.kind==='incomplete'?'🟡 均線結構未齊'
@@ -7923,7 +7928,7 @@ h1 {
               <span class="radar-compact-next">量價：${esc(volumePriceState(item,q).tag)}｜${esc(volumePriceState(item,q).note)}</span><span class="radar-compact-next">山川：${esc(shanchuanBrief(item,q))}</span><span class="radar-compact-next">下一步：${esc(radarShortAdvice(item,{text:status},q))}</span>
             </summary>
             <div class="entry-mini-full">${launchScoutHistoryHtml(item)}${continuationRiskMiniHtml(item)}${stockMovementHtml(item,q,'launch',launchDisplayAction)}
-              ${radarDeepDetailsHtml((trial?'<div class="model-only-note">'+esc(trial.detail)+'</div>':'')+detailed)}</div>
+              ${radarDeepDetailsHtml((ma10Preliminary?'<div class="model-only-note">MA10 回踩盤中初步轉強，但發動前區不提供試單。須到進場雷達通過新版底部品質、0050 相對強度與有效量價確認。</div>':'')+detailed)}</div>
           </details>
         </section>`;
       };
