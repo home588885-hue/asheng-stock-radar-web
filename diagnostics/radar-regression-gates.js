@@ -567,8 +567,8 @@ test('ACTIVE starter MA10 C-only orange stays fresh, guarded and non-green',()=>
  assert.match(fusion,/gap20<0\|\|gap20>5/);
  assert.match(fusion,/!chasePass\(item,price\)/);
  assert.match(fusion,/macd_weak===true/);
- assert.match(html,/const legacyStarter=legacyEarlyStarterTrial\(item,quote,earlyEligible\)/);
- assert.match(html,/key:'legacy_early_starter_trial'/);
+ assert.doesNotMatch(html,/const legacyStarter=legacyEarlyStarterTrial\(item,quote,earlyEligible\)/);
+ assert.doesNotMatch(html,/key:'legacy_early_starter_trial'/);
  assert.match(html,/buyable:false,trialable:true,live_quote_verified:true/);
  const burst=section('      const legacyVolumeBreakoutTrial = (item,quote,eligible) => {','      const eodStarterWatchEligible = item => {');
  assert.match(burst,/quoteFreshForTrial\(quote\)/);
@@ -576,10 +576,12 @@ test('ACTIVE starter MA10 C-only orange stays fresh, guarded and non-green',()=>
  assert.match(burst,/pos>35&&pos<=70&&pace>2\.6&&pace<=3\.2/);
  assert.match(burst,/gap20>=0&&gap20<=5/);
  assert.match(burst,/!chasePass\(item,price\)/);
- assert.match(html,/const legacyBurst=legacyVolumeBreakoutTrial\(item,quote,earlyEligible\)/);
+ assert.doesNotMatch(html,/const legacyBurst=legacyVolumeBreakoutTrial\(item,quote,earlyEligible\)/);
  assert.match(html,/buyable:false,trialable:true,live_quote_verified:true/);
  const action=section('      const entrySnapshotState = (item, baseAction, quote = null) => {','      // Compact entry display only;');
  assert.match(action,/ma10StarterLiveTrial\(item,quote,earlyEligible\)/);
+ assert.doesNotMatch(action,/const legacyStarter=legacyEarlyStarterTrial/);
+ assert.doesNotMatch(action,/const legacyBurst=legacyVolumeBreakoutTrial/);
  assert.match(action,/phase:'trial',rank:Math.max\(95/);
  assert.match(action,/buyable:false,trialable:true/);
  const eod=section('      const eodStarterWatchEligible = item => {','      const pullbackWatchState =');
