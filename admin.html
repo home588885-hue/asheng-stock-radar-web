@@ -1979,6 +1979,7 @@ h1 {
         });
         const chunks = [];
         for (let i = 0; i < pending.length; i += 30) chunks.push(pending.slice(i, i + 30));
+        benchmarkSlotClaimed=false;
         const results = await Promise.all(chunks.map(async chunk => {
           for(const item of chunk){
             liveQuoteRequestAt.set(item.stock_id,Date.now());
@@ -2668,13 +2669,26 @@ h1 {
       // Reuse a spare slot in the existing authenticated C quote batch; never
       // add a request, exceed the 30-symbol limit, or assume a benchmark print.
       let benchmark0050Quote=null;
+      let benchmarkSlotClaimed=false;
       const fetchLiveQuoteChunk = async symbols => {
         if (document.hidden || !cQuoteReadWindow()) return [];
         const existingSymbols=String(symbols||'').split(',').filter(Boolean);
-        const benchmarkInBatch=stage==='ENTRY'&&existingSymbols.length<30
-          &&!existingSymbols.some(x=>/^0050(?::|$)/.test(x));
+        const existingBenchmark=existingSymbols.some(x=>/^0050(?::|$)/.test(x));
+        const benchmarkInBatch=stage==='ENTRY'&&!benchmarkSlotClaimed
+          &&!quoteFreshForTrial(benchmark0050Quote)
+          &&!existingBenchmark&&existingSymbols.length>0;
+        // Reserve exactly ONE slot per existing request wave, including
+        // batches of exactly 30. Never add a paid C request or exceed the
+        // TWSE bridge's 30-symbol upstream limit. One lower-priority
+        // unquoted candidate remains observational for this refresh only;
+        // rotate that slot on later refreshes rather than starving one stock.
+        if(benchmarkInBatch)benchmarkSlotClaimed=true;
+        const reservedOutIndex=benchmarkInBatch&&existingSymbols.length===30
+          ?Math.floor(Date.now()/180000)%existingSymbols.length:-1;
+        const quoteSymbols=reservedOutIndex<0?existingSymbols
+          :existingSymbols.filter((_,i)=>i!==reservedOutIndex);
         const requestSymbols=benchmarkInBatch
-          ?String(symbols)+',0050:tse':String(symbols);
+          ?[...quoteSymbols,'0050:tse'].join(','):String(symbols);
         const suffix = '?' + new URLSearchParams({ symbols:requestSymbols }).toString();
         if (!marketBridgeReady()) {
           cQuoteLastCheck={status:'C Worker 健康檢查未通過',at:new Date().toISOString(),returned:0,valid:0};
@@ -2699,11 +2713,14 @@ h1 {
             if(token)response=await requestQuotes(token);
           }
           const data=await response.json().catch(()=>null);
-          const arr=Array.isArray(data?.quotes)?data.quotes:[];
+          const rawQuotes=Array.isArray(data?.quotes)?data.quotes:[];
           if(response.ok&&data?.ok&&stage==='ENTRY'){
-            const proxy=arr.find(x=>String(x?.stock_id||'')==='0050');
+            const proxy=rawQuotes.find(x=>String(x?.stock_id||'')==='0050');
             if(validTodayQuote(proxy))benchmark0050Quote=proxy;
           }
+          // Do not count the proxy as an individual candidate's quote.
+          const arr=benchmarkInBatch
+            ?rawQuotes.filter(x=>String(x?.stock_id||'')!=='0050'):rawQuotes;
           cQuoteLastCheck={
             status:response.ok&&data?.ok?'C 已回應':response.status===401?'C 拒絕管理員驗證':
               response.status===502?'C 無法取得交易所報價':
