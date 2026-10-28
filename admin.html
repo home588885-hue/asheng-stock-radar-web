@@ -4525,9 +4525,11 @@ h1 {
         const price=live?Number(quote.price):close;
         const modelRatio=avg>0?lots/avg:NaN;
         const bias20=ma20>0?(price/ma20-1)*100:NaN;
+        // Analyzer's quality_gate.mode='warning_only_for_bc': never turn
+        // warning_only into a hard exclusion for early watch or trial. The
+        // hard structural and the original V5/formal gates still apply.
         const hardWeak=g.weak_after_breakout===true
           ||m.holding_management?.strong_breakdown===true
-          ||m.quality_gate?.pass===false
           ||['child_low_broken','mother_low_broken','invalid','broken'].includes(
             String(m.shanchuan_v2?.mother_child?.lifecycle?.state||''));
         const weakForHolding=hardWeak||g.macd_weak===true||g.kd_high_weak===true;
@@ -4543,8 +4545,8 @@ h1 {
         // Early preparation does NOT imply 1000 actual traded lots or a buy:
         // it can watch a still-forming MA20 reclaim while funding builds.
         const prelaunch=fresh&&signed&&!hardWeak&&close>0&&structure
-          &&avg>=400&&lots>=300&&Number.isFinite(modelRatio)
-          &&modelRatio>=.45&&modelRatio<=3.6
+          &&avg>=300&&lots>=250&&Number.isFinite(modelRatio)
+          &&modelRatio>=.4&&modelRatio<=6
           &&Number.isFinite(pos)&&pos>=0&&pos<=75
           &&close>=ma20*.98&&close<=ma20*1.075
           &&chasePass(item,close)&&(shape||nearHigh);
