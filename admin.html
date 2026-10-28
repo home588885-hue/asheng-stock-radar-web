@@ -4525,6 +4525,18 @@ h1 {
           &&close>=ma20&&close>=ma10*.995&&close<=ma20*1.05
           &&Number.isFinite(modelRatio)&&modelRatio>=.6&&modelRatio<=2.5
           &&chasePass(item,close)&&(shape||nearHigh);
+        // Holdings have a separate re-break setup: a losing position can
+        // rebuild a base even after its 1Y percentile has risen. Apply the
+        // same freshness/MA20/volume/risk protections, not the NEW-entry
+        // <=55 percentile early-discovery cap. holdingAddPlan remains the
+        // final price/cost/quantity/stop authority.
+        const boxTop=Number(m.box_strategy?.levels?.top);
+        const holdingRebreak=fresh&&signed&&!weak&&g.main_bull!==false
+          &&ma5>ma10&&ma10>ma20&&ma20>ma60
+          &&price>=ma5&&price>=ma20&&price<=ma20*1.05
+          &&boxTop>0&&price>boxTop*1.003
+          &&liquid&&modelRatio>=.6&&modelRatio<=2.5
+          &&chasePass(item,price);
         const trialReasons=[];
         if(!goodBase)trialReasons.push('尚缺底部、均線、日K量能或低位階確認');
         if(g.main_bull===false)trialReasons.push('盤後主要多頭尚未確認，先列發動前觀察');
@@ -4558,7 +4570,7 @@ h1 {
             trialReasons.push('盤中價格未收強、上影過長、量速不足或已偏離支撐');
         }
         return {version:BOTTOM_FIRST_QUALITY_VERSION,prelaunch:goodBase,
-          trial:goodBase&&live&&trialReasons.length===0,
+          holdingRebreak,trial:goodBase&&live&&trialReasons.length===0,
           relativePct:relativePct==null?null:relativePct,
           support:ma20>0?ma20:null,bias20:Number.isFinite(bias20)?bias20:null,
           position:Number.isFinite(pos)?pos:null,reasons:trialReasons};
@@ -7723,7 +7735,7 @@ h1 {
         // Existing strict holdingAddPlan is observational only: preserve B stop/exit priority.
         const addPlan=holdingAddPlan(item,live);
         const addReady=addPlan?.eligible===true
-          &&(Number(addPlan?.pnl)>=0||bottomFirstQuality(item).prelaunch)
+          &&(Number(addPlan?.pnl)>=0||bottomFirstQuality(item,live).holdingRebreak)
           &&risk?.stopHard!==true &&high?.triggered!==true
           &&!['exit','verify','volume_exit_watch'].includes(bDecision.kind);
         const addObservation=addReady
