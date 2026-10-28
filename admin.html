@@ -480,6 +480,9 @@ h1 {
 .survival-progress.done .survival-progress-fill {
   background: #34d399;
 }
+.tdcc-holder-flow { margin:7px 0; padding:6px 9px; border:1px solid var(--line); border-radius:8px; font-size:13px; line-height:1.5; color:var(--muted); }
+.tdcc-holder-flow b { display:block; color:var(--text); font-size:14px; margin-bottom:2px; }
+.tdcc-holder-flow small { display:block; font-size:12px; margin-top:2px; overflow-wrap:anywhere; }
 .signal-note {
   color: var(--muted);
   font-size: 12px;
@@ -5001,7 +5004,7 @@ h1 {
             <span class="entry-mini-name"><strong>${esc(id)} ${esc(item.stock_name||'')}</strong><small>${esc(glanceSignal)}</small></span>
             <span class="entry-mini-expand">展開</span>
             <span class="entry-mini-metrics">${esc(quoteDisplayState(q,item).label)} <b>${close>0?esc(num(close,2)):'-'}</b><small>${q?'｜'+esc(quoteDisplayState(q,item).moment):'｜S '+esc(String(item.as_of||'待更新'))}</small></span>
-            <span class="radar-compact-next">量價：${esc(volumePriceState(item,q).tag)}｜${esc(volumePriceState(item,q).note)}</span><span class="radar-compact-next">山川：${esc(shanchuanBrief(item,q))}</span><span class="radar-compact-next">下一步：${esc(radarShortAdvice(item,safeDisplayAction,q))}</span>
+            <span class="radar-compact-next">量價：${esc(volumePriceState(item,q).tag)}｜${esc(volumePriceState(item,q).note)}</span><span class="radar-compact-next">山川：${esc(shanchuanBrief(item,q))}</span><span class="radar-compact-next">${esc(tdccHolderBrief(item))}</span><span class="radar-compact-next">下一步：${esc(radarShortAdvice(item,safeDisplayAction,q))}</span>
           </summary>
           <div class="entry-mini-full">${continuationRiskMiniHtml(item)}${expanded}${(activeTrial||activeFormal)
             ?'<div class="entry-survival-status '+esc(survival.tone)+'" data-entry-survival-id="'+esc(id)+'" data-entry-survival-trial="'+(activeTrial?'1':'0')+'">'+esc(survival.text)+'</div>':''}</div>
@@ -6282,6 +6285,52 @@ h1 {
           :'沒有有效 C 成交，顯示 S 模型收盤';
         return `<div class="stock-time-info"><span class="model-time">技術模型基準：${esc(md||'待更新')} 完整日K</span><span class="scan-time">系統最新重算：${esc(scan||'待重算資料')}</span><span class="quote-time">C 成交時間：${esc(moment)}</span></div>`;
       };
+
+      // Single UI-only TDCC presentation, shared by all three radar tabs.
+      function tdccHolderState(item) {
+        const f=item?.metrics?.tdcc_holder_flow||{},day=String(item?.as_of||'');
+        const rule='2026-10-28-tdcc-ma20-0-8-two-weeks-v1';
+        const validDay=/^20\d{2}-\d{2}-\d{2}$/.test(day);
+        const covered=f.version===rule&&validDay&&String(f.as_of||'')===day
+          &&f.covered===true&&String(f.usable_from||'')<=day
+          &&/^20\d{2}-\d{2}-\d{2}$/.test(String(f.snapshot_date||''));
+        const val=n=>n===null||n===undefined||n===''?null:(Number.isFinite(Number(n))?Number(n):null);
+        const up400=covered&&f.two_week400_up===true,up1000=covered&&f.two_week1000_up===true;
+        return {covered,up400,up1000,both:up400&&up1000,date:String(f.snapshot_date||''),day,
+          p400:covered?val(f.holder_400_pct):null,p1000:covered?val(f.holder_1000_pct):null,
+          delta400:covered?val(f.delta_400_pp):null,delta1000:covered?val(f.delta_1000_pp):null,
+          bias:covered?val(f.bias20_pct):null,ma20Pass:covered&&f.ma20_bias_0_8_pass===true,
+          signed:covered&&f.entry_gate_verified===true};
+      }
+      function tdccHolderBrief(item) {
+        const s=tdccHolderState(item);
+        if(!s.covered)return '🐋 集保大戶｜該模型日資料待更新';
+        if(s.both)return '🐋 集保大戶｜400張↑、1,000張↑，連增2週';
+        const tag=(yes,n)=>yes?'連增2週':n===null?'未確認':n>0?'近週增加':n<0?'近週減少':'近週持平';
+        return '🐋 集保大戶｜400張 '+tag(s.up400,s.delta400)+'・1,000張 '+tag(s.up1000,s.delta1000);
+      }
+      function tdccHolderDetailHtml(item) {
+        const s=tdccHolderState(item);
+        const value=n=>n===null?'-':num(n,2)+'%';
+        const delta=n=>n===null?'變化待補':(n>0?'+':'')+num(n,3)+' 個百分點';
+        const trend=(yes,n)=>yes?'↑ 連增2週':n===null?'未確認':n>0?'↑ 近週增加':n<0?'↓ 近週減少':'→ 近週持平';
+        if(!s.covered)return '<div class="tdcc-holder-flow" data-tdcc-flow="unavailable">'
+          +'<b>🐋 集保大戶持股動向｜資料待確認</b><small>目前模型日 '+esc(s.day||'未知')
+          +' 尚無可用的集保週資料；不能拿後來公布的快照倒補歷史買點。'
+          +(s.date?'｜已有快照 '+esc(s.date):'')+'</small></div>';
+        const bias=s.bias===null?'MA20偏離待補':'MA20偏離 '+(s.bias>0?'+':'')+num(s.bias,2)+'%'
+          +(s.ma20Pass?'（符合0～8%）':'（不符0～8%）');
+        return '<div class="tdcc-holder-flow" data-tdcc-flow="available">'
+          +'<b>🐋 集保大戶持股動向｜'+(s.both?'雙級持股比例連增2週':'持股比例變化觀察')+'</b>'
+          +'<small>400張以上 '+esc(value(s.p400))+'｜'+esc(trend(s.up400,s.delta400))
+            +'｜最近一週 '+esc(delta(s.delta400))+'</small>'
+          +'<small>1,000張以上 '+esc(value(s.p1000))+'｜'+esc(trend(s.up1000,s.delta1000))
+            +'｜最近一週 '+esc(delta(s.delta1000))+'</small>'
+          +'<small>集保資料日 '+esc(s.date)+'｜模型日 '+esc(s.day)
+            +'｜'+esc(bias)+(s.signed?'｜新版分析已驗證':'｜待新版分析確認')+'</small>'
+          +'<small>持股比例為每週數據，400張以上包含1,000張以上；不代表每日實際買進金額或獨立買點。</small></div>';
+      }
+
       function card(item, options = {}) {
         const metrics = item.metrics || {};
         const displayQuote = bestTodayQuote(options.quote, item?.stock_id);
@@ -6451,7 +6500,7 @@ h1 {
         const detailBody = `<div class="detail-body">${hiddenModelHtml}${v5Html}${chipHtml}${holding ? '' : liquidityHtml}${playbookHtml}<div class="metrics"><span class="pill">3年位階 ${num(metrics.position_3y_pct)}%</span><span class="pill">週K ${num(metrics.weekly_k)}｜${gradeText(weeklyKGrade(metrics.weekly_k))}</span><span class="pill">月K ${num(metrics.monthly_k)}｜${gradeText(monthlyKGrade(metrics.monthly_k))}</span><span class="pill">${backtestSignal(item)}</span>${metrics.backtest ? `<span class="pill">5日 ${num(metrics.backtest.win_rate_5d_pct)}%</span><span class="pill">20日 ${num(metrics.backtest.win_rate_20d_pct)}%</span>` : ''}</div><div class="why">${reasons}</div>${cautions ? `<div class="warn">${cautions}</div>` : ''}</div>`;
         const detailHtml = options.compactHolding && holding ? detailBody : `<details class="card-details"><summary>完整判斷與數據</summary>${detailBody}</details>`;
         const actionHtml = options.hideSignal ? '' : `<div class="trade-signal ${signal.className}">${esc(memberFacingText(signal.text))}<small style="display:block;margin-top:4px;font-weight:500">${esc(memberFacingText(signal.detail || ''))}</small></div>`;
-        return `<article class="card" data-stock-id="${esc(item.stock_id)}"><div class="top"><div><div class="name">${esc(item.stock_id)} ${esc(item.stock_name)}</div><div class="meta">${esc(item.market)}${item.industry ? '・' + esc(item.industry) : ''}${timeInfoStages() ? '' : '｜資料日 ' + esc(item.as_of || '-')}</div></div><div class="badge ${esc(item.stage)}">模型 ${Number(item.score || 0)}分</div></div>${companyProfileHtml(item)}${activeLaunchVisibleHtml}${volumePriceHtml(item, displayQuote)}${researchPanel}${options.historicalObservation?'':pullbackWatchHtml(item, displayQuote)}${holding ? (options.technicalOnly === true ? '' : options.compactHolding ? '' : holdingTodayHtml) : actionHtml + quickHtml + deviationWarningHtml + riskSummary}${holdingHtml}${options.compactHolding && holding ? `<details class="card-details holding-combined"><summary>完整判斷與技術數據</summary>${holdingStatusHtml}${detailHtml}</details>` : holdingStatusHtml+detailHtml}${timeInfoStages() ? timeInfoHtml(item, displayQuote) : '<div class="time">背景模型掃描：' + updated + '</div>'}</article>`;
+        return `<article class="card" data-stock-id="${esc(item.stock_id)}"><div class="top"><div><div class="name">${esc(item.stock_id)} ${esc(item.stock_name)}</div><div class="meta">${esc(item.market)}${item.industry ? '・' + esc(item.industry) : ''}${timeInfoStages() ? '' : '｜資料日 ' + esc(item.as_of || '-')}</div></div><div class="badge ${esc(item.stage)}">模型 ${Number(item.score || 0)}分</div></div>${companyProfileHtml(item)}${activeLaunchVisibleHtml}${volumePriceHtml(item, displayQuote)}${tdccHolderDetailHtml(item)}${researchPanel}${options.historicalObservation?'':pullbackWatchHtml(item, displayQuote)}${holding ? (options.technicalOnly === true ? '' : options.compactHolding ? '' : holdingTodayHtml) : actionHtml + quickHtml + deviationWarningHtml + riskSummary}${holdingHtml}${options.compactHolding && holding ? `<details class="card-details holding-combined"><summary>完整判斷與技術數據</summary>${holdingStatusHtml}${detailHtml}</details>` : holdingStatusHtml+detailHtml}${timeInfoStages() ? timeInfoHtml(item, displayQuote) : '<div class="time">背景模型掃描：' + updated + '</div>'}</article>`;
       }
 
       // Explain an empty launch list using *the actual API result and this
@@ -7874,7 +7923,7 @@ h1 {
                 <span>${esc(quoteDisplayState(live,item).label)} <b>${price!=null?esc(num(price,2)):'-'}</b></span>
                 <span>損益 <b class="${holdingPnlClass(pnl)}">${pnl==null?'-':(pnl>0?'+':'')+esc(num(pnl,2))+'%'}</b></span></span>
               <span class="holding-mini-status">${esc(positionStatus+addObservation)}</span>
-              <span class="holding-mini-date">量價｜${esc(volumePriceState(item,live).tag)}｜${esc(volumePriceState(item,live).note)}</span><span class="holding-mini-date">山川｜${esc(shanchuanBrief(item,live))}</span>
+              <span class="holding-mini-date">量價｜${esc(volumePriceState(item,live).tag)}｜${esc(volumePriceState(item,live).note)}</span><span class="holding-mini-date">山川｜${esc(shanchuanBrief(item,live))}</span><span class="holding-mini-date">${esc(tdccHolderBrief(item))}</span>
               <span class="holding-mini-date">S 模型 ${esc(item.as_of||'待更新')}｜${live?'C 成交時間 '+esc(quoteDisplayState(live,item).moment)+(quoteDisplayState(live,item).live?'｜盤中即時':'｜非即時'):'無有效 C 成交，非即時模型價'}</span>
             </summary>
             <div class="holding-mini-body">
@@ -8017,7 +8066,7 @@ h1 {
               <span class="entry-mini-name"><strong>${esc(id)} ${esc(item?.stock_name||'')}</strong><small>${esc(glanceStatus)}</small></span>
               <span class="entry-mini-expand">展開</span>
               <span class="entry-mini-metrics">${esc(source)} <b>${price!=null&&price>0?esc(num(price,2)):'-'}</b><small>${esc(quoteTime)}</small></span>
-              <span class="radar-compact-next">量價：${esc(volumePriceState(item,q).tag)}｜${esc(volumePriceState(item,q).note)}</span><span class="radar-compact-next">山川：${esc(shanchuanBrief(item,q))}</span><span class="radar-compact-next">下一步：${esc(radarShortAdvice(item,{text:status},q))}</span>
+              <span class="radar-compact-next">量價：${esc(volumePriceState(item,q).tag)}｜${esc(volumePriceState(item,q).note)}</span><span class="radar-compact-next">山川：${esc(shanchuanBrief(item,q))}</span><span class="radar-compact-next">${esc(tdccHolderBrief(item))}</span><span class="radar-compact-next">下一步：${esc(radarShortAdvice(item,{text:status},q))}</span>
             </summary>
             <div class="entry-mini-full">${launchScoutHistoryHtml(item)}${continuationRiskMiniHtml(item)}${stockMovementHtml(item,q,'launch',launchDisplayAction)}
               ${radarDeepDetailsHtml((ma10Preliminary?'<div class="model-only-note">MA10 回踩盤中初步轉強，但發動前區不提供試單。須到進場雷達通過新版底部品質、0050 相對強度與有效量價確認。</div>':'')+detailed)}</div>
