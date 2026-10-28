@@ -26,6 +26,14 @@
 ## 手動研究執行，沒有自動排程
 
 準備 Node.js 18+，在本機或獨立研究環境：
+
+手動獲取資料（唯讀外部來源，寫入本機資料夾，不會觸發交易掃描）：
+- 從集保官網取得最新一期：node research/tdcc-fetch-weekly.mjs --latest --dest research-data/tdcc
+- 從公開授權週備份取得 2026 年資料：node research/tdcc-fetch-weekly.mjs --archive --since 2026-04-30 --dest research-data/tdcc
+- 單獨驗證下載資料格式：node --test research/tdcc-fetch-weekly.test.mjs
+- 若官方端點網路不可及、資料格式不符或週日期混雜，程式會報錯而不宣稱成功；目前並未在正式環境下載或開啟排程。
+
+
 - 將 TDCC 1-5 格式的多個每週 CSV 放到同一資料夾。
 - 從 Supabase 只讀研究事件資料匯出 CSV，最低欄位：stock_id,signal_date,family,r10,mae10。
 - 額外比較法人代理需附欄位 chip_score,inst_net5,inst_pos_days。
