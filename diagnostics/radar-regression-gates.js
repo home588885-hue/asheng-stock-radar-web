@@ -898,6 +898,58 @@ test('2023 signed pre-breakout gets cross-day observation without fictitious ear
     'actionable scout payload must never be saved as observation');
   assert.ok(renders>=2&&reads>=2);
 });
+test('Bottom-first v4 is ONE quality gate shared across LAUNCH, ENTRY and HOLDING',()=>{
+  const source=section('      const BOTTOM_FIRST_QUALITY_VERSION=', '      // Entry radar is night-snapshot-only');
+  const date=()=> '2026-10-27';
+  const calls={
+    validTodayQuote:q=>!!q,quoteFreshForTrial:q=>!!q,
+    expectedSignalDataDate:date,unifiedRadarGeneration:()=>true,
+    chaseModelReady:()=>true,chasePass:()=>true,marketFraction:()=>.25
+  };
+  const f=new Function(...Object.keys(calls),source+
+    '\nreturn {bottomFirstQuality,guardBottomFirstAction,BOTTOM_FIRST_QUALITY_VERSION};');
+  const {bottomFirstQuality:q,guardBottomFirstAction:guard,BOTTOM_FIRST_QUALITY_VERSION:version}
+    =f(...Object.values(calls));
+  assert.match(version,/2026-10-28/);
+  const model={
+    stock_id:'3062',as_of:'2026-10-27',
+    metrics:{close:100,prev_close:99.5,ma5:99,ma10:98.5,ma20:98,
+      ma60:97,high20_prev:103,current_volume_lots:1500,avg_volume_20_lots:1200,
+      position_1y_pct:22,entry_candle_guard:{main_bull:true},
+      prebreakout_scout:{eligible:true,as_of:'2026-10-27'},
+      box_strategy:{discovery:{ready_watch:true}}}
+  };
+  const live={price:101,open:100,prev_close:99.5,high:101.1,
+    volume_lots:600,quote_time:'09:05:00',quote_date:'20261027'};
+  assert.equal(q(model).prelaunch,true);
+  assert.equal(q(model,live).trial,true);
+  const action={key:'legacy_early_starter_trial',phase:'trial',trialable:true,buyable:false,text:'🟠 舊版試單'};
+  assert.equal(guard(model,live,action).trialable,true);
+  for(const bad of [
+    {...live,price:99},              // negative open candle
+    {...live,prev_close:103},        // no strength vs yesterday
+    {...live,high:105},              // long upper wick
+    {...live,volume_lots:100},       // weak/too early
+    {...live,price:108,high:108},    // extended chase
+  ]){
+    assert.equal(q(model,bad).trial,false);
+    const blocked=guard(model,bad,action);
+    assert.equal(blocked.trialable,false);
+    assert.equal(blocked.buyable,false);
+    assert.equal(blocked.phase,'observe');
+  }
+  assert.equal(q({...model,as_of:'2026-10-24'},live).trial,false);
+  assert.equal(q({...model,metrics:{...model.metrics,position_1y_pct:85}},live).trial,false);
+  assert.equal(q({...model,metrics:{...model.metrics,current_volume_lots:450}},live).trial,false);
+  assert.equal(q({...model,metrics:{...model.metrics,entry_candle_guard:{weak_after_breakout:true}}},live).trial,false);
+  const watch={phase:'observe',trialable:false,text:'🌱 低檔追蹤'};
+  assert.equal(guard(model,live,watch),watch);
+  assert.match(html,/rows=rows\.map\(row=>\(\{\.\.\.row,action:guardBottomFirstAction/);
+  assert.match(html,/const earlyQuality=bottomFirstQuality\(item\)/);
+  assert.match(html,/const addReady=addPlan\?\.eligible===true[\s\S]{0,190}bottomFirstQuality\(item\)\.prelaunch/);
+  assert.match(html,/guardBottomFirstAction\(model,observedQuote,entrySnapshotState/);
+  assert.doesNotMatch(source,/fetch\s*\(|getLiveQuotes\s*\(|setInterval\s*\(|scanBatch\s*\(/);
+});
 for(const g of html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi)){
   if(/\bsrc=/.test(g[1]))continue;
   new Function(g[2]);
