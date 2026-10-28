@@ -4553,7 +4553,7 @@ h1 {
         // A stricter setup can progress to a trial, ONLY with today's actual
         // traded lots >=1000, strong current candle, and original entry-risk gate.
         const trialBase=prelaunch&&g.main_bull!==false
-          &&g.macd_weak!==true&&g.kd_high_weak!==true
+          &&g.kd_high_weak!==true
           &&avg>=500&&lots>=500&&ma10>=ma20*.985
           &&close>=ma20*.995&&close<=ma20*1.065
           &&modelRatio>=.55&&modelRatio<=3.6;
@@ -4596,6 +4596,7 @@ h1 {
             &&nowVol>=1000&&projected>=1000
             &&price<=ma20*1.065
             &&price<=open*1.055&&price<=prev*1.065
+            &&(g.macd_weak!==true || (price>=open*1.008&&price>=prev*1.02&&pace>=1.4))
             &&chasePass(item,price)))
             trialReasons.push('盤中成交未達1000張／支撐、量速或價格轉強不足');
         }
