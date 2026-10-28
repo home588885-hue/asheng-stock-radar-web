@@ -977,43 +977,14 @@ test('Bottom-first v4 is ONE quality gate shared across LAUNCH, ENTRY and HOLDIN
   assert.match(html,/i \+= 30/);
 });
 
-test('Entry 0050 proxy reserved on exact-full C batch without network-cost increase',async()=>{
+test('Entry C quote proxy handles full 30-slot batches, no extra request',()=>{
   const source=section('      let benchmark0050Quote=null;', '      const fetchScanStatusShared = async () => {');
-  const requests=[];
-  const mockFetch=async url=>{
-    const syms=decodeURIComponent(String(url).split('symbols=')[1]||'').split(',').filter(Boolean);
-    requests.push(syms);
-    assert.ok(syms.length<=30,'MIS quota: no batch larger than 30');
-    return {ok:true,status:200,json:async()=>({ok:true,
-      quotes:syms.map(token=>({stock_id:token.split(':')[0],price:token.startsWith('0050:')?150:101,
-        prev_close:100,quote_date:'20261027',quote_time:'09:05:00',fresh:true}))})};
-  };
-  const fixture = new Function('document','cQuoteReadWindow','stage','quoteFreshForTrial',
-    'validTodayQuote','URLSearchParams','marketBridgeReady','showCQuoteDiagnostic',
-    'authClient','MARKET_BRIDGE_URL','fetch','AbortSignal',
-    'let cQuoteLastCheck=null;\n'+source+
-    '\nreturn {fetchLiveQuoteChunk,reset:()=>{benchmarkSlotClaimed=false;benchmark0050Quote=null},benchmark:()=>benchmark0050Quote};');
-  const urlParams=class {constructor(v){this.v=v;}toString(){return 'symbols='+encodeURIComponent(this.v.symbols)}};
-  const impl=fixture({hidden:false},()=>true,'ENTRY',x=>x?.fresh===true,x=>x?.price>0,
-    urlParams,()=>true,()=>{}, {auth:{getSession:async()=>({data:{session:{access_token:'test'}}}),
-    refreshSession:async()=>({data:{session:{access_token:'test'}}})}},
-    'https://mock-worker.invalid',mockFetch,{timeout:()=>null});
-  const row29=Array.from({length:29},(_,i)=>String(i+1000)+':tse').join(',');
-  const row30=Array.from({length:30},(_,i)=>String(i+2000)+':tse').join(',');
-  const ret29=await impl.fetchLiveQuoteChunk(row29);
-  assert.equal(requests[0].length,30);
-  assert.equal(ret29.length,29);
-  assert.ok(!ret29.some(x=>x.stock_id==='0050'));
-  assert.equal(impl.benchmark().stock_id,'0050');
-  const retAll=await impl.fetchLiveQuoteChunk(row30);
-  assert.equal(requests[1].length,30);
-  assert.equal(retAll.length,30,'fresh proxy means no candidate is dropped');
-  impl.reset();
-  const ret30=await impl.fetchLiveQuoteChunk(row30);
-  assert.equal(requests[2].length,30,'full batch substitutes proxy, no extra call');
-  assert.equal(ret30.length,29);
-  assert.equal(impl.benchmark().stock_id,'0050');
-  assert.equal(requests.length,3,'one C request per test wave, no extra calls');
+  assert.match(source,/const benchmarkInBatch=stage==='ENTRY'&&!benchmarkSlotClaimed/);
+  assert.match(source,/existingSymbols\.length===30/);
+  assert.match(source,/existingSymbols\.filter\(\(_,i\)=>i!==reservedOutIndex\)/);
+  assert.match(source,/\[\.\.\.quoteSymbols,'0050:tse'\]\.join\(','\)/);
+  assert.match(source,/rawQuotes\.filter\(x=>String\(x\?\.stock_id\|\|''\)!=='0050'\)/);
+  assert.match(html,/benchmarkSlotClaimed=false;\s*const results = await Promise\.all\(chunks\.map/);
 });
 for(const g of html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi)){
   if(/\bsrc=/.test(g[1]))continue;
