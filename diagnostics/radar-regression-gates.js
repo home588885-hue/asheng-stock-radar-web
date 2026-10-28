@@ -934,6 +934,14 @@ test('Bottom-first v4 is ONE quality gate shared across LAUNCH, ENTRY and HOLDIN
   marketProxy.price=150;
   assert.equal(q({...model,metrics:{...model.metrics,close:97.9}},live).prelaunch,false,'no MA20 support');
   assert.equal(q({...model,metrics:{...model.metrics,close:97}},live).prelaunch,false,'no MA10 support');
+  const heldRecovery={...model,metrics:{...model.metrics,
+    position_1y_pct:78,
+    box_strategy:{...model.metrics.box_strategy,levels:{top:99}},
+    entry_candle_guard:{main_bull:true}}};
+  assert.equal(q(heldRecovery).prelaunch,false,'high percentile not a fresh new-entry');
+  assert.equal(q(heldRecovery).holdingRebreak,true,'rebuilding held loss can qualify by setup');
+  assert.equal(q({...heldRecovery,metrics:{...heldRecovery.metrics,
+    box_strategy:{levels:{top:109}}}}).holdingRebreak,false,'unbroken box is not add-ready');
   const action={key:'legacy_early_starter_trial',phase:'trial',trialable:true,buyable:false,text:'🟠 舊版試單'};
   assert.equal(guard(model,live,action).trialable,true);
   for(const bad of [
@@ -957,7 +965,7 @@ test('Bottom-first v4 is ONE quality gate shared across LAUNCH, ENTRY and HOLDIN
   assert.equal(guard(model,live,watch),watch);
   assert.match(html,/rows=rows\.map\(row=>\(\{\.\.\.row,action:guardBottomFirstAction/);
   assert.match(html,/const earlyQuality=bottomFirstQuality\(item\)/);
-  assert.match(html,/const addReady=addPlan\?\.eligible===true[\s\S]{0,190}bottomFirstQuality\(item\)\.prelaunch/);
+  assert.match(html,/const addReady=addPlan\?\.eligible===true[\s\S]{0,190}bottomFirstQuality\(item,live\)\.holdingRebreak/);
   assert.match(html,/guardBottomFirstAction\(model,observedQuote,entrySnapshotState/);
   assert.doesNotMatch(source,/fetch\s*\(|getLiveQuotes\s*\(|setInterval\s*\(|scanBatch\s*\(/);
   assert.match(html,/existingSymbols\.length<30/);
