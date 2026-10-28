@@ -986,6 +986,18 @@ test('Entry C quote proxy handles full 30-slot batches, no extra request',()=>{
   assert.match(source,/rawQuotes\.filter\(x=>String\(x\?\.stock_id\|\|''\)!=='0050'\)/);
   assert.match(html,/benchmarkSlotClaimed=false;\s*const results = await Promise\.all\(chunks\.map/);
 });
+test('Launch and entry labels cannot bypass bottom-first trial and EOD preparation gates',()=>{
+  const launch=section('      const launchMiniHtml = (item, quote = null) => {','      const launchListHtml =');
+  const entry=section('      const renderEntrySections = (rows,{quoteUpdate=false}={}) => {','      const isEntryRadarItem =');
+  assert.match(launch,/ma10Preliminary/);
+  assert.match(launch,/MA10初步轉強｜進場區待確認（非試單）/);
+  assert.match(launch,/q&&ma20>0&&price<ma20\?'🟠 今日已知成交低於MA20/);
+  assert.doesNotMatch(launch,/:[ ]?trial\?trial\.text/);
+  assert.doesNotMatch(launch,/ma10PullbackTrialState\(item,q\)[\s\S]{0,100}\?trial\.text/);
+  assert.match(entry,/const eodTrialWatchReady=row=>eodStarterWatchEligible\(row.item\)\s*&&bottomFirstQuality\(row.item\)\.prelaunch/);
+  assert.match(entry,/rows=rows\.map\(row=>\(\{\.\.\.row,action:guardBottomFirstAction\(row.item,row.quote,row.action\)\}\)\)/);
+  assert.match(html,/const addReady=addPlan\?\.eligible===true[\s\S]{0,220}risk\?\.stopHard!==true/);
+});
 for(const g of html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi)){
   if(/\bsrc=/.test(g[1]))continue;
   new Function(g[2]);
