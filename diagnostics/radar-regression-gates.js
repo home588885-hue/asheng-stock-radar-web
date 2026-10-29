@@ -1080,3 +1080,33 @@ for(const g of html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi)){
 }
 console.log('PASS inline JavaScript syntax');
 console.log('Radar regression gates: '+passed+' groups passed; 0 network calls.');
+
+test('signed latest WATCH starter is visible to S monitor but is never itself a buy',()=>{
+  const picks=fs.readFileSync(path.join(__dirname,'..','supabase','functions','spring-swallow-picks','index.ts'),'utf8');
+  const start=picks.indexOf('  const signedEntryLife=(x:any)=>');
+  const stop=picks.indexOf('  const ranked=',start);
+  assert.ok(start>=0&&stop>start,'signed lifecycle guard exists before monitor ranking');
+  const helper=picks.slice(start,stop).replaceAll('(x:any)','(x)');
+  const make=new Function('signedNew','isNewGeneration','latestCandidateModelDay',helper+
+    '\nreturn {signedEntryLife,entryLifeWatchRank};');
+  const obj=make(x=>x.metrics?.chase_rule_version==='signed',
+    x=>x.metrics?.box_strategy?.model_generation==='v2','2026-10-28');
+  const good={stock_id:'2377',stage:'WATCH',score:29,as_of:'2026-10-28',
+    metrics:{chase_rule_version:'signed',box_strategy:{model_generation:'v2'},
+      trade_lifecycle:{entry:{state:'starter'}}}};
+  assert.equal(obj.signedEntryLife(good),'starter');
+  assert.equal(obj.entryLifeWatchRank(good),2);
+  assert.equal(obj.entryLifeWatchRank({...good,metrics:{...good.metrics,
+    trade_lifecycle:{entry:{state:'formal_candidate'}}}}),3);
+  assert.equal(obj.signedEntryLife({...good,as_of:'2026-10-27'}),'');
+  assert.equal(obj.signedEntryLife({...good,metrics:{...good.metrics,chase_rule_version:'old'}}),'');
+  assert.equal(obj.signedEntryLife({...good,metrics:{...good.metrics,
+    trade_lifecycle:{entry:{state:'near'}}}}),'');
+  assert.match(picks,/mode==='monitor'&&\(firstBarObservation\(x\)\|\|!!signedEntryLife\(x\)\)/);
+  assert.match(picks,/entryLifeWatchRank\(b\)-entryLifeWatchRank\(a\)/);
+  // Backtest hold and buy permissions remain source-controlled, not rank-controlled.
+  assert.match(picks,/formal_entry_enabled:false/);
+  assert.match(html,/const entryBlockingNote=formalGateNote/);
+  assert.match(html,/entryBlockingNote\)\+'<\/small>/);
+  assert.match(html,/const formal=eligible&&formalEntryValidation\.enabled&&m\.v5\?\.entry_confirmed===true/);
+});
