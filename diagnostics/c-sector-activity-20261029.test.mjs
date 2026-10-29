@@ -135,3 +135,31 @@ test('a six-day-old S reference volume cannot be called a current C pace baselin
  assert.equal(v.ready,false);
  assert.equal(v.reason,'missing_verified_S_avg_volume');
 });
+
+
+test('tab remapping resets old trade pairs for an overlapping stock cohort',()=>{
+ const m=make(),ids=['2330','2303','2454'];
+ for(const id of ids)m.track(stock(id));
+ m.observe(ids.map(id=>quote(id,'10:02:00',100)),
+   {now:on('10:04'),marketOpen:true,stage:'LAUNCH'});
+ m.observe(ids.map(id=>quote(id,'10:06:00',150)),
+   {now:on('10:08'),marketOpen:true,stage:'LAUNCH'});
+ assert.equal(m.summarize('半導體業','tse',
+   {now:on('10:08'),marketOpen:true,stage:'LAUNCH'}).ready,true);
+ // Same symbols may occur in two cards/tabs. Earlier tab's paired trades
+ // MUST NOT make the freshly opened tab look like it has two new trades.
+ for(const id of ids)m.track({...stock(id),stage:'ENTRY'});
+ assert.equal(m.summarize('半導體業','tse',
+   {now:on('10:08'),marketOpen:true,stage:'ENTRY'}).ready,false);
+ m.observe(ids.map(id=>quote(id,'10:09:00',180)),
+   {now:on('10:10'),marketOpen:true,stage:'ENTRY'});
+ assert.equal(m.summarize('半導體業','tse',
+   {now:on('10:10'),marketOpen:true,stage:'ENTRY'}).ready,false);
+ m.observe(ids.map(id=>quote(id,'10:12:00',200)),
+   {now:on('10:13'),marketOpen:true,stage:'ENTRY'});
+ assert.equal(m.summarize('半導體業','tse',
+   {now:on('10:13'),marketOpen:true,stage:'ENTRY'}).ready,true);
+ for(const id of ids)m.track({...stock(id),stage:'HOLDING'});
+ assert.equal(m.summarize('半導體業','tse',
+   {now:on('10:13'),marketOpen:true,stage:'HOLDING'}).ready,false);
+});

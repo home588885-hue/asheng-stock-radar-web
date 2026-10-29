@@ -39,6 +39,12 @@
       const avg=positive(stock?.avg_volume_20_lots);
       const stage=String(stock?.stage||'');
       const asOf=String(stock?.as_of||'').slice(0,10);
+      // A quote pair belongs to one displayed cohort only. A stock that moves
+      // between radar tabs (or industries/markets) must collect two new trades
+      // before its activity can appear in that other cohort.
+      const previous=names.get(id);
+      if(previous&&(previous.stage!==stage||previous.industry!==industry
+        ||previous.market!==market||previous.asOf!==asOf))quotes.delete(id);
       names.set(id,{industry,market,avg,stage,asOf});
       if(names.size>limit)names.delete(names.keys().next().value);
       return true;
