@@ -2016,7 +2016,7 @@ h1 {
         // Display-only sampling from existing C responses; no additional HTTP.
         if(sectorCActivity){
           sectorCActivity.observe(quotes.filter(q=>q.cached_last_trade!==true),
-            {now:new Date(),marketOpen:taipeiMarketState().open});
+            {now:new Date(),marketOpen:taipeiMarketState().open,stage});
           refreshSectorRotationLabels();
         }
         const fetchedNow=quotes.filter(q=>!q.cached_last_trade && incoming.has(String(q.stock_id))).length;
@@ -6227,7 +6227,8 @@ h1 {
         sectorCActivity.track({
           stock_id:String(item.stock_id),industry:String(item.industry||''),
           market:String(item.market||''),
-          avg_volume_20_lots:item?.metrics?.avg_volume_20_lots
+          avg_volume_20_lots:item?.metrics?.avg_volume_20_lots,
+          as_of:String(item.as_of||''),stage
         });
       };
       let sectorRotationState = null;
@@ -6243,7 +6244,7 @@ h1 {
           :prefix+String(row.label||'⚪待確認')
             +'（'+day+'、'+Number(row.sample_count||0)+'檔，非即時）';
         const live=sectorCActivity?.label(industry,market,
-          {now:new Date(),marketOpen:taipeiMarketState().open})
+          {now:new Date(),marketOpen:taipeiMarketState().open,stage})
           ||'｜C盤中族群：資料不足';
         return eod+live;
       };
