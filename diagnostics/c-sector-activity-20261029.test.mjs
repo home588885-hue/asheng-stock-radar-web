@@ -94,7 +94,8 @@ test('production front end uses only the existing C quote return path',()=>{
  assert.match(ui,/data-sector-industry/);
  assert.match(ui,/data-sector-market/);
  assert.match(ui,/const sectorRotationText = \(industry,market=''\)/);
- assert.match(ui,/is_net_inflow:false|非淨買超/);
+ assert.match(source,/is_net_inflow:false/);
+ assert.match(source,/非淨買超/);
  const start=ui.indexOf('<script>\n    (async()=>{');
  const end=ui.indexOf('</script>',start);
  assert.ok(start>0&&end>start);
