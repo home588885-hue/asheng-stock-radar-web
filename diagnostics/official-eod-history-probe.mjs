@@ -105,7 +105,7 @@ export function intersectionCoverage(a,b){
  return {ok:pairs>=100,previous_count:xs.size,current_count:ys.size,
    pair_count:pairs,coverage_pct:total?Math.round(pairs/total*1000)/10:0};
 }
-async function download(url){
+export async function download(url){
  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),12000);
  try{const r=await fetch(url,{signal:controller.signal,headers:{Accept:'application/json',
    'User-Agent':'asheng-research-readonly/1.0 (noncommercial; low rate)'}});
