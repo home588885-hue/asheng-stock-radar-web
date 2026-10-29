@@ -1347,6 +1347,7 @@ h1 {
         </div>
       </div>
     </div>
+    <script src="./sector-c-activity.js"></script>
     <script>
     (async()=>{
       const SUPABASE_URL = 'https://qexbtubfoyfsllaiecvv.supabase.co';
@@ -2012,6 +2013,12 @@ h1 {
           return validTodayQuote(cached) ? {...cached,cached_last_trade:true} : null;
         }).filter(validTodayQuote);
         persistLiveQuoteCache();
+        // Display-only sampling from existing C responses; no additional HTTP.
+        if(sectorCActivity){
+          sectorCActivity.observe(quotes.filter(q=>q.cached_last_trade!==true),
+            {now:new Date(),marketOpen:taipeiMarketState().open});
+          refreshSectorRotationLabels();
+        }
         const fetchedNow=quotes.filter(q=>!q.cached_last_trade && incoming.has(String(q.stock_id))).length;
         cQuoteCoverage={requested:unique.length,valid:quotes.length,at:Date.now()};
         showCQuoteDiagnostic();
@@ -6214,23 +6221,38 @@ h1 {
       };
       // DISPLAY ONLY: sector reads an independently dated, sampled S EOD cohort.
       // This MUST NEVER change entry/holding signals, scores, filters or C quotes.
+      const sectorCActivity=window.AshengCSectorActivity?.createCSectorActivity?.()||null;
+      const registerCSectorStock=item=>{
+        if(!sectorCActivity||!item?.stock_id)return;
+        sectorCActivity.track({
+          stock_id:String(item.stock_id),industry:String(item.industry||''),
+          market:String(item.market||''),
+          avg_volume_20_lots:item?.metrics?.avg_volume_20_lots
+        });
+      };
       let sectorRotationState = null;
       let sectorRotationLoading = false;
       let sectorRotationLastCheckAt = 0;
-      const sectorRotationText = industry => {
-        const prefix='｜族群樣本：';
+      const sectorRotationText = (industry,market='') => {
+        const prefix='｜S族群樣本：';
         const row=sectorRotationState?.sectors?.get(String(industry||''));
         const day=String(sectorRotationState?.as_of||'').slice(5).replace('-','/');
-        if(!sectorRotationState)return prefix+'讀取中';
-        if(sectorRotationState.stale)return prefix+'資料過期（'+day+'）';
-        if(!row)return prefix+'覆蓋不足（'+day+'）';
-        return prefix+String(row.label||'⚪待確認')+'（'+day+'、'+Number(row.sample_count||0)+'檔）';
+        const eod=!sectorRotationState?prefix+'讀取中'
+          :sectorRotationState.stale?prefix+'資料過期（'+day+'）'
+          :!row?prefix+'覆蓋不足（'+day+'）'
+          :prefix+String(row.label||'⚪待確認')
+            +'（'+day+'、'+Number(row.sample_count||0)+'檔，非即時）';
+        const live=sectorCActivity?.label(industry,market,
+          {now:new Date(),marketOpen:taipeiMarketState().open})
+          ||'｜C盤中族群：資料不足';
+        return eod+live;
       };
       const refreshSectorRotationLabels = () => {
         if(document.hidden)return;
         document.querySelectorAll('[data-sector-industry]').forEach(node=>{
           const industry=String(node.getAttribute('data-sector-industry')||'');
-          const label=sectorRotationText(industry);
+          const market=String(node.getAttribute('data-sector-market')||'');
+          const label=sectorRotationText(industry,market);
           if(node.textContent!==label)node.textContent=label;
         });
       };
@@ -6258,6 +6280,7 @@ h1 {
         }
       };
       const volumePriceHtml = (item, quote = null) => {
+        registerCSectorStock(item);
         const s = volumePriceState(item, quote);
         const ratioText = s.volumeRatio == null || !Number.isFinite(s.volumeRatio) ? '量比待更新' : (s.intraday ? '盤中估算今日量比 ' : '今日量比 ') + num(s.volumeRatio,2) + 'x';
         const positionText = Number.isFinite(s.pos1y) ? '年內位置 '+num(s.pos1y,1)+'%' : '年內位置待更新';
