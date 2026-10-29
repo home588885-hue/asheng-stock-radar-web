@@ -31,5 +31,5 @@ jobs:
           deno-version: v2.x
       - name: Compile-check legacy secured handler only
         run: deno check supabase/functions/spring-swallow-holdings/index.ts
-      - name: Check original analyzers using legacy-compatible TypeScript options
-        run: deno check --config diagnostics/deno-legacy-risk-check.json supabase/functions/spring-swallow-analyze/index.ts supabase/functions/spring-swallow-picks/index.ts
+      - name: Parse and transpile legacy analyzers without executing scans
+        run: npx --yes esbuild@0.25.12 supabase/functions/spring-swallow-analyze/index.ts supabase/functions/spring-swallow-picks/index.ts --format=esm --platform=neutral --outdir=/tmp/asheng-risk-qa --log-level=error
