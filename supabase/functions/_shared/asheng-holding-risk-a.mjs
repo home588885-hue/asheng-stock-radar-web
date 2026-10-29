@@ -17,7 +17,7 @@ export const ASHENG_RISK_A = Object.freeze({
 });
 
 const positive = (n) => Number.isFinite(Number(n)) && Number(n) > 0;
-const day = (d) => typeof d === 'string' && /^\\d{4}-\\d{2}-\\d{2}$/.test(d);
+const day = (d) => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d);
 
 /**
  * @param {object} a
