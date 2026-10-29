@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ASHENG_RISK_A, evaluateHoldingRiskA, nextVerifiedPeak } from '../supabase/functions/_shared/asheng-holding-risk-a.mjs';
+import { ASHENG_RISK_A, evaluateHoldingRiskA, nextVerifiedPeak, acceptObservedHigh } from '../supabase/functions/_shared/asheng-holding-risk-a.mjs';
 
 const base = {
   cost: 100, price: 110, peak: 115, peakType: 'verified_high',
   peakBasisCost: 100, boughtAt: '2026-10-01T10:00:00+08:00',
-  peakBasisBoughtAt: '2026-10-01T10:00:00+08:00',
+  peakBasisBoughtAt: '2026-10-01T10:00:00+08:00', peakObservedAt: '2026-10-28T13:30:00+08:00',
   quoteDate: '2026-10-29', today: '2026-10-29',
   active: true, belowMa20Closes: 0
 };
@@ -68,4 +68,31 @@ test('ma20 three closes is review, stop and trailing take precedence', () => {
 test('losing holdings never get a default add permission', () => {
   assert.equal(check({ price: 94, peak: 110 }).mayAddOnLoss, false);
   assert.equal(check({ price: 89 }).mayAddOnLoss, false);
+});
+
+test('peak below cost is a valid post-entry high in a gap-down', () => {
+  const z = check({ cost:100,price:91,peak:94,peakBasisCost:100 });
+  assert.equal(z.action,'hold');
+  assert.equal(z.trailingArmed,false);
+});
+test('verified peak must be observed after purchase', () => {
+  assert.equal(check({ peakObservedAt:'2026-10-01T09:00:00+08:00' }).reason,
+    'peak_before_purchase_or_missing_timestamp');
+  assert.equal(check({ peakObservedAt:null }).action,'needs_peak_validation');
+});
+test('no cross-account or post-sale historical peak mixing', () => {
+  const pos={ account:'a',stockId:'2330',cost:100,
+    boughtAt:'2026-10-01T10:00:00+08:00',active:true };
+  const obs={ high:130,source:'verified_trade',observedAt:'2026-10-28T13:30:00+08:00' };
+  const first=acceptObservedHigh(null,obs,pos);
+  assert.equal(first.accepted,true);
+  assert.equal(first.state.high,130);
+  assert.equal(acceptObservedHigh(first.state,{...obs,high:125},pos).state.high,130);
+  assert.equal(acceptObservedHigh(first.state,{...obs,high:140,observedAt:'2026-10-29T09:30:00+08:00'},pos).state.high,140);
+  assert.equal(acceptObservedHigh(first.state,obs,{...pos,account:'b'}).accepted,false);
+  assert.equal(acceptObservedHigh(first.state,obs,{...pos,cost:101}).accepted,false);
+  assert.equal(acceptObservedHigh(first.state,{...obs,observedAt:'2026-09-30T09:30:00+08:00'},pos).accepted,false);
+  assert.equal(acceptObservedHigh(first.state,{...obs,observedAt:'2026-10-01T09:00:00+08:00'},pos).accepted,false);
+  assert.equal(acceptObservedHigh(first.state,{...obs,source:'unverified_cache'},pos).accepted,false);
+  assert.equal(acceptObservedHigh(first.state,obs,{...pos,active:false}).accepted,false);
 });
