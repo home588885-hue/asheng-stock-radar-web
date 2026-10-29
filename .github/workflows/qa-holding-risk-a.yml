@@ -33,6 +33,23 @@ jobs:
           node-version: '22'
       - name: Verify pure alert evaluator (no API calls, no scans)
         run: node --test diagnostics/holding-risk-policy-a-20261029.test.mjs diagnostics/legacy-holdings-auth-20261029.test.mjs diagnostics/holding-risk-policy-a-source-contract-20261029.test.mjs diagnostics/twse-peak-evidence-20261029.test.mjs diagnostics/holding-peak-server-20261029.test.mjs diagnostics/holding-peak-admin-ui-20261029.test.mjs
+      - name: Existing radar regression gates (no C/S requests)
+        run: node diagnostics/radar-regression-gates.js
+      - name: Live anonymous peak endpoint must reject access
+        shell: bash
+        run: |
+          set -euo pipefail
+          ENDPOINT="https://qexbtubfoyfsllaiecvv.supabase.co/functions/v1/asheng-holding-peak"
+          STATUS="unknown"
+          for TRY in 1 2 3; do
+            STATUS="$(curl -sS --max-time 8 -o /tmp/peak_anon.json -w '%{http_code}' "$ENDPOINT")" || STATUS="network_error"
+            if [ "$STATUS" = "401" ]; then
+              echo "PASS: anonymous holding peaks access rejected (HTTP 401)"
+              break
+            fi
+            sleep 2
+          done
+          test "$STATUS" = "401" || { echo "::error::Unauthorized peak access status $STATUS"; exit 1; }
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
