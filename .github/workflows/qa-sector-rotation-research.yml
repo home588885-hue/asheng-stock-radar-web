@@ -4,6 +4,8 @@ on:
     paths:
       - 'diagnostics/sector-rotation-independent-research.mjs'
       - 'diagnostics/sector-rotation-independent-research.test.mjs'
+      - 'diagnostics/official-eod-history-probe.mjs'
+      - 'diagnostics/official-eod-history-probe.test.mjs'
       - '.github/workflows/qa-sector-rotation-research.yml'
 permissions:
   contents: read
@@ -17,4 +19,6 @@ jobs:
         with:
           node-version: '22'
       - name: Verify paired turnover-share flow and RS 50/10 calculations
-        run: node --test diagnostics/sector-rotation-independent-research.test.mjs
+        run: node --test diagnostics/sector-rotation-independent-research.test.mjs diagnostics/official-eod-history-probe.test.mjs
+      - name: Probe two official historical dates with no database writes or secrets
+        run: node diagnostics/official-eod-history-probe.mjs 2026-10-27 2026-10-28
