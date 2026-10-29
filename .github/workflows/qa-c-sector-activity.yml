@@ -1,0 +1,23 @@
+name: C sector activity observation QA (no extra quotes)
+on:
+  pull_request:
+    paths:
+      - 'sector-c-activity.js'
+      - 'admin.html'
+      - 'diagnostics/c-sector-activity-20261029.test.mjs'
+      - '.github/workflows/qa-c-sector-activity.yml'
+permissions:
+  contents: read
+jobs:
+  confirm-c-sector-view:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test two consecutive C market observations and frontend script
+        run: node --test diagnostics/c-sector-activity-20261029.test.mjs
+      - name: Existing stock and holding regression gates
+        run: node diagnostics/radar-regression-gates.js
