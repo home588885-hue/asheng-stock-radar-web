@@ -9,7 +9,7 @@ const globals={window:{},Intl,Date,Math,Number,Map,Set,Object,String,RegExp};
 vm.runInNewContext(source,globals,{filename:'sector-c-activity.js'});
 const make=()=>globals.window.AshengCSectorActivity.createCSectorActivity();
 const on=(clock)=>new Date('2026-10-29T'+clock+':00+08:00');
-const stock=(id,market='tse',industry='半導體業')=>({stock_id:id,market,industry,avg_volume_20_lots:540});
+const stock=(id,market='tse',industry='半導體業')=>({stock_id:id,market,industry,avg_volume_20_lots:540,as_of:'2026-10-28',stage:'LAUNCH'});
 const quote=(id,clock,vol,opts={})=>({stock_id:id,market:'tse',quote_date:'20261029',
   quote_time:clock,price:100,volume_lots:vol,has_today_trade:true,
   price_source:'mis_last_trade',...opts});
@@ -106,4 +106,32 @@ test('quote monitor itself has no fetch, trading action, Supabase calls or timer
  for(const forbidden of [/\bfetch\s*\(/,/\bsetInterval\s*\(/,/\blocalStorage\b/,
    /\bSupabase\b/,/\btrade_order\b/,/scan.bridge/i,/\bsetTimeout\s*\(/])
    assert.doesNotMatch(source,forbidden);
+});
+
+test('C active radar stage cannot silently pool previous-stage stocks',()=>{
+ const m=make();
+ m.track(stock('2330','tse','半導體業'));
+ m.track(stock('2303','tse','半導體業'));
+ m.track({...stock('2454','tse','半導體業'),stage:'ENTRY'});
+ m.observe(['2330','2303','2454'].map(id=>quote(id,'10:02:00',100)),
+   {now:on('10:04'),marketOpen:true,stage:'LAUNCH'});
+ m.observe(['2330','2303','2454'].map(id=>quote(id,'10:06:00',150)),
+   {now:on('10:08'),marketOpen:true,stage:'LAUNCH'});
+ const l=m.summarize('半導體業','tse',{now:on('10:08'),marketOpen:true,stage:'LAUNCH'});
+ const e=m.summarize('半導體業','tse',{now:on('10:08'),marketOpen:true,stage:'ENTRY'});
+ assert.equal(l.ready,false);
+ assert.equal(l.total,2);
+ assert.equal(e.ready,false);
+ assert.equal(e.total,1);
+});
+test('a six-day-old S reference volume cannot be called a current C pace baseline',()=>{
+ const m=make();
+ for(const id of ['2330','2303','2454'])m.track({...stock(id),as_of:'2026-10-20'});
+ m.observe(['2330','2303','2454'].map(id=>quote(id,'10:02:00',100)),
+   {now:on('10:04'),marketOpen:true,stage:'LAUNCH'});
+ m.observe(['2330','2303','2454'].map(id=>quote(id,'10:06:00',150)),
+   {now:on('10:08'),marketOpen:true,stage:'LAUNCH'});
+ const v=m.summarize('半導體業','tse',{now:on('10:08'),marketOpen:true,stage:'LAUNCH'});
+ assert.equal(v.ready,false);
+ assert.equal(v.reason,'missing_verified_S_avg_volume');
 });
