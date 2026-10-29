@@ -6218,13 +6218,21 @@ h1 {
       let sectorRotationLoading = false;
       let sectorRotationLastCheckAt = 0;
       const sectorRotationText = industry => {
-        const prefix='｜族群樣本：';
         const row=sectorRotationState?.sectors?.get(String(industry||''));
         const day=String(sectorRotationState?.as_of||'').slice(5).replace('-','/');
-        if(!sectorRotationState)return prefix+'讀取中';
-        if(sectorRotationState.stale)return prefix+'資料過期（'+day+'）';
-        if(!row)return prefix+'覆蓋不足（'+day+'）';
-        return prefix+String(row.label||'⚪待確認')+'（'+day+'、'+Number(row.sample_count||0)+'檔）';
+        if(!sectorRotationState)return '｜族群樣本：讀取中';
+        if(sectorRotationState.stale)return '｜族群樣本：資料過期（'+day+'）';
+        if(!row)return '｜族群樣本：覆蓋不足（'+day+'）';
+        if(sectorRotationState.live===true){
+          const time=new Intl.DateTimeFormat('zh-TW',{timeZone:'Asia/Taipei',
+            hour:'2-digit',minute:'2-digit',hourCycle:'h23'})
+            .format(new Date(sectorRotationState.observed_at));
+          return '｜族群盤中樣本 '+String(row.label||'⚪待確認')+'（'
+            +time+'、'+Number(row.sample_count||0)+'/'+Number(row.target_count||0)
+            +'檔，非淨流入）';
+        }
+        return '｜族群S樣本 '+String(row.label||'⚪待確認')+'（'+day+'、'
+          +Number(row.sample_count||0)+'檔，非即時）';
       };
       const refreshSectorRotationLabels = () => {
         if(document.hidden)return;
@@ -6241,14 +6249,30 @@ h1 {
           const sessionResult=await authClient.auth.getSession();
           if(sessionResult?.data?.session)memberSession=sessionResult.data.session;
           if(!memberSession?.access_token)throw new Error('member_session_missing');
-          const {response,data}=await fetchJsonWithTimeout(SECTOR_ROTATION_API,
-            {cache:'no-store',headers:{Authorization:'Bearer '+memberSession.access_token}},8500);
-          if(!response.ok||data?.ok!==true||data?.live!==false||
-              data?.scope!=='subset_of_EOD_scans_not_full_market' ||
-              !Array.isArray(data.sectors)||!/^\d{4}-\d{2}-\d{2}$/.test(String(data.as_of||'')))
-            throw new Error('sector_observation_untrusted_or_unavailable');
-          sectorRotationState={as_of:data.as_of,stale:data.stale===true||data.source_truncated===true,
-            sectors:new Map(data.sectors.filter(x=>typeof x?.industry==='string')
+          const requestLive=taipeiMarketState().open;
+          const url=SECTOR_ROTATION_API+(requestLive?'?mode=intraday':'');
+          const {response,data}=await fetchJsonWithTimeout(url,
+            {cache:'no-store',headers:{Authorization:'Bearer '+memberSession.access_token}},16500);
+          if(!response.ok||data?.ok!==true)throw new Error('sector_observation_unavailable');
+          const liveValid=requestLive&&data?.mode==='intraday'&&data.live===true
+            &&data.scope==='subset_of_verified_current_trade_not_full_market'
+            &&data.is_net_inflow===false&&Array.isArray(data.sectors)
+            &&/^\d{4}-\d{2}-\d{2}$/.test(String(data.as_of||''))
+            &&String(data.as_of).replace(/-/g,'')===todayQuoteDate()
+            &&Number.isFinite(Date.parse(data.observed_at))
+            &&Date.now()-Date.parse(data.observed_at)>=-120000
+            &&Date.now()-Date.parse(data.observed_at)<240000;
+          const fallback=liveValid?null:(data.eod_fallback||data);
+          if(!liveValid&&(fallback?.ok!==true ||
+            fallback?.scope!=='subset_of_EOD_scans_not_full_market' ||
+            !Array.isArray(fallback.sectors)||
+            !/^\d{4}-\d{2}-\d{2}$/.test(String(fallback.as_of||''))))
+            throw new Error('sector_observation_untrusted_or_stale');
+          const shown=liveValid?data:fallback;
+          sectorRotationState={as_of:shown.as_of,live:liveValid,
+            observed_at:liveValid?data.observed_at:null,
+            stale:shown.stale===true||shown.source_truncated===true,
+            sectors:new Map(shown.sectors.filter(x=>typeof x?.industry==='string')
               .map(x=>[x.industry,x]))};
         }catch(error){
           sectorRotationState={as_of:'-',stale:true,sectors:new Map()};
@@ -9543,6 +9567,7 @@ h1 {
           button.classList.add('on');
           moneyFlowSectorViewActive = false;
           stage = targetStage;
+          void refreshSectorRotationObservation();
           renderScoutPanel();
           void refreshScoutCloud();
           try { localStorage.setItem(LAST_RADAR_STAGE_KEY, stage); } catch (error) {}
