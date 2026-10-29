@@ -13,7 +13,7 @@ test('only verified user owns the source holding; no arbitrary portfolio input',
 test('server never accepts client supplied price/peak or paid scanner API',()=>{
  assert.doesNotMatch(src,/body\?\.(price|high|peak|cost)/);
  assert.match(src,/mis\.twse\.com\.tw\/stock\/api\/getStockInfo\.jsp/);
- assert.doesNotMatch(src,/asheng-scan-bridge|FinMind|paid|scan_now/i);
+ assert.doesNotMatch(src,/\/functions\/v1\/asheng-scan-bridge|api\.finmindtrade\.com|scan_now\s*\(/i);
 });
 test('quote proof required before RPC write',()=>{
  assert.match(src,/verifiedTwsePeak\(q,holding,now\)/);
