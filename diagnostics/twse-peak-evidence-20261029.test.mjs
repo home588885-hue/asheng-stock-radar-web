@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {verifiedTwsePeak} from '../supabase/functions/_shared/asheng-twse-peak-evidence.mjs';
+import {verifiedTwsePeak} from '../supabase/functions/asheng-holding-peak/peak-evidence.mjs';
 const now=new Date('2026-10-29T12:00:00+08:00');
 const quote={quote_date:'20261029',quote_time:'11:01:00',price:110,high:124,
   has_today_trade:true,price_source:'mis_last_trade',volume_lots:10800};
