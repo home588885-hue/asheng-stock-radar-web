@@ -19,7 +19,7 @@
 1. `spring_swallow_holdings` 有 38 筆有效持股，全部 38 筆有 `peak_close` 及匹配的持股成本與買進時間基準。然而 `peak_close` 是**最高收盤價**，不是經逐筆或有效日高確認的**買進後最高價**；直接拿它冒充最高價會造成少報警示。必須建立可信且與該筆買入身份綁定的已驗證最高價來源（實際行情、有效日高、歷史追溯）與永久保存。
 2. `radar_member_holdings` 10 筆有效持股，目前表格沒有獨立的最高價欄位。禁止以其他使用者或舊持股的高點代入。
 
-另外，已現場核實 ACTIVE `spring-swallow-analyze` v55 與 `spring-swallow-picks` v73 仍輸出 `-5%/+10%` 舊風控。更正必須同時完整覆蓋分析端、picks 回傳、個人持股訊號、前端／LINE 提示，不能只更新顯示文字。
+初始稽核曾確認 ACTIVE `spring-swallow-analyze` v55 與 `spring-swallow-picks` v73 輸出舊版 `-5%/+10%`。**現已部署新 v56／v74 更新欄位**；各登入持股高水位仍需完整授權 E2E。
 
 ## 正式驗收門檻
 1. 單元測試全過；持股每一筆唯一身分（user/portfolio/stock/bought_at/cost）驗證，重買、賣出重建、加碼成本變動安全處理。
@@ -63,3 +63,12 @@
 - **外部匿名 HTTP 及真實管理員帳戶端到端測試尚未成功執行**（執行環境網路工具無法連通該網址），不得宣稱 live E2E 100% 驗收。部署需要 `ASHENG_ADMIN_PORTFOLIO_ID` 伺服器端環境值；其實際是否已設定無法用現有工具驗證。若未設定則此舊端點按設計回 503、拒絕讀寫；主介面 `admin.html` 的持股主路徑為另一個 `asheng-member-api`，未修改。
 - 原 Issue #6 保持開啟，待確認合法舊客戶端需求、環境設定與合法登入回歸測試，才能結案。
 - **未修改正式 main、`asheng-member-api`、`spring-swallow-analyze`、`spring-swallow-picks`、持股資料、排程、LINE 或房產網站。**
+
+## 2026-10-29 最新實際上線驗證
+
+- 後端分析與選股結果已依經過 QA 的草稿原始碼**分別部署**：`spring-swallow-analyze v56`、`spring-swallow-picks v74`，兩者 ACTIVE。已讀回正式部署程式，風控欄位改為 `stop_pct=-10`、`trailing_arm_profit_pct=20`、`trailing_retrace_from_peak_pct=5`，並明確 `take_profit_full_pct=null`。舊資料僅於讀取時附 `source_policy_version` 標記，原 DB 舊快照並未篡改。
+- 已套用**增量資料庫 migration** `asheng_verified_holding_peaks_20261029`：建立空的 `public.asheng_holding_verified_peaks`；RLS 已驗證開啟，authenticated 僅可讀取自己的列，anon 不能讀，直接更新 RPC 僅授權 service_role 且 SECURITY INVOKER。資料表最初為 0 列，未填寫歷史假高點，未修改 `spring_swallow_holdings` 或 `radar_member_holdings`。
+- `asheng-holding-peak v1` 獨立 Edge Function 已部署 ACTIVE，使用驗證會員 JWT 的 `getUser()`，會員 RLS／管理員帳戶來源隔離；不採用客戶端傳入的股價，由伺服器查 TWSE MIS，最多 30 檔/批。買入當日只能接受買入後的有效成交價，不可用無法定時點的日高；後續日可保存經驗證之日高。只做有登入前台的隨選觀察，**不新增背景掃描、排程、付費日K或交易下單**。
+- 正式前端 `admin.html` 的新功能僅在使用者進入「已買進」後進行一次輕量高水位讀取及可用時的 TWSE 市場資料觀察；新 API 不通時退回原有卡片，不得清空持股或偽造成功。已比對登入成本/買入日，不跨裝置套用舊倉價格。**更新至 GitHub Pages 前必須先合併本 PR。**
+- [Actions #40803705351](https://github.com/home588885-hue/asheng-stock-radar-web/actions/runs/40803705351)：**43/43 QA 通過**、原有 `radar-regression-gates.js` 全通過、匿名 GET `asheng-holding-peak` 實際 HTTP 401、Deno TypeScript 核對與舊分析器語法編譯通過。
+- **未完成且不得宣稱通過**：持有效真實管理員 JWT 的 GET/POST 端到端測試；持續觀察的完整買入日起最高成交價歷史。此功能只保證自部署後有收到的有效觀察，不是未曾觀察時間的真實最高價。
