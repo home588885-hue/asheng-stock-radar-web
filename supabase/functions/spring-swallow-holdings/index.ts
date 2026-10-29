@@ -9,7 +9,7 @@ Deno.serve(async(req)=>{
   // Defense in depth: this legacy handler must never trust portfolio_id alone.
   // Main admin.html uses the authenticated asheng-member-api instead.
   const bearer = String(req.headers.get('Authorization') || '');
-  if (!/^Bearer\\s+[^\\s]+$/.test(bearer)) return out({ok:false,error:'unauthorized'},401);
+  if (!/^Bearer\s+[^\s]+$/.test(bearer)) return out({ok:false,error:'unauthorized'},401);
   const anon = Deno.env.get('SUPABASE_ANON_KEY') || '';
   const url = Deno.env.get('SUPABASE_URL') || '';
   const allowedPortfolio = Deno.env.get('ASHENG_ADMIN_PORTFOLIO_ID') || '';
