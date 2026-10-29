@@ -201,3 +201,29 @@ test('C/S sector observation is visible without expanding compact cards in all t
  assert.match(ui,/\.radar-compact-next\.sector-compact/);
  assert.match(ui,/return live\+eod/);
 });
+
+test('historical scout cards receive today-only verified C trades without becoming buy signals',()=>{
+ const historicStart=ui.indexOf('const scoutHistoryQuoteTargets=');
+ const historicEnd=ui.indexOf('const renderScoutPanel=',historicStart);
+ assert.ok(historicStart>=0&&historicEnd>historicStart);
+ const historic=ui.slice(historicStart,historicEnd);
+ assert.match(historic,/scoutOnlyLaunchRows\(\)/);
+ assert.match(historic,/const scoutHistoryTodayTrade=id=>/);
+ assert.match(historic,/validTodayQuote\(quote\)\?quote:null/);
+ assert.match(historic,/liveQuoteCache\.get\(String\(id\|\|''\)\)/);
+ assert.match(historic,/C 今日有效成交待取得/);
+ assert.match(historic,/S 歷史收盤（非即時）/);
+ assert.match(historic,/尚非買點|禁止追高|非目前買點/);
+ const quoteStart=ui.indexOf('async function refreshSimpleQuotes()');
+ const quoteEnd=ui.indexOf('const v5MonitorState',quoteStart);
+ assert.ok(quoteStart>=0&&quoteEnd>quoteStart);
+ const quoteFlow=ui.slice(quoteStart,quoteEnd);
+ assert.match(quoteFlow,/\.\.\.scoutHistoryQuoteTargets\(\)/);
+ assert.match(quoteFlow,/const payload = await window\.getLiveQuotes\(quoteTargets\)/);
+ assert.match(quoteFlow,/new Set\(quoteTargets\.map/);
+ assert.doesNotMatch(historic,/\bfetch\s*\(|\bsetInterval\s*\(|\bauditSignalObserved\s*\(/);
+ // The only preexisting C quote reader still handles all symbols and keeps
+ // the 30-stock-per-batch limit and the old 150-second cache reuse intact.
+ assert.match(ui,/for \(let i = 0; i < pending.length; i \+= 30\)/);
+ assert.match(ui,/const LIVE_QUOTE_REUSE_MS = 150000/);
+});
