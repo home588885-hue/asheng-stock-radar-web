@@ -1749,6 +1749,7 @@ h1 {
         'https://qexbtubfoyfsllaiecvv.supabase.co/functions/v1/spring-swallow-analyze';
       const HOLDINGS_API = MEMBER_API + '?action=holdings';
       const VERIFIED_PEAK_API = SHARED_DATA_HUB + '/asheng-holding-peak';
+      const SECTOR_ROTATION_API = SHARED_DATA_HUB + '/asheng-sector-rotation';
       // Model snapshots are public market calculations, not private portfolio rows.
       // Read them directly from the existing S endpoint: one Edge request instead of proxying through member-api.
       const HOLDING_SNAPSHOT_API = SHARED_DATA_HUB + '/spring-swallow-picks';
@@ -6211,11 +6212,52 @@ h1 {
         }
         return t?t.slice(0,34):'⚪ 山川資料待更新';
       };
+      // DISPLAY ONLY: sector reads an independently dated, sampled S EOD cohort.
+      // This MUST NEVER change entry/holding signals, scores, filters or C quotes.
+      let sectorRotationState = null;
+      let sectorRotationLoading = false;
+      let sectorRotationLastCheckAt = 0;
+      const sectorRotationText = industry => {
+        const prefix='｜族群樣本：';
+        const row=sectorRotationState?.sectors?.get(String(industry||''));
+        const day=String(sectorRotationState?.as_of||'').slice(5).replace('-','/');
+        if(!sectorRotationState)return prefix+'讀取中';
+        if(sectorRotationState.stale)return prefix+'資料過期（'+day+'）';
+        if(!row)return prefix+'覆蓋不足（'+day+'）';
+        return prefix+String(row.label||'⚪待確認')+'（'+day+'、'+Number(row.sample_count||0)+'檔）';
+      };
+      const refreshSectorRotationLabels = () => {
+        if(document.hidden)return;
+        document.querySelectorAll('[data-sector-industry]').forEach(node=>{
+          const industry=String(node.getAttribute('data-sector-industry')||'');
+          const label=sectorRotationText(industry);
+          if(node.textContent!==label)node.textContent=label;
+        });
+      };
+      const refreshSectorRotationObservation = async () => {
+        if(document.hidden||sectorRotationLoading||Date.now()-sectorRotationLastCheckAt<300000)return;
+        sectorRotationLoading=true; sectorRotationLastCheckAt=Date.now();
+        try{
+          const {response,data}=await fetchJsonWithTimeout(SECTOR_ROTATION_API,{cache:'no-store'},8500);
+          if(!response.ok||data?.ok!==true||data?.live!==false||
+              data?.scope!=='subset_of_EOD_scans_not_full_market' ||
+              !Array.isArray(data.sectors)||!/^\d{4}-\d{2}-\d{2}$/.test(String(data.as_of||'')))
+            throw new Error('sector_observation_untrusted_or_unavailable');
+          sectorRotationState={as_of:data.as_of,stale:data.stale===true||data.source_truncated===true,
+            sectors:new Map(data.sectors.filter(x=>typeof x?.industry==='string')
+              .map(x=>[x.industry,x]))};
+        }catch(error){
+          sectorRotationState={as_of:'-',stale:true,sectors:new Map()};
+        }finally{
+          sectorRotationLoading=false;
+          refreshSectorRotationLabels();
+        }
+      };
       const volumePriceHtml = (item, quote = null) => {
         const s = volumePriceState(item, quote);
         const ratioText = s.volumeRatio == null || !Number.isFinite(s.volumeRatio) ? '量比待更新' : (s.intraday ? '盤中估算今日量比 ' : '今日量比 ') + num(s.volumeRatio,2) + 'x';
         const positionText = Number.isFinite(s.pos1y) ? '年內位置 '+num(s.pos1y,1)+'%' : '年內位置待更新';
-        return '<div class="volume-price-read"><span class="flow-tag '+esc(s.tone)+'">'+esc(s.tag)+'</span><span class="flow-read-note">'+esc(s.note)+'</span><small>'+esc(ratioText+'｜'+positionText)+'</small></div>';
+        return '<div class="volume-price-read"><span class="flow-tag '+esc(s.tone)+'">'+esc(s.tag)+'</span><span class="flow-read-note">'+esc(s.note)+'</span><small>'+esc(ratioText+'｜'+positionText)+'<span data-sector-industry="'+esc(String(item?.industry||''))+'">'+esc(sectorRotationText(item?.industry))+'</span></small></div>';
       };
 
       // Unified display-only C/S quote source and real trade timestamp.
@@ -7966,7 +8008,7 @@ h1 {
                 <span>${esc(quoteDisplayState(live,item).label)} <b>${price!=null?esc(num(price,2)):'-'}</b></span>
                 <span>損益 <b class="${holdingPnlClass(pnl)}">${pnl==null?'-':(pnl>0?'+':'')+esc(num(pnl,2))+'%'}</b></span></span>
               <span class="holding-mini-status">${esc(positionStatus+addObservation)}</span>
-              <span class="holding-mini-date">量價｜${esc(volumePriceState(item,live).tag)}｜${esc(volumePriceState(item,live).note)}</span><span class="holding-mini-date">山川｜${esc(shanchuanBrief(item,live))}</span><span class="holding-mini-date">${esc(tdccHolderBrief(item))}</span>
+              <span class="holding-mini-date">量價｜${esc(volumePriceState(item,live).tag)}｜${esc(volumePriceState(item,live).note)}<small data-sector-industry="${esc(String(item?.industry||''))}">${esc(sectorRotationText(item?.industry))}</small></span><span class="holding-mini-date">山川｜${esc(shanchuanBrief(item,live))}</span><span class="holding-mini-date">${esc(tdccHolderBrief(item))}</span>
               <span class="holding-mini-date">S 模型 ${esc(item.as_of||'待更新')}｜${live?'C 成交時間 '+esc(quoteDisplayState(live,item).moment)+(quoteDisplayState(live,item).live?'｜盤中即時':'｜非即時'):'無有效 C 成交，非即時模型價'}</span>
             </summary>
             <div class="holding-mini-body">
@@ -8232,6 +8274,7 @@ h1 {
         const keyed=next.length && nextKeys.length===next.length && new Set(nextKeys).size===nextKeys.length;
         if(!keyed){
           if(list.innerHTML!==safeHtml) list.innerHTML=safeHtml;
+          refreshSectorRotationLabels();
           restoreStockAnchor(anchor);
           return;
         }
@@ -8257,6 +8300,7 @@ h1 {
           cur.delete(key);
         });
         cur.forEach(node=>node.remove());
+        refreshSectorRotationLabels();
         restoreStockAnchor(anchor);
         if (!moneyFlowSectorViewActive && !($('#stockSearch')?.value || '').trim()) {
           stageViewCache.set(stage, list.innerHTML);
@@ -9514,6 +9558,8 @@ h1 {
         })
       );
       let moneyFlowSectorViewActive=false;
+      // One best-effort read on foreground start. No new timers, no C/S scans.
+      void refreshSectorRotationObservation();
 
       $('#stockSearchBtn').addEventListener('click', searchStock);
       $('#stockClearBtn').addEventListener('click', clearSearch);
