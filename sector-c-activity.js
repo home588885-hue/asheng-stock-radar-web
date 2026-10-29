@@ -37,11 +37,13 @@
       const industry=String(stock?.industry||'').trim();
       if(!/^[0-9A-Z.-]{2,12}$/.test(id)||!market||!industry||industry==='其他')return false;
       const avg=positive(stock?.avg_volume_20_lots);
-      names.set(id,{industry,market,avg});
+      const stage=String(stock?.stage||'');
+      const asOf=String(stock?.as_of||'').slice(0,10);
+      names.set(id,{industry,market,avg,stage,asOf});
       if(names.size>limit)names.delete(names.keys().next().value);
       return true;
     };
-    const observe=(items,{now=new Date(),marketOpen=false}={})=>{
+    const observe=(items,{now=new Date(),marketOpen=false,stage=''}={})=>{
       if(!marketOpen||!(now instanceof Date)||!Number.isFinite(now.getTime()))return 0;
       const today=dayNow(now);
       if(session!==today){session=today;quotes.clear();}
@@ -49,7 +51,8 @@
       for(const q of Array.isArray(items)?items:[]){
         if(q?.cached_last_trade===true||q?.has_today_trade!==true)continue;
         const id=String(q.stock_id||''),meta=names.get(id);
-        if(!meta||marketName(q.market)!==meta.market)continue;
+        if(!meta||marketName(q.market)!==meta.market
+          ||(stage&&meta.stage!==stage))continue;
         const day=String(q.quote_date||'').replace(/[^0-9]/g,'');
         if(day!==today)continue;
         if(!['mis_last_trade','mis_trade_last'].includes(String(q.price_source||'')))continue;
@@ -74,17 +77,22 @@
       }
       return updated;
     };
-    const summarize=(industry,market,{now=new Date(),marketOpen=false}={})=>{
+    const summarize=(industry,market,{now=new Date(),marketOpen=false,stage=''}={})=>{
       if(!marketOpen||dayNow(now)!==session)return {ready:false,reason:'market_closed_or_no_today_sample'};
       const m=marketName(market),sector=String(industry||'');
-      const members=[...names].filter(([,v])=>v.market===m&&v.industry===sector);
+      const members=[...names].filter(([,v])=>v.market===m&&v.industry===sector
+        &&(!stage||v.stage===stage));
       if(!sector||!m||!members.length)return {ready:false,reason:'not_tracked'};
       const usable=[];
       for(const [id,meta] of members){
         const sample=quotes.get(id);
         if(!sample?.pair||!sample?.newer||sample.newer.day!==session)continue;
         if(now.getTime()-sample.newer.at>300000||now.getTime()-sample.newer.at< -120000)continue;
-        usable.push({id,...sample.pair,avg:meta.avg});
+        const baseline=Date.parse(meta.asOf+'T00:00:00+08:00');
+        const ageDays=(now.getTime()-baseline)/86400000;
+        const pace=Number.isFinite(ageDays)&&ageDays>=0&&ageDays<=6
+          ?sample.pair.volumePace:null;
+        usable.push({id,...sample.pair,volumePace:pace});
       }
       const covered=usable.length,total=members.length,coverage=total?covered/total:0;
       if(covered<3||coverage<0.6)return {ready:false,reason:'insufficient_paired_C_quotes',
