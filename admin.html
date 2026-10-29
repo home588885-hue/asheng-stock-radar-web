@@ -2227,9 +2227,17 @@ h1 {
       };
       // Price-only C observations for the displayed historical rows. They
       // remain historical S research, never input to buy/trial/add rules.
+      // Historical cloud rows do not store their exchange. For such rows,
+      // alternate TSE/OTC in successive existing C refresh waves until a
+      // verified trade identifies the actual market, without extra requests.
+      const scoutMarketAttempt=new Map();
       const scoutHistoryQuoteTargets=()=>scoutOnlyLaunchRows().map(x=>{
         const id=String(x.stock_id||'');
-        return {stock_id:id,market:String(x.market||liveQuoteCache.get(id)?.market||'tse')};
+        const knownMarket=String(x.market||liveQuoteCache.get(id)?.market||'');
+        const market=knownMarket||(
+          scoutMarketAttempt.get(id)==='tse'?'otc':'tse');
+        if(!knownMarket)scoutMarketAttempt.set(id,market);
+        return {stock_id:id,market};
       });
       const scoutHistoryTodayTrade=id=>{
         if(!marketBridgeReady()||stage!=='LAUNCH')return null;
