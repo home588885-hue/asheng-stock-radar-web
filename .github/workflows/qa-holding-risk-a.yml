@@ -1,0 +1,22 @@
+name: Holding Risk A Unit Tests (read only)
+on:
+  pull_request:
+    paths:
+      - 'supabase/functions/_shared/asheng-holding-risk-a.mjs'
+      - 'diagnostics/holding-risk-policy-a-20261029.test.mjs'
+      - '.github/workflows/qa-holding-risk-a.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  risk-a-pure-qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify pure alert evaluator (no API calls, no scans)
+        run: node --test diagnostics/holding-risk-policy-a-20261029.test.mjs
