@@ -6,7 +6,7 @@ const headers={
   'Access-Control-Allow-Methods':'GET,OPTIONS',
   'Access-Control-Allow-Headers':'authorization,apikey,content-type',
   'Content-Type':'application/json; charset=utf-8',
-  'Cache-Control':'public,max-age=90,s-maxage=90'
+  'Cache-Control':'private,no-store'
 };
 const respond=(value:unknown,status=200)=>new Response(JSON.stringify(value),{status,headers});
 Deno.serve(async (req:Request)=>{
