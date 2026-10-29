@@ -14,6 +14,8 @@ on:
       - 'supabase/migrations/20261029_asheng_verified_holding_peaks.sql'
       - 'diagnostics/twse-peak-evidence-20261029.test.mjs'
       - 'diagnostics/holding-peak-server-20261029.test.mjs'
+      - 'admin.html'
+      - 'diagnostics/holding-peak-admin-ui-20261029.test.mjs'
       - 'diagnostics/deno-legacy-risk-check.json'
       - '.github/workflows/qa-holding-risk-a.yml'
 
@@ -30,7 +32,7 @@ jobs:
         with:
           node-version: '22'
       - name: Verify pure alert evaluator (no API calls, no scans)
-        run: node --test diagnostics/holding-risk-policy-a-20261029.test.mjs diagnostics/legacy-holdings-auth-20261029.test.mjs diagnostics/holding-risk-policy-a-source-contract-20261029.test.mjs diagnostics/twse-peak-evidence-20261029.test.mjs diagnostics/holding-peak-server-20261029.test.mjs
+        run: node --test diagnostics/holding-risk-policy-a-20261029.test.mjs diagnostics/legacy-holdings-auth-20261029.test.mjs diagnostics/holding-risk-policy-a-source-contract-20261029.test.mjs diagnostics/twse-peak-evidence-20261029.test.mjs diagnostics/holding-peak-server-20261029.test.mjs diagnostics/holding-peak-admin-ui-20261029.test.mjs
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
