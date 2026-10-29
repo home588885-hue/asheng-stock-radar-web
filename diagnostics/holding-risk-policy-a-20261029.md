@@ -46,3 +46,11 @@
 2. 建立以帳戶/持股事件隔離的可信可持久化高點來源。既有 `peak_close` 可作為 **EOD-close observation**，不能冒充經完整回溯的 daily high，更不能將買入當日不確定的日高當作買後高點。
 3. 所有正式回寫與讀取須驗證 RLS / service-role 權限，不容許跨帳戶讀取。
 4. 跑真實 EOD 與 C 行情端到端測試，再保留回滾與舊政策區分標籤正式部署；持股不自動買賣。
+
+## 主線身分與 API 拆分補充驗證（同日唯讀）
+
+- 正式 `admin.html` 把 `HOLDINGS_API` 指向 `asheng-member-api?action=holdings`，使用既有 Supabase 會員登入的 JWT。**不是直接使用**名為 `spring-swallow-holdings` 的舊函式。
+- `asheng-member-api` 有 `auth.getUser()`、會員身分確認。管理員讀寫 `spring_swallow_holdings`，其他會員讀寫按 `auth.uid()` 隔離的 `radar_member_holdings`。資料庫目前 38 筆前者有效、10 筆後者有效；兩者是**不同持股來源，不可混合計數或交叉引用高點**。
+- 已讀到會員 `save_holding` 的正式程式會在「編輯現有有效持股」時保留原 `bought_at`，賣出再買另起；測試版對買入事件和成本變更加入明確隔離。
+- 目前另有舊版 `spring-swallow-holdings` 函式仍 ACTIVE 且 `verify_jwt=false`。此服務是否仍被其他客戶端使用未完全確認，存在權限稽核必要；另開 [Issue #6](https://github.com/home588885-hue/asheng-stock-radar-web/issues/6)。**不應透過舊函式實作跨裝置高價同步**。
+- 正式跨裝置高水位應優先在已驗證 JWT 的 `asheng-member-api` 或具嚴格 RLS / RPC 保護的獨立服務實作。未驗收權限與完整時間戳前不新增資料寫入。
