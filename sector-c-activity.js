@@ -120,13 +120,13 @@
     };
     const label=(industry,market,opts={})=>{
       const v=summarize(industry,market,opts);
-      if(!v.ready)return '｜C盤中族群：'+(v.reason==='market_closed_or_no_today_sample'
+      if(!v.ready)return '｜C盤中族群成交活躍度：'+(v.reason==='market_closed_or_no_today_sample'
         ?'非即時':'有效連續樣本不足');
       const time=new Intl.DateTimeFormat('zh-TW',{timeZone:'Asia/Taipei',
         hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date(v.as_of));
       const perMinute=v.estimated_twd_per_minute/10000;
       const cash=perMinute>=10000?(perMinute/10000).toFixed(2)+'億':perMinute.toFixed(0)+'萬';
-      return '｜C追蹤族群 '+v.covered+'/'+v.total+'檔｜量能'
+      return '｜C盤中族群成交活躍度｜追蹤 '+v.covered+'/'+v.total+'檔｜量能'
         +v.median_volume_pace.toFixed(1)+'x｜估每分鐘成交額 '+cash
         +'（'+time+'，非淨買超）';
     };
