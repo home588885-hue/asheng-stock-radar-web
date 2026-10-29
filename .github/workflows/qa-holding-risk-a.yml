@@ -16,6 +16,7 @@ on:
       - 'diagnostics/holding-peak-server-20261029.test.mjs'
       - 'admin.html'
       - 'diagnostics/holding-peak-admin-ui-20261029.test.mjs'
+      - 'diagnostics/radar-regression-gates.js'
       - 'diagnostics/deno-legacy-risk-check.json'
       - '.github/workflows/qa-holding-risk-a.yml'
 
