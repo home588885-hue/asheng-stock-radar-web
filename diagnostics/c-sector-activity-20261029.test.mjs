@@ -163,3 +163,19 @@ test('tab remapping resets old trade pairs for an overlapping stock cohort',()=>
  assert.equal(m.summarize('半導體業','tse',
    {now:on('10:13'),marketOpen:true,stage:'HOLDING'}).ready,false);
 });
+
+test('a late asynchronous C reply cannot seed a newly selected radar tab',()=>{
+ const start=ui.indexOf('window.getLiveQuotes = async items => {');
+ const end=ui.indexOf('const HOLDINGS_CACHE_PREFIX',start);
+ assert.ok(start>0&&end>start,'C quote function must remain present');
+ const quoteFlow=ui.slice(start,end);
+ assert.match(quoteFlow,/const observationStage = stage;/);
+ assert.match(quoteFlow,/if\(sectorCActivity && stage===observationStage\)/);
+ assert.match(quoteFlow,/stage:observationStage/);
+ assert.ok(quoteFlow.indexOf('const observationStage = stage;')
+   <quoteFlow.indexOf('await Promise.all(chunks.map'),
+   'capture tab before the C network operation');
+ assert.ok(quoteFlow.indexOf('if(sectorCActivity && stage===observationStage)')
+   <quoteFlow.indexOf('sectorCActivity.observe('),
+   'discard late old-tab quote pairs before recording samples');
+});

@@ -1955,6 +1955,9 @@ h1 {
       const cQuoteReadWindow=()=>taipeiMarketState().open||cPostCloseWindow();
       const cPostCloseQuoteAttempted=new Set();
       window.getLiveQuotes = async items => {
+        // Associate this async request with its originating tab, not whatever
+        // tab happens to be active when the C response eventually arrives.
+        const observationStage = stage;
         // 網頁在背景或非交易時段，禁止發出新的即時行情請求。
         const candidatesViaBridge = marketBridgeReady() && ['LAUNCH','ENTRY'].includes(stage);
         const quoteWindow = marketBridgeReady() && cQuoteReadWindow();
@@ -2013,10 +2016,11 @@ h1 {
           return validTodayQuote(cached) ? {...cached,cached_last_trade:true} : null;
         }).filter(validTodayQuote);
         persistLiveQuoteCache();
+        // A late reply from a prior tab must never seed the new tab's C cohort.
         // Display-only sampling from existing C responses; no additional HTTP.
-        if(sectorCActivity){
+        if(sectorCActivity && stage===observationStage){
           sectorCActivity.observe(quotes.filter(q=>q.cached_last_trade!==true),
-            {now:new Date(),marketOpen:taipeiMarketState().open,stage});
+            {now:new Date(),marketOpen:taipeiMarketState().open,stage:observationStage});
           refreshSectorRotationLabels();
         }
         const fetchedNow=quotes.filter(q=>!q.cached_last_trade && incoming.has(String(q.stock_id))).length;
