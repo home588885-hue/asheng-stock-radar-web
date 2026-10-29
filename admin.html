@@ -6941,11 +6941,11 @@ h1 {
         const remote=holding._verified_observed_peak||null;
         const remoteAt=Date.parse(String(remote?.observed_at||''));
         const currentDate=String(observationDate||'').replace(/[^0-9]/g,'').slice(0,8);
-        const quoteTimeParts=/^(\\d{1,2}):([0-5]\\d)(?::([0-5]\\d))?$/.exec(
+        const quoteTimeParts=/^(\d{1,2}):([0-5]\d)(?::([0-5]\d))?$/.exec(
           String(liveQuote?.quote_time||''));
         const safeQuoteClock=quoteTimeParts
           ?quoteTimeParts[1].padStart(2,'0')+':'+quoteTimeParts[2]+':'+(quoteTimeParts[3]||'00'):'';
-        const observedAt=liveQuote&&/^\\d{8}$/.test(currentDate)&&safeQuoteClock
+        const observedAt=liveQuote&&/^\d{8}$/.test(currentDate)&&safeQuoteClock
           ?Date.parse(currentDate.slice(0,4)+'-'+currentDate.slice(4,6)+'-'+currentDate.slice(6,8)
             +'T'+safeQuoteClock+'+08:00')
           :liveQuote?NaN:Date.parse(observationDate+'T23:59:59+08:00');
