@@ -43,7 +43,7 @@ test('monotonic highest price cannot decrease', () => {
   assert.equal(nextVerifiedPeak(135, 130), 135);
   assert.equal(nextVerifiedPeak(135, 140), 140);
   assert.equal(nextVerifiedPeak(null, 110), 110);
-  assert.equal(nextVerifiedPeak(150, 0), null);
+  assert.equal(nextVerifiedPeak(150, 0), 150);
 });
 test('do not mix two purchases, costs or position highs', () => {
   assert.equal(check({ peakBasisBoughtAt: '2025-01-01' }).action, 'needs_peak_validation');
