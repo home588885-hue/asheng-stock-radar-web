@@ -5947,13 +5947,30 @@ h1 {
         const scanCoverage=stockTotal>0
           ?(scanIncomplete?'｜⚠️ 盤後日K只更新 '+latestCount+'/'+stockTotal+' 檔，未掃齊':'｜盤後日K '+latestCount+'/'+stockTotal+' 檔')
           :'';
+        // Expose why a zero-buy day remains zero. This is display-only:
+        // no new buy approval, S calculation, quote call, or watch bucket.
+        const signedLifeRows=liveBasePicks.filter(item=>
+          !holdings.has(String(item?.stock_id||''))
+          &&String(item?.as_of||'')===expectedSignalDataDate()
+          &&unifiedRadarGeneration(item)&&chaseModelReady(item)
+          &&['starter','formal_candidate'].includes(
+            String(item?.metrics?.trade_lifecycle?.entry?.state||'')));
+        const ma10ScoreQualified=signedLifeRows.filter(item=>Number(item.score)>=75).length;
+        const formalGateNote=formalEntryValidation.status==='hold'
+          ?'🔒 正式綠色買點維持關閉（樣本外驗證未過）'
+          :formalEntryValidation.enabled?'🟢 正式買點仍須當日成交及原風控'
+          :'🔒 正式綠色買點尚未驗證通過';
+        const entryBlockingNote=formalGateNote
+          +'｜S生命週期候選 '+signedLifeRows.length+' 檔（非買點）'
+          +'｜MA10早期路線75分門檻達標 '+ma10ScoreQualified+' 檔';
         const banner='<div class="entry-list-overview" data-stable-key="entry-overview">'
           +'<strong>🎯 進場雷達｜先看可行動，再看追蹤</strong>'
           +'<span>🟢 正式買點 '+completedRows.length+'｜🟠 盤中試單 '+starterRows.length
           +'｜📋 前次新版留存 '+retainedRows.length+'｜應更新日 '+esc(expectedSignalDataDate())
           +scanCoverage+'</span>'
           +'<small>只有當日有效成交與原風控全部通過才可試單／確認買點。未更新日K只供觀察；全部詳細判斷點開個股查看。'
-          +(staleRows.length?'｜另有 '+staleRows.length+' 檔過期資料不列入':'')+'</small></div>';
+          +(staleRows.length?'｜另有 '+staleRows.length+' 檔過期資料不列入':'')
+          +'</small><small>'+esc(entryBlockingNote)+'</small></div>';
         // The old '明日看盤清單' was a second full stock-card feed.
         // Merge its qualified research-only names into the EXISTING
         // tracking shelf. Only one card per symbol; no extra model/API call.

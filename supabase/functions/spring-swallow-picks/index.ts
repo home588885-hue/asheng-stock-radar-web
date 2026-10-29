@@ -564,9 +564,21 @@ Deno.serve(async(req)=>{
     .sort((a:any,b:any)=>String(b.as_of).localeCompare(String(a.as_of))
       ||Number(b.score)-Number(a.score)).slice(0,8);
   const scoutObservations=[...scoutActive,...scoutRisk];
-  const ranked=(mode==='launch'?launchRows:candidateRows.filter((x:any)=>stage?x.stage===stage:(x.stage!=='WATCH'||(mode==='monitor'&&firstBarObservation(x))))).sort((a:any,b:any)=>mode==='launch'
+  // Visibility-only: the analyzer may classify a valid S entry lifecycle as
+  // WATCH even when it reports 'starter' or 'formal_candidate'. The old monitor
+  // filter discarded these candidates, so C could never observe them in ENTRY.
+  // Keep the signed/current S classification and all trial/formal safety gates.
+  const signedEntryLife=(x:any)=>{
+    if(!x||String(x.as_of||'')!==latestCandidateModelDay
+      ||!signedNew(x)||!isNewGeneration(x))return '';
+    const life=String(x.metrics?.trade_lifecycle?.entry?.state||'');
+    return life==='formal_candidate'||life==='starter'?life:'';
+  };
+  const entryLifeWatchRank=(x:any)=>signedEntryLife(x)==='formal_candidate'?3
+    :signedEntryLife(x)==='starter'?2:0;
+  const ranked=(mode==='launch'?launchRows:candidateRows.filter((x:any)=>stage?x.stage===stage:(x.stage!=='WATCH'||(mode==='monitor'&&(firstBarObservation(x)||!!signedEntryLife(x)))))).sort((a:any,b:any)=>mode==='launch'
     ?((Number(String(b.as_of||'')===latestCandidateModelDay)-Number(String(a.as_of||'')===latestCandidateModelDay))||(Number(preBreakoutWatch(b))-Number(preBreakoutWatch(a)))||(Number(lowBaseWatch(a))-Number(lowBaseWatch(b)))||(qualityRank(b)-qualityRank(a))||(discoveryRank(b)-discoveryRank(a))||String(b.scanned_at).localeCompare(String(a.scanned_at)))
-    :((mode==='monitor'?(Number(firstBarObservation(b))-Number(firstBarObservation(a))):0)||(priority[b.stage]-priority[a.stage])||(strongRebreakStudyRank(b)-strongRebreakStudyRank(a))||((Number(b.score)-Number(a.score))*3+fundamentalRankBonus(b)-fundamentalRankBonus(a))
+    :((mode==='monitor'?((Number(firstBarObservation(b))-Number(firstBarObservation(a)))||(entryLifeWatchRank(b)-entryLifeWatchRank(a))):0)||(priority[b.stage]-priority[a.stage])||(strongRebreakStudyRank(b)-strongRebreakStudyRank(a))||((Number(b.score)-Number(a.score))*3+fundamentalRankBonus(b)-fundamentalRankBonus(a))
       ||String(b.scanned_at).localeCompare(String(a.scanned_at)))).slice(0,limit);
   const stageCounts=candidateRows.reduce((m:any,x:any)=>(m[x.stage]=(m[x.stage]||0)+1,m),{});
   const launchCounts=launchRows.reduce((m:any,x:any)=>{if(lowBaseWatch(x))m.low_base_watch++;if(preBreakoutWatch(x))m.prebreakout_watch++;const lc=x?.metrics?.launch_candidate||{},mc=x?.metrics?.ma_cluster||{},seq=x?.metrics?.launch_sequence||mc.launch_sequence||{},s=String(lc.structure||'multi_overhead');m.total++;if(lc.eligible===true)m[s]=(m[s]||0)+1;if(x?.metrics?.bottom_start?.confirmed===true)m.bottom_confirmed++;if(x?.metrics?.bottom_start?.current_base===true)m.bottom_base++;if(mc.watch_ready===true||relaxedPrelaunch(x))m.prelaunch++;if(mc.breakout_detected_raw===true)m.first_raw++;if(mc.breakout_first_bar===true)m.first_actionable++;if(mc.breakout_detected_raw===true&&mc.breakout_first_bar!==true)m.first_hot++;const days=Number(seq.days_since_first);if(Number.isFinite(days)&&days>=1&&days<=3)m.follow_1_3++;if(seq.second_buy_candidate===true)m.second_buy++;return m},{total:0,prebreakout_watch:0,low_base_watch:0,all_above:0,one_overhead:0,multi_overhead:0,bottom_confirmed:0,bottom_base:0,prelaunch:0,first_raw:0,first_actionable:0,first_hot:0,follow_1_3:0,second_buy:0});
