@@ -37,25 +37,37 @@ async function execute(){
   }
   byDay.set(day,byMarket.map(x=>({...x,date:day})));
  }
- const r=comparableTurnoverShift(byDay.get(before),byDay.get(after),before,after,
-  {minOverall:1000,minGroup:8,minCoverage:.85});
- if(!r.ok)throw Error('data_coverage_inadequate '+JSON.stringify(r));
- const sectorPairs=r.groups.filter(x=>x.status!=='insufficient');
- const gainers=sectorPairs.filter(x=>x.turnover_share_shift_pp>0)
-   .sort((a,b)=>b.turnover_share_shift_pp-a.turnover_share_shift_pp).slice(0,8);
- const losers=sectorPairs.filter(x=>x.turnover_share_shift_pp<0)
-   .sort((a,b)=>a.turnover_share_shift_pp-b.turnover_share_shift_pp).slice(0,8);
- const out={method:'official_TWSE_TPEx_2026_10_27_28_matched_turnover',
-   mapping_as_of:mappings.mapped_as_of,classification_is_historical:false,
-   scope:'matched_covered_stock_cohort_only_not_entire_market',
-   not_institutional_or_net_flow:true,
-   pair_count:r.comparable_count,coverage_pct:r.coverage_pct,
-   sector_count:sectorPairs.length,previous_date:before,today_date:after,
-   gainers:gainers.map(x=>({industry:x.industry,matched_stocks:x.n,
-    share_previous_pct:x.share_previous_pct,share_today_pct:x.share_today_pct,
-    shift_pp:x.turnover_share_shift_pp})),
-   decliners:losers.map(x=>({industry:x.industry,matched_stocks:x.n,
-    shift_pp:x.turnover_share_shift_pp}))};
- console.log('REAL_SECTOR_SHARE_RESEARCH',JSON.stringify(out));
+ // TWSE broad "電子工業" and TPEx fine-grained electronics industries
+ // are not historically harmonized. Never interpret a combined denominator
+ // as actual fund migration across differently classified industries.
+ for(const market of ['twse','tpex']){
+   const a=byDay.get(before).filter(r=>r.market===market);
+   const b=byDay.get(after).filter(r=>r.market===market);
+   const r=comparableTurnoverShift(a,b,before,after,
+     {minOverall:350,minGroup:8,minCoverage:.85});
+   if(!r.ok)throw Error(market+': noncomparable_cohort '+JSON.stringify(r));
+   const sectorPairs=r.groups.filter(x=>x.status!=='insufficient');
+   const gainers=sectorPairs.filter(x=>x.turnover_share_shift_pp>0)
+     .sort((a,b)=>b.turnover_share_shift_pp-a.turnover_share_shift_pp).slice(0,7);
+   const losers=sectorPairs.filter(x=>x.turnover_share_shift_pp<0)
+     .sort((a,b)=>a.turnover_share_shift_pp-b.turnover_share_shift_pp).slice(0,7);
+   const out={
+     method:'official_exchange_internal_matched_two_day_turnover_share',
+     market,market_only_denominator:true,
+     cannot_compare_raw_twse_electronics_to_tpex_subindustries:true,
+     mapping_as_of:mappings.mapped_as_of,classification_is_historical:false,
+     scope:'matched_covered_stock_cohort_within_one_exchange_only',
+     not_institutional_or_net_flow:true,
+     pair_count:r.comparable_count,coverage_pct:r.coverage_pct,
+     sector_count:sectorPairs.length,previous_date:before,today_date:after,
+     gainers:gainers.map(x=>({industry:x.industry,matched_stocks:x.n,
+       share_previous_pct:x.share_previous_pct,share_today_pct:x.share_today_pct,
+       shift_pp:x.turnover_share_shift_pp})),
+     decliners:losers.map(x=>({industry:x.industry,matched_stocks:x.n,
+       shift_pp:x.turnover_share_shift_pp}))
+   };
+   console.log('MARKET_SPECIFIC_SECTOR_PP',JSON.stringify(out));
+ }
+
 }
 execute().catch(err=>{console.error('REAL_RESEARCH_BLOCKED',String(err));process.exitCode=1});
