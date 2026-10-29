@@ -4,6 +4,8 @@ on:
     paths:
       - 'supabase/functions/_shared/asheng-holding-risk-a.mjs'
       - 'diagnostics/holding-risk-policy-a-20261029.test.mjs'
+      - 'supabase/functions/spring-swallow-holdings/index.ts'
+      - 'diagnostics/legacy-holdings-auth-20261029.test.mjs'
       - '.github/workflows/qa-holding-risk-a.yml'
 
 permissions:
@@ -19,4 +21,9 @@ jobs:
         with:
           node-version: '22'
       - name: Verify pure alert evaluator (no API calls, no scans)
-        run: node --test diagnostics/holding-risk-policy-a-20261029.test.mjs
+        run: node --test diagnostics/holding-risk-policy-a-20261029.test.mjs diagnostics/legacy-holdings-auth-20261029.test.mjs
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Compile-check legacy secured handler only
+        run: deno check supabase/functions/spring-swallow-holdings/index.ts
