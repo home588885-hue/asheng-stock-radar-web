@@ -84,7 +84,7 @@ export function evaluateHoldingRiskA(a = {}) {
 
 /** Preserve an upward-only verified high-watermark for the same position. */
 export function nextVerifiedPeak(previousPeak, currentVerifiedHigh) {
-  if (!positive(currentVerifiedHigh)) return null;
+  if (!positive(currentVerifiedHigh)) return positive(previousPeak) ? Number(previousPeak) : null;
   if (!positive(previousPeak)) return Number(currentVerifiedHigh);
   return Math.max(Number(previousPeak), Number(currentVerifiedHigh));
 }
