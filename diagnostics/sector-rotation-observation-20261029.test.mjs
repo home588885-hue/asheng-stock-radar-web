@@ -54,6 +54,9 @@ test('truncation, future dates and missing quotes suppress ranking',()=>{
 test('sector endpoint is server-only aggregated EOD and read-only',()=>{
  const src=readFileSync(new URL('../supabase/functions/asheng-sector-rotation/index.ts',import.meta.url),'utf8');
  assert.match(src,/req\.method!=='GET'/);
+ assert.match(src,/auth\.auth\.getUser\(\)/);
+ assert.match(src,/error:'unauthorized'/);
+ assert.match(src,/SUPABASE_ANON_KEY/);
  assert.match(src,/\.eq\('as_of',asOf\)/);
  assert.match(src,/order\('as_of',\{ascending:false\}\)/);
  assert.match(src,/source:'|caveat:/);
@@ -69,6 +72,8 @@ test('UI only observes sector source, without touching action criteria or paid s
  assert.match(html,/data\.stale===true/);
  assert.match(html,/sectorRotationLastCheckAt<300000/);
  assert.match(html,/void refreshSectorRotationObservation\(\)/);
+ assert.match(html,/Authorization:'Bearer '\+memberSession\.access_token/);
+ assert.match(html,/authClient\.auth\.getSession\(\)/);
  const opening=html.lastIndexOf('<script',html.indexOf('(async()=>{',html.indexOf('const SUPABASE_URL')));
  const begin=html.indexOf('>',opening)+1;
  const end=html.indexOf('</script>',begin);
