@@ -6284,7 +6284,7 @@ h1 {
         const s = volumePriceState(item, quote);
         const ratioText = s.volumeRatio == null || !Number.isFinite(s.volumeRatio) ? '量比待更新' : (s.intraday ? '盤中估算今日量比 ' : '今日量比 ') + num(s.volumeRatio,2) + 'x';
         const positionText = Number.isFinite(s.pos1y) ? '年內位置 '+num(s.pos1y,1)+'%' : '年內位置待更新';
-        return '<div class="volume-price-read"><span class="flow-tag '+esc(s.tone)+'">'+esc(s.tag)+'</span><span class="flow-read-note">'+esc(s.note)+'</span><small>'+esc(ratioText+'｜'+positionText)+'<span data-sector-industry="'+esc(String(item?.industry||''))+'">'+esc(sectorRotationText(item?.industry))+'</span></small></div>';
+        return '<div class="volume-price-read"><span class="flow-tag '+esc(s.tone)+'">'+esc(s.tag)+'</span><span class="flow-read-note">'+esc(s.note)+'</span><small>'+esc(ratioText+'｜'+positionText)+'<span data-sector-industry="'+esc(String(item?.industry||''))+'" data-sector-market="'+esc(String(item?.market||''))+'">'+esc(sectorRotationText(item?.industry,item?.market))+'</span></small></div>';
       };
 
       // Unified display-only C/S quote source and real trade timestamp.
@@ -7973,6 +7973,7 @@ h1 {
       // saved holding cost/P&L, trade buttons, expandable rules, and 12-minute
       // survival (inside holdingActionHtml). Do not duplicate those panels.
       const holdingMiniHtml = (item, quote = null) => {
+        registerCSectorStock(item);
         const id=String(item.stock_id||''),m=item.metrics||{};
         const safeQuote=bestTodayQuote(validTodayQuote(quote)?quote:null,id);
         const live=validTodayQuote(safeQuote)?safeQuote:null;
@@ -8035,7 +8036,7 @@ h1 {
                 <span>${esc(quoteDisplayState(live,item).label)} <b>${price!=null?esc(num(price,2)):'-'}</b></span>
                 <span>損益 <b class="${holdingPnlClass(pnl)}">${pnl==null?'-':(pnl>0?'+':'')+esc(num(pnl,2))+'%'}</b></span></span>
               <span class="holding-mini-status">${esc(positionStatus+addObservation)}</span>
-              <span class="holding-mini-date">量價｜${esc(volumePriceState(item,live).tag)}｜${esc(volumePriceState(item,live).note)}<small data-sector-industry="${esc(String(item?.industry||''))}">${esc(sectorRotationText(item?.industry))}</small></span><span class="holding-mini-date">山川｜${esc(shanchuanBrief(item,live))}</span><span class="holding-mini-date">${esc(tdccHolderBrief(item))}</span>
+              <span class="holding-mini-date">量價｜${esc(volumePriceState(item,live).tag)}｜${esc(volumePriceState(item,live).note)}<small data-sector-industry="${esc(String(item?.industry||''))}" data-sector-market="${esc(String(item?.market||''))}">${esc(sectorRotationText(item?.industry,item?.market))}</small></span><span class="holding-mini-date">山川｜${esc(shanchuanBrief(item,live))}</span><span class="holding-mini-date">${esc(tdccHolderBrief(item))}</span>
               <span class="holding-mini-date">S 模型 ${esc(item.as_of||'待更新')}｜${live?'C 成交時間 '+esc(quoteDisplayState(live,item).moment)+(quoteDisplayState(live,item).live?'｜盤中即時':'｜非即時'):'無有效 C 成交，非即時模型價'}</span>
             </summary>
             <div class="holding-mini-body">
