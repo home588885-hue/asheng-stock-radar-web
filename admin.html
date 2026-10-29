@@ -1247,6 +1247,12 @@ h1 {
 }
 
 #app .entry-bucket-flat > .entry-bucket-head::after{display:none;content:none}
+/* Show the existing C/S observation in the visible three-tab stock summaries. */
+#app .radar-compact-summary .radar-compact-next.sector-compact,
+#app .holding-mini-summary .holding-mini-date.sector-compact {
+  display:block;grid-column:1/-1;-webkit-line-clamp:unset;overflow:visible;
+  color:#cde1ff;font-size:12px;line-height:1.5;white-space:normal;overflow-wrap:anywhere;
+}
 
 </style>
   
@@ -5031,7 +5037,7 @@ h1 {
             <span class="entry-mini-name"><strong>${esc(id)} ${esc(item.stock_name||'')}</strong><small>${esc(glanceSignal)}</small></span>
             <span class="entry-mini-expand">展開</span>
             <span class="entry-mini-metrics">${esc(quoteDisplayState(q,item).label)} <b>${close>0?esc(num(close,2)):'-'}</b><small>${q?'｜'+esc(quoteDisplayState(q,item).moment):'｜S '+esc(String(item.as_of||'待更新'))}</small></span>
-            <span class="radar-compact-next">量價：${esc(volumePriceState(item,q).tag)}｜${esc(volumePriceState(item,q).note)}</span><span class="radar-compact-next">山川：${esc(shanchuanBrief(item,q))}</span><span class="radar-compact-next">${esc(tdccHolderBrief(item))}</span><span class="radar-compact-next">下一步：${esc(radarShortAdvice(item,safeDisplayAction,q))}</span>
+            <span class="radar-compact-next">量價：${esc(volumePriceState(item,q).tag)}｜${esc(volumePriceState(item,q).note)}</span>${sectorRotationCompactHtml(item)}<span class="radar-compact-next">山川：${esc(shanchuanBrief(item,q))}</span><span class="radar-compact-next">${esc(tdccHolderBrief(item))}</span><span class="radar-compact-next">下一步：${esc(radarShortAdvice(item,safeDisplayAction,q))}</span>
           </summary>
           <div class="entry-mini-full">${continuationRiskMiniHtml(item)}${expanded}${(activeTrial||activeFormal)
             ?'<div class="entry-survival-status '+esc(survival.tone)+'" data-entry-survival-id="'+esc(id)+'" data-entry-survival-trial="'+(activeTrial?'1':'0')+'">'+esc(survival.text)+'</div>':''}</div>
@@ -6250,14 +6256,23 @@ h1 {
         const live=sectorCActivity?.label(industry,market,
           {now:new Date(),marketOpen:taipeiMarketState().open,stage})
           ||'｜C盤中族群：資料不足';
-        return eod+live;
+        return live+eod;
+      };
+      const sectorRotationCompactHtml=(item,style='radar-compact-next')=>{
+        // Display-only: use the cohort already tracked for this card.
+        registerCSectorStock(item);
+        const name=String(item?.industry||''),market=String(item?.market||'');
+        return '<span class="'+style+' sector-compact" data-sector-industry="'+esc(name)
+          +'" data-sector-market="'+esc(market)+'">'
+          +esc(sectorRotationText(name,market).replace(/^｜/,''))+'</span>';
       };
       const refreshSectorRotationLabels = () => {
         if(document.hidden)return;
         document.querySelectorAll('[data-sector-industry]').forEach(node=>{
           const industry=String(node.getAttribute('data-sector-industry')||'');
           const market=String(node.getAttribute('data-sector-market')||'');
-          const label=sectorRotationText(industry,market);
+          const raw=sectorRotationText(industry,market);
+          const label=node.classList.contains('sector-compact')?raw.replace(/^｜/,''):raw;
           if(node.textContent!==label)node.textContent=label;
         });
       };
@@ -8041,7 +8056,7 @@ h1 {
                 <span>${esc(quoteDisplayState(live,item).label)} <b>${price!=null?esc(num(price,2)):'-'}</b></span>
                 <span>損益 <b class="${holdingPnlClass(pnl)}">${pnl==null?'-':(pnl>0?'+':'')+esc(num(pnl,2))+'%'}</b></span></span>
               <span class="holding-mini-status">${esc(positionStatus+addObservation)}</span>
-              <span class="holding-mini-date">量價｜${esc(volumePriceState(item,live).tag)}｜${esc(volumePriceState(item,live).note)}<small data-sector-industry="${esc(String(item?.industry||''))}" data-sector-market="${esc(String(item?.market||''))}">${esc(sectorRotationText(item?.industry,item?.market))}</small></span><span class="holding-mini-date">山川｜${esc(shanchuanBrief(item,live))}</span><span class="holding-mini-date">${esc(tdccHolderBrief(item))}</span>
+              <span class="holding-mini-date">量價｜${esc(volumePriceState(item,live).tag)}｜${esc(volumePriceState(item,live).note)}</span>${sectorRotationCompactHtml(item,'holding-mini-date')}<span class="holding-mini-date">山川｜${esc(shanchuanBrief(item,live))}</span><span class="holding-mini-date">${esc(tdccHolderBrief(item))}</span>
               <span class="holding-mini-date">S 模型 ${esc(item.as_of||'待更新')}｜${live?'C 成交時間 '+esc(quoteDisplayState(live,item).moment)+(quoteDisplayState(live,item).live?'｜盤中即時':'｜非即時'):'無有效 C 成交，非即時模型價'}</span>
             </summary>
             <div class="holding-mini-body">
@@ -8184,7 +8199,7 @@ h1 {
               <span class="entry-mini-name"><strong>${esc(id)} ${esc(item?.stock_name||'')}</strong><small>${esc(glanceStatus)}</small></span>
               <span class="entry-mini-expand">展開</span>
               <span class="entry-mini-metrics">${esc(source)} <b>${price!=null&&price>0?esc(num(price,2)):'-'}</b><small>${esc(quoteTime)}</small></span>
-              <span class="radar-compact-next">量價：${esc(volumePriceState(item,q).tag)}｜${esc(volumePriceState(item,q).note)}</span><span class="radar-compact-next">山川：${esc(shanchuanBrief(item,q))}</span><span class="radar-compact-next">${esc(tdccHolderBrief(item))}</span><span class="radar-compact-next">下一步：${esc(radarShortAdvice(item,{text:status},q))}</span>
+              <span class="radar-compact-next">量價：${esc(volumePriceState(item,q).tag)}｜${esc(volumePriceState(item,q).note)}</span>${sectorRotationCompactHtml(item)}<span class="radar-compact-next">山川：${esc(shanchuanBrief(item,q))}</span><span class="radar-compact-next">${esc(tdccHolderBrief(item))}</span><span class="radar-compact-next">下一步：${esc(radarShortAdvice(item,{text:status},q))}</span>
             </summary>
             <div class="entry-mini-full">${launchScoutHistoryHtml(item)}${continuationRiskMiniHtml(item)}${stockMovementHtml(item,q,'launch',launchDisplayAction)}
               ${radarDeepDetailsHtml((ma10Preliminary?'<div class="model-only-note">MA10 回踩盤中初步轉強，但發動前區不提供試單。須到進場雷達通過新版底部品質、0050 相對強度與有效量價確認。</div>':'')+detailed)}</div>
