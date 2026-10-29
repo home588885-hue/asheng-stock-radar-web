@@ -125,7 +125,7 @@ export function acceptObservedHigh(previous, observation, position) {
       year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(position.boughtAt));
     const observedDay = new Intl.DateTimeFormat('sv-SE', {timeZone:'Asia/Taipei',
       year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(observation.observedAt));
-    if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(marketDay) || marketDay !== observedDay || marketDay <= buyDay)
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(marketDay) || marketDay !== observedDay || marketDay <= buyDay)
       return { ...base, reason: 'daily_high_not_proven_post_purchase' };
   }
   const identity = [String(position.account || ''), String(position.stockId || ''),
