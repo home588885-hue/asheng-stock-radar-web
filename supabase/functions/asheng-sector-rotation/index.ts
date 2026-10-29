@@ -17,7 +17,7 @@ Deno.serve(async (req:Request)=>{
   const anon=Deno.env.get('SUPABASE_ANON_KEY')||'';
   const bearer=req.headers.get('Authorization')||'';
   if(!url||!key||!anon)return respond({ok:false,error:'config_missing'},503);
-  if(!/^Bearer\\s+\\S+$/.test(bearer))return respond({ok:false,error:'unauthorized'},401);
+  if(!/^Bearer\s+\S+$/.test(bearer))return respond({ok:false,error:'unauthorized'},401);
   try{
     // Enforce identity in the handler. Never trust arbitrary client portfolio IDs.
     const auth=createClient(url,anon,{global:{headers:{Authorization:bearer}},
