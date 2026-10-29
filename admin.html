@@ -6238,7 +6238,11 @@ h1 {
         if(document.hidden||sectorRotationLoading||Date.now()-sectorRotationLastCheckAt<300000)return;
         sectorRotationLoading=true; sectorRotationLastCheckAt=Date.now();
         try{
-          const {response,data}=await fetchJsonWithTimeout(SECTOR_ROTATION_API,{cache:'no-store'},8500);
+          const sessionResult=await authClient.auth.getSession();
+          if(sessionResult?.data?.session)memberSession=sessionResult.data.session;
+          if(!memberSession?.access_token)throw new Error('member_session_missing');
+          const {response,data}=await fetchJsonWithTimeout(SECTOR_ROTATION_API,
+            {cache:'no-store',headers:{Authorization:'Bearer '+memberSession.access_token}},8500);
           if(!response.ok||data?.ok!==true||data?.live!==false||
               data?.scope!=='subset_of_EOD_scans_not_full_market' ||
               !Array.isArray(data.sectors)||!/^\d{4}-\d{2}-\d{2}$/.test(String(data.as_of||'')))
