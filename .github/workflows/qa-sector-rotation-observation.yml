@@ -26,3 +26,14 @@ jobs:
           deno-version: v2.x
       - name: Check read-only sector API
         run: deno check supabase/functions/asheng-sector-rotation/index.ts
+      - name: Real endpoint anonymous HTTP must fail closed
+        run: |
+          set -euo pipefail
+          ENDPOINT="https://qexbtubfoyfsllaiecvv.supabase.co/functions/v1/asheng-sector-rotation"
+          RESULT="$(curl -sS --max-time 15 -o /tmp/sector_rotation_anon.json -w '%{http_code}' "$ENDPOINT")"
+          if [ "$RESULT" != "401" ]; then
+            echo "::error::Expected anonymous HTTP 401, got $RESULT"
+            exit 1
+          fi
+          echo "PASS: anonymous sector observations are rejected (401)"
+
