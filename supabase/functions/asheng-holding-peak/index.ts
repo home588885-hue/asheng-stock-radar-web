@@ -1,5 +1,5 @@
 import {createClient} from 'npm:@supabase/supabase-js@2.117.3';
-import {verifiedTwsePeak} from '../_shared/asheng-twse-peak-evidence.mjs';
+import {verifiedTwsePeak} from './peak-evidence.mjs';
 
 // An authenticated, on-demand, free-MIS observation endpoint.
 // No scanner, cron, automatic trading, cross-account access, or client-supplied price.
