@@ -179,3 +179,25 @@ test('a late asynchronous C reply cannot seed a newly selected radar tab',()=>{
    <quoteFlow.indexOf('sectorCActivity.observe('),
    'discard late old-tab quote pairs before recording samples');
 });
+
+test('C/S sector observation is visible without expanding compact cards in all three radar tabs',()=>{
+ assert.match(source,/C盤中族群成交活躍度/);
+ const portions=[
+   ['ENTRY', 'const entryCompactStock =', 'const entryBucketHtml='],
+   ['LAUNCH', 'const launchMiniHtml =', 'const launchListHtml ='],
+   ['HOLDING', 'const holdingMiniHtml =', 'const holdingPlaceholderHtml =']
+ ];
+ for(const [stage,startText,endText] of portions){
+   const start=ui.indexOf(startText),end=ui.indexOf(endText,start);
+   assert.ok(start>=0&&end>start,stage+' compact card exists');
+   const compact=ui.slice(start,end);
+   assert.match(compact,/sectorRotationCompactHtml\(item/,stage+' summary displays C/S sector status');
+   assert.ok(compact.indexOf('sectorRotationCompactHtml(item') <
+       compact.indexOf('</summary>'),stage+' C/S status must be in visible summary');
+ }
+ assert.match(ui,/const sectorRotationCompactHtml=\(item,style='radar-compact-next'\)/);
+ assert.match(ui,/data-sector-industry/);
+ assert.match(ui,/data-sector-market/);
+ assert.match(ui,/\.radar-compact-next\.sector-compact/);
+ assert.match(ui,/return live\+eod/);
+});
