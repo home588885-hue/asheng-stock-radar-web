@@ -6,17 +6,22 @@
  */
 const positive=x=>x!==null&&x!==undefined&&x!==''&&Number.isFinite(Number(x))&&Number(x)>0;
 const safe=(value)=>Number(value);
-const money=row=>safe(row.close)*safe(row.volume_lots)*1000;
+// Official exchange TRADED VALUE (TWD), not close × volume. The latter
+// systematically distorts volatility/turnover and is not an actual value.
+const money=row=>safe(row.trade_value_twd);
 const validDate=x=>/^\d{4}-\d{2}-\d{2}$/.test(String(x||''));
 function dateMap(rows,date){
   const found=new Map();
   const duplicates=new Set();
   for(const row of rows||[]){
     const id=String(row?.stock_id||''),group=String(row?.industry||'').trim();
-    if(!id||!group||group==='其他'||String(row?.date||'')!==date ||
-       !positive(row?.close)||!positive(row?.volume_lots))continue;
-    if(found.has(id)){duplicates.add(id);continue;}
-    found.set(id,{stock_id:id,industry:group,amount:money(row),close:Number(row.close)});
+    const market=String(row?.market||'').toLowerCase();
+    const key=market+':'+id;
+    if(!id||!['twse','tpex'].includes(market)||!group||group==='其他'
+      ||String(row?.date||'')!==date||!positive(row?.close)
+      ||!positive(row?.trade_value_twd))continue;
+    if(found.has(key)){duplicates.add(key);continue;}
+    found.set(key,{stock_id:id,market,industry:group,amount:money(row),close:Number(row.close)});
   }
   for(const id of duplicates)found.delete(id);
   return found;
@@ -31,7 +36,7 @@ export function comparableTurnoverShift(prevRows,todayRows,prevDate,todayDate,{
   const paired=[];
   for(const [id,older] of a){
     const latest=b.get(id);
-    if(!latest||older.industry!==latest.industry)continue;
+    if(!latest||older.industry!==latest.industry||older.market!==latest.market)continue;
     const pct=100*(latest.close/older.close-1);
     if(!Number.isFinite(pct)||Math.abs(pct)>35)continue; // suspected split/data issue
     paired.push({id,industry:latest.industry,prev:older.amount,today:latest.amount});
@@ -57,7 +62,8 @@ export function comparableTurnoverShift(prevRows,todayRows,prevDate,todayDate,{
       share_today_pct:+shareToday.toFixed(3),turnover_share_shift_pp:+pp.toFixed(3),
       status:v.n<minGroup?'insufficient':pp>0.2?'share_gaining':pp< -0.2?'share_losing':'stable'};
   }).sort((x,y)=>y.turnover_share_shift_pp-x.turnover_share_shift_pp);
-  return {ok:true,flow_type:'relative_turnover_share_shift_pp_not_net_buying',
+  return {ok:true,flow_type:'relative_official_traded_value_share_shift_pp_not_net_buying',
+    source_requirement:'official_actual_trade_value_twd_not_price_times_volume',
     previous_date:prevDate,today_date:todayDate,complete_eod_only:true,
     comparable_count:paired.length,candidate_count:totalUniverse,
     coverage_pct:Math.round(coverage*1000)/10,
