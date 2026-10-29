@@ -227,3 +227,51 @@ test('historical scout cards receive today-only verified C trades without becomi
  assert.match(ui,/for \(let i = 0; i < pending.length; i \+= 30\)/);
  assert.match(ui,/const LIVE_QUOTE_REUSE_MS = 150000/);
 });
+
+test('late account-scoped scout cloud rows receive C price without waiting for S cards',()=>{
+ const cloudStart=ui.indexOf('const refreshScoutCloud=async(force=false)=>');
+ const cloudEnd=ui.indexOf('const ingestScoutObservations=',cloudStart);
+ assert.ok(cloudStart>=0&&cloudEnd>cloudStart);
+ const cloud=ui.slice(cloudStart,cloudEnd);
+ assert.match(cloud,/scoutOnlyLaunchRows\(\)\.some\(x=>/);
+ assert.match(cloud,/!liveQuoteRequestAt\.has\(String\(x\.stock_id\|\|''\)\)/);
+ assert.match(cloud,/void refreshSimpleQuotes\(\)/);
+ const loadStart=ui.indexOf('async function load()');
+ const loadEnd=ui.indexOf('const v5MonitorState',loadStart);
+ const loading=ui.slice(loadStart,loadEnd);
+ assert.match(loading,/if \(stage === 'LAUNCH'\) \{\s*liveBasePicks = rankedPicks\.slice\(0,100\)/);
+ assert.match(loading,/liveTimer = setInterval\(\(\) => \{/);
+ assert.match(loading,/\}, 180000\);/);
+ const refreshStart=ui.indexOf('async function refreshSimpleQuotes()');
+ const refreshEnd=ui.indexOf('const v5MonitorState',refreshStart);
+ const refresh=ui.slice(refreshStart,refreshEnd);
+ assert.match(refresh,/rows\.length\|\|scoutOnlyLaunchRows\(\)\.length/);
+ assert.match(refresh,/\.\.\.scoutHistoryQuoteTargets\(\)/);
+ assert.match(refresh,/const payload = await window\.getLiveQuotes\(quoteTargets\)/);
+ // The server-side S scan and user holding risk must remain separate.
+ assert.doesNotMatch(cloud,/scanBatch\(|fetchLiveQuoteChunk\(|setInterval\(/);
+ assert.match(ui,/const LIVE_QUOTE_REUSE_MS = 150000/);
+});
+
+test('an account scout C quote is displayed only for validated same-day trades',()=>{
+ const start=ui.indexOf('const scoutMarketAttempt=new Map()');
+ const end=ui.indexOf('const launchScoutOnlyHtml=',start);
+ assert.ok(start>=0&&end>start);
+ const cache=new Map();
+ const rows=()=>[{stock_id:'5392'},{stock_id:'3293'}];
+ const fn=new Function('scoutOnlyLaunchRows','liveQuoteCache','marketBridgeReady','stage',
+   'validTodayQuote',ui.slice(start,end)+
+   '\nreturn {scoutHistoryQuoteTargets,scoutHistoryTodayTrade};');
+ const valid=q=>q?.has_today_trade===true&&q?.quote_date==='20261029'&&Number(q?.price)>0;
+ const sut=fn(rows,cache,()=>true,'LAUNCH',valid);
+ assert.deepEqual(sut.scoutHistoryQuoteTargets().map(x=>x.market),['tse','tse']);
+ assert.equal(sut.scoutHistoryTodayTrade('5392'),null);
+ assert.deepEqual(sut.scoutHistoryQuoteTargets().map(x=>x.market),['otc','otc']);
+ const trade={stock_id:'5392',quote_date:'20261029',has_today_trade:true,price:38.7,
+   quote_time:'12:44:00',market:'tse'};
+ cache.set('5392',trade);
+ assert.equal(sut.scoutHistoryTodayTrade('5392')?.price,38.7);
+ cache.set('5392',{...trade,quote_date:'20261028'});
+ assert.equal(sut.scoutHistoryTodayTrade('5392'),null);
+ assert.equal(sut.scoutHistoryQuoteTargets()[0].market,'tse');
+});

@@ -2352,6 +2352,16 @@ h1 {
           scoutCloudReady=true;
           scoutLastReadAt=Date.now();
           renderScoutPanel();
+          // Cloud watches may arrive after the first LAUNCH C refresh (or
+          // after an initially empty S response). Use the existing C quote
+          // reader for *newly loaded* unrequested names, without any new timer,
+          // S scan or trading-authority change. Otherwise prices stay blank
+          // until another section reload, especially for scout-only lists.
+          if(stage==='LAUNCH'&&!document.hidden&&cQuoteReadWindow()
+            &&scoutOnlyLaunchRows().some(x=>
+              !liveQuoteRequestAt.has(String(x.stock_id||'')))){
+            void refreshSimpleQuotes();
+          }
           if(scoutPending.size)await flushScoutCloud();
           else{try{localStorage.removeItem(SCOUT_LEGACY_KEY);}catch{}}
         })();
@@ -6904,10 +6914,13 @@ h1 {
                     ? ' ⚠️ 最新完整日K僅更新 ' + Number(progress.latest_count || 0) + '/' + Number(progress.total_stocks || 0) + ' 檔；覆蓋未完成，不代表全市場沒有候選。'
                     : ' 本輪沒有符合展示規則的未持有候選；不放寬條件湊數。')
                 : stage === 'ENTRY' ? '目前沒有符合正式可進場條件的股票。' : '目前這個階段沒有候選股。'}</div>`);
-          if (stage === 'LAUNCH' && (rankedPicks.length || scoutOnlyLaunchRows().length)) {
+          if (stage === 'LAUNCH') {
             liveBasePicks = rankedPicks.slice(0,100);
             await refreshSimpleQuotes();
             if (liveTimer) clearInterval(liveTimer);
+            // Keep the ONE existing 3-minute C timer active even if the S
+            // source currently has zero cards: scout cloud names can load later.
+            // refreshSimpleQuotes itself returns without I/O if no targets exist.
             liveTimer = setInterval(() => {
               if (stage === 'LAUNCH' && !document.hidden && taipeiMarketState().open) refreshSimpleQuotes();
             }, 180000);
@@ -8422,7 +8435,9 @@ h1 {
         // 夜間日K模型固定；發動前僅沿用既有C三分鐘成交價，不盤中重算S。
         if (LOCKED_SETTINGS.nightlySnapshotOnly && !(marketBridgeReady() && cQuoteReadWindow())) {
           const rows = liveBasePicks.filter(item => launchQualityState(item).keep);
-          stableListRender(rows.length ? launchListHtml(rows) : '<div class="box empty">目前沒有符合發動前條件的候選股。</div>');
+          stableListRender(rows.length||scoutOnlyLaunchRows().length
+            ?launchListHtml(rows)
+            :'<div class="box empty">目前沒有符合發動前條件的候選股。</div>');
           setCandidateSummary('cCount', rows.length, '目前畫面符合發動前條件');
           $('#note').textContent = taipeiMarketState().open
             ? `⚠️ Cloudflare C 尚未通過健康檢查｜${rows.length} 檔僅顯示盤後模型，不能當即時買點；依既有三分鐘節奏重試。`
