@@ -37,3 +37,9 @@ test('preflight is harmless and allows Authorization header',()=>{
   assert.match(src,/req\.method==='OPTIONS'/);
   assert.match(src,/Access-Control-Allow-Headers':'authorization,apikey,content-type'/);
 });
+
+test('current admin application uses authenticated member API as primary holding route',()=>{
+  const admin=readFileSync(new URL('../admin.html', import.meta.url),'utf8');
+  assert.match(admin,/const HOLDINGS_API = MEMBER_API \+ '\?action=holdings';/);
+  assert.match(admin,/const memberFetch = async/);
+});
