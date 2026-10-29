@@ -1,0 +1,20 @@
+name: Sector rotation independent money-share research
+on:
+  pull_request:
+    paths:
+      - 'diagnostics/sector-rotation-independent-research.mjs'
+      - 'diagnostics/sector-rotation-independent-research.test.mjs'
+      - '.github/workflows/qa-sector-rotation-research.yml'
+permissions:
+  contents: read
+jobs:
+  verify-share-rotation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify paired turnover-share flow and RS 50/10 calculations
+        run: node --test diagnostics/sector-rotation-independent-research.test.mjs
