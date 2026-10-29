@@ -2225,6 +2225,25 @@ h1 {
           return {status:'📌 歷史追蹤｜已轉進場',next:'買點以目前進場雷達為準'};
         return {status:'🌱 前哨追蹤｜尚非買點',next:'等待最新完整日K與量價確認'};
       };
+      // Price-only C observations for the displayed historical rows. They
+      // remain historical S research, never input to buy/trial/add rules.
+      // Historical cloud rows do not store their exchange. For such rows,
+      // alternate TSE/OTC in successive existing C refresh waves until a
+      // verified trade identifies the actual market, without extra requests.
+      const scoutMarketAttempt=new Map();
+      const scoutHistoryQuoteTargets=()=>scoutOnlyLaunchRows().map(x=>{
+        const id=String(x.stock_id||'');
+        const knownMarket=String(x.market||liveQuoteCache.get(id)?.market||'');
+        const market=knownMarket||(
+          scoutMarketAttempt.get(id)==='tse'?'otc':'tse');
+        if(!knownMarket)scoutMarketAttempt.set(id,market);
+        return {stock_id:id,market};
+      });
+      const scoutHistoryTodayTrade=id=>{
+        if(!marketBridgeReady()||stage!=='LAUNCH')return null;
+        const quote=liveQuoteCache.get(String(id||''));
+        return validTodayQuote(quote)?quote:null;
+      };
       const launchScoutOnlyHtml=(x,expanded=null)=>{
         const id=String(x.stock_id||''),name=String(x.stock_name||id),
           sourceDay=String(x.as_of||''),kind=scoutHistoryClass(x);
@@ -2236,15 +2255,21 @@ h1 {
         const desc=String(x.label||'突破前哨').slice(0,90);
         const first=String(x.first_bar_date||''),seen=String(x.seen_as_of||'');
         const open=expanded==null?launchExpandedIds.has(id):expanded;
-        // S historical close is not C live, and it never unlocks a buy.
+        const todayTrade=scoutHistoryTodayTrade(id);
+        const todayDisplay=todayTrade?quoteDisplayState(todayTrade):null;
+        const cPrice=todayTrade?num(Number(todayTrade.price),2):'-';
+        const cLabel=todayDisplay?todayDisplay.label:'C 今日有效成交待取得';
+        const cTime=todayDisplay?'｜成交 '+todayDisplay.moment:'｜尚無今日有效成交';
+        // Keep the prior S historical close, model date, and non-buy label.
         return '<section class="launch-mini-wrap launch-scout-inline" data-stock-id="'+esc(id)+'" data-scout-only="true">'
           +'<details class="entry-mini" data-stock-key="'+esc(id)+'"'+(open?' open':'')+'>'
           +'<summary class="entry-mini-summary radar-compact-summary" aria-label="'+esc(id+' '+name+' '+kind.status)+'">'
           +'<span class="entry-mini-name"><strong>'+esc(id+' '+name)
           +'</strong><small>'+esc(kind.status)+'</small></span>'
           +'<span class="entry-mini-expand">展開</span>'
-          +'<span class="entry-mini-metrics">S 歷史收盤（非即時） <b>'+esc(recordPrice)
-          +'</b><small>'+esc(sourceDay)+'</small></span>'
+          +'<span class="entry-mini-metrics">'+esc(cLabel)+' <b>'+esc(cPrice)
+          +'</b><small>'+esc(cTime)+'</small></span>'
+          +'<span class="radar-compact-next">S 歷史收盤（非即時） '+esc(recordPrice)+'｜'+esc(sourceDay)+'</span>'
           +'<span class="radar-compact-next">下一步：'+esc(kind.next)+'</span>'
           +'</summary><div class="entry-mini-full">'
           +'<article class="card radar-scout-detail" aria-label="'+esc(id+' '+name+' 歷史追蹤資料')+'">'
@@ -6862,7 +6887,7 @@ h1 {
                     ? ' ⚠️ 最新完整日K僅更新 ' + Number(progress.latest_count || 0) + '/' + Number(progress.total_stocks || 0) + ' 檔；覆蓋未完成，不代表全市場沒有候選。'
                     : ' 本輪沒有符合展示規則的未持有候選；不放寬條件湊數。')
                 : stage === 'ENTRY' ? '目前沒有符合正式可進場條件的股票。' : '目前這個階段沒有候選股。'}</div>`);
-          if (stage === 'LAUNCH' && rankedPicks.length) {
+          if (stage === 'LAUNCH' && (rankedPicks.length || scoutOnlyLaunchRows().length)) {
             liveBasePicks = rankedPicks.slice(0,100);
             await refreshSimpleQuotes();
             if (liveTimer) clearInterval(liveTimer);
@@ -8372,7 +8397,8 @@ h1 {
       }
 
       async function refreshSimpleQuotes() {
-        if (stage !== 'LAUNCH' || document.hidden || !liveBasePicks.length) return;
+        if (stage !== 'LAUNCH' || document.hidden
+          || (!liveBasePicks.length && !scoutOnlyLaunchRows().length)) return;
         if (!marketBridgeReady() && cQuoteReadWindow()) await configureCloudflareMarketBridge();
         const renderNavToken = navigationSeq;
         const renderStage = stage;
@@ -8393,7 +8419,12 @@ h1 {
         }
         try {
           if (typeof window.getLiveQuotes !== 'function') throw new Error('live_client_not_ready');
-          const payload = await window.getLiveQuotes(liveBasePicks.map(item => ({ stock_id: String(item.stock_id), market: String(item.market || '') })));
+          // Same existing C refresh wave (no new timer or S scan). The quote
+          // client deduplicates targets and retains its 30-symbol batches.
+          const quoteTargets=[...liveBasePicks.map(item=>({
+            stock_id:String(item.stock_id),market:String(item.market||'')
+          })),...scoutHistoryQuoteTargets()];
+          const payload = await window.getLiveQuotes(quoteTargets);
           if (navigationSeq !== renderNavToken || stage !== renderStage) return;
           if (!payload?.ok) throw new Error('live_quote_failed');
           const quoteMap = new Map((payload.quotes || []).map(quote => [String(quote.stock_id || ''), quote]));
@@ -8436,7 +8467,8 @@ h1 {
           const quoteTimes = rows.map(row => row.quote?.quote_time).filter(Boolean);
           const latestQuote = quoteTimes.length ? quoteTimes.sort().at(-1) : '-';
           const missing=liveBasePicks.filter(item=>!quoteMap.has(String(item.stock_id))).map(item=>String(item.stock_id)).slice(0,9);
-          $('#note').textContent = `🌱 發動前｜追蹤 ${rows.length} 檔｜🔥發動中 ${rows.filter(row=>isActiveLaunchItem(row.item)).length}｜C 今日有效成交 ${quoteMap.size}/${liveBasePicks.length} 檔｜最後成交 ${latestQuote}｜${payload.cached_last_trade||0} 檔沿用今日前次有效成交${missing.length?'｜尚未取得 '+missing.join('、'):''}｜約3分鐘取樣｜日K不盤中重算。`;
+          const requestedCount=new Set(quoteTargets.map(item=>String(item.stock_id))).size;
+          $('#note').textContent = `🌱 發動前｜追蹤 ${rows.length} 檔｜🔥發動中 ${rows.filter(row=>isActiveLaunchItem(row.item)).length}｜C 今日有效成交 ${quoteMap.size}/${requestedCount} 檔｜最後成交 ${latestQuote}｜${payload.cached_last_trade||0} 檔沿用今日前次有效成交${missing.length?'｜尚未取得 '+missing.join('、'):''}｜約3分鐘取樣｜日K不盤中重算。`;
         } catch (error) {
           if (navigationSeq !== renderNavToken || stage !== renderStage) return;
           stableListRender(launchListHtml(liveBasePicks.filter(item=>launchQualityState(item).keep)));
