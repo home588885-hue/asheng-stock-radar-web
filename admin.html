@@ -6691,7 +6691,7 @@ h1 {
         const detailBody = `<div class="detail-body">${hiddenModelHtml}${v5Html}${chipHtml}${holding ? '' : liquidityHtml}${playbookHtml}<div class="metrics"><span class="pill">3年位階 ${num(metrics.position_3y_pct)}%</span><span class="pill">週K ${num(metrics.weekly_k)}｜${gradeText(weeklyKGrade(metrics.weekly_k))}</span><span class="pill">月K ${num(metrics.monthly_k)}｜${gradeText(monthlyKGrade(metrics.monthly_k))}</span><span class="pill">${backtestSignal(item)}</span>${metrics.backtest ? `<span class="pill">5日 ${num(metrics.backtest.win_rate_5d_pct)}%</span><span class="pill">20日 ${num(metrics.backtest.win_rate_20d_pct)}%</span>` : ''}</div><div class="why">${reasons}</div>${cautions ? `<div class="warn">${cautions}</div>` : ''}</div>`;
         const detailHtml = options.compactHolding && holding ? detailBody : `<details class="card-details"><summary>完整判斷與數據</summary>${detailBody}</details>`;
         const actionHtml = options.hideSignal ? '' : `<div class="trade-signal ${signal.className}">${esc(memberFacingText(signal.text))}<small style="display:block;margin-top:4px;font-weight:500">${esc(memberFacingText(signal.detail || ''))}</small></div>`;
-        return `<article class="card" data-stock-id="${esc(item.stock_id)}"><div class="top"><div><div class="name">${esc(item.stock_id)} ${esc(item.stock_name)}</div><div class="meta">${esc(item.market)}${item.industry ? '・' + esc(item.industry) : ''}${timeInfoStages() ? '' : '｜資料日 ' + esc(item.as_of || '-')}</div></div><div class="badge ${esc(item.stage)}">模型 ${Number(item.score || 0)}分</div></div>${companyProfileHtml(item)}${activeLaunchVisibleHtml}${volumePriceHtml(item, displayQuote)}${tdccHolderDetailHtml(item)}${researchPanel}${options.historicalObservation?'':pullbackWatchHtml(item, displayQuote)}${holding ? (options.technicalOnly === true ? '' : options.compactHolding ? '' : holdingTodayHtml) : actionHtml + quickHtml + deviationWarningHtml + riskSummary}${holdingHtml}${options.compactHolding && holding ? `<details class="card-details holding-combined"><summary>完整判斷與技術數據</summary>${holdingStatusHtml}${detailHtml}</details>` : holdingStatusHtml+detailHtml}${timeInfoStages() ? timeInfoHtml(item, displayQuote) : '<div class="time">背景模型掃描：' + updated + '</div>'}</article>`;
+        return `<article class="card" data-stock-id="${esc(item.stock_id)}" data-model-as-of="${esc(item.as_of || '')}"><div class="top"><div><div class="name">${esc(item.stock_id)} ${esc(item.stock_name)}</div><div class="meta">${esc(item.market)}${item.industry ? '・' + esc(item.industry) : ''}${timeInfoStages() ? '' : '｜資料日 ' + esc(item.as_of || '-')}</div></div><div class="badge ${esc(item.stage)}">模型 ${Number(item.score || 0)}分</div></div>${companyProfileHtml(item)}${activeLaunchVisibleHtml}${volumePriceHtml(item, displayQuote)}${tdccHolderDetailHtml(item)}${researchPanel}${options.historicalObservation?'':pullbackWatchHtml(item, displayQuote)}${holding ? (options.technicalOnly === true ? '' : options.compactHolding ? '' : holdingTodayHtml) : actionHtml + quickHtml + deviationWarningHtml + riskSummary}${holdingHtml}${options.compactHolding && holding ? `<details class="card-details holding-combined"><summary>完整判斷與技術數據</summary>${holdingStatusHtml}${detailHtml}</details>` : holdingStatusHtml+detailHtml}${timeInfoStages() ? timeInfoHtml(item, displayQuote) : '<div class="time">背景模型掃描：' + updated + '</div>'}</article>`;
       }
 
       // Explain an empty launch list using *the actual API result and this
@@ -9922,7 +9922,67 @@ h1 {
       })();
     })();
     </script>
-  </body>
+  <script id="asheng-official-eod-coverage">
+
+(function(){
+'use strict';
+const API='https://qexbtubfoyfsllaiecvv.supabase.co/functions/v1/asheng-official-eod-status';
+let lastStatus=0,lastQuotes=0,busy=false;
+const quotes=new Map();
+function banner(){
+ let el=document.getElementById('asheng-official-eod-banner');if(el)return el;
+ const anchor=document.getElementById('list')||document.getElementById('note');
+ if(!anchor?.parentNode)return null;
+ el=document.createElement('div');el.id='asheng-official-eod-banner';
+ el.style.cssText='border:1px solid #c4cbd5;border-radius:8px;padding:9px 11px;margin:8px 0;font-size:12px;line-height:1.6';
+ el.textContent='官方收盤行情與完整日K模型各自檢查中';anchor.parentNode.insertBefore(el,anchor);return el;
+}
+async function status(){
+ if(document.hidden||Date.now()-lastStatus<90000)return;
+ lastStatus=Date.now();const el=banner();if(!el)return;
+ try{
+  const r=await fetch(API,{cache:'no-store',signal:AbortSignal.timeout(8000)});if(!r.ok)throw Error();
+  const x=await r.json();if(!x.ok)throw Error();const fmt=v=>Number(v||0).toLocaleString('zh-TW');
+  el.textContent='官方收盤行情（非即時） '+(x.as_of||'未知日期')+'：'
+   +fmt(x.official_price_count)+'／'+fmt(x.active_stocks)+' 檔'
+   +'（上市 '+fmt(x.twse)+'、上櫃 '+fmt(x.tpex)+'）'
+   +'｜完整日K模型 '+(x.model_latest_day||'未知日期')+'：'+fmt(x.model_same_day_count)+' 檔。'
+   +' 舊模型不視為今日買點。';
+ }catch{el.textContent='官方收盤快取狀態暫不可用，請以卡片標示的模型日期為準；舊模型不是今日買點。';}
+}
+async function cards(){
+ if(document.hidden||busy)return;
+ const nodes=[...document.querySelectorAll('article.card[data-stock-id][data-model-as-of]')].slice(0,60);
+ if(!nodes.length)return;
+ if(lastQuotes&&Date.now()-lastQuotes>600000){quotes.clear();lastQuotes=Date.now();}
+ const missing=[...new Set(nodes.map(c=>c.getAttribute('data-stock-id')).filter(Boolean))].filter(id=>!quotes.has(id)).slice(0,50);
+ if(missing.length){
+  busy=true;
+  try{
+   const r=await fetch(API+'?symbols='+encodeURIComponent(missing.join(',')),{cache:'no-store',signal:AbortSignal.timeout(8000)});
+   if(!r.ok)throw Error();const x=await r.json();if(!x.ok||!Array.isArray(x.quotes))throw Error();
+   const map=new Map(x.quotes.map(q=>[String(q.stock_id),q]));
+   missing.forEach(id=>quotes.set(id,map.get(id)||null));lastQuotes=Date.now();
+  }catch{busy=false;return;}busy=false;
+ }
+ for(const c of nodes){
+  const q=quotes.get(c.getAttribute('data-stock-id'));if(!q?.as_of)continue;
+  const meta=c.querySelector('.top .meta');if(!meta)continue;
+  let lab=meta.querySelector('.asheng-official-eod-label');
+  if(!lab){lab=document.createElement('small');lab.className='asheng-official-eod-label';lab.style.cssText='display:block;font-size:11px;margin-top:3px';meta.appendChild(lab);}
+  const m=c.getAttribute('data-model-as-of')||'未確認';
+  const v=Number(q.close_price),px=Number.isFinite(v)?v.toLocaleString('zh-TW',{maximumFractionDigits:4}):'-';
+  lab.textContent='官方收盤（非即時）'+q.as_of+'：'+px+'｜模型日 '+m+(m===q.as_of?'':'（非今日新買點）');
+ }
+}
+function refresh(){status();cards();}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',refresh,{once:true});else refresh();
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh();});
+setInterval(refresh,8000);
+})();
+
+</script>
+</body>
 </html>
 
 
