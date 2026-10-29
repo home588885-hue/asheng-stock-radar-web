@@ -77,8 +77,8 @@ test('verified C post-entry +2% peak can warn after half the gain is given back'
  const gaveBack=check(item,quote(101,'10:11:00'));
  assert.equal(gaveBack.earlyGiveback,true);
  assert.equal(gaveBack.shortMaWeak,true);
- assert.equal(gaveBack.maxGain,3);
- assert.equal(gaveBack.currentGain,1);
+ assert.ok(Math.abs(gaveBack.maxGain-3)<1e-8);
+ assert.ok(Math.abs(gaveBack.currentGain-1)<1e-8);
  assert.equal(gaveBack.observedDate,'2026-10-29');
  assert.equal(gaveBack.armed,false); // B's +20% trailing remains separate
  assert.equal(gaveBack.triggered,false);
