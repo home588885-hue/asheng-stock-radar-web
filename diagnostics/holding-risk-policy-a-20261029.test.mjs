@@ -1,0 +1,71 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { ASHENG_RISK_A, evaluateHoldingRiskA, nextVerifiedPeak } from '../supabase/functions/_shared/asheng-holding-risk-a.mjs';
+
+const base = {
+  cost: 100, price: 110, peak: 115, peakType: 'verified_high',
+  peakBasisCost: 100, boughtAt: '2026-10-01T10:00:00+08:00',
+  peakBasisBoughtAt: '2026-10-01T10:00:00+08:00',
+  quoteDate: '2026-10-29', today: '2026-10-29',
+  active: true, belowMa20Closes: 0
+};
+const check = (overrides = {}) => evaluateHoldingRiskA({ ...base, ...overrides });
+test('policy constants and no trading', () => {
+  assert.equal(ASHENG_RISK_A.stopLossPct, -10);
+  assert.equal(ASHENG_RISK_A.trailArmProfitPct, 20);
+  assert.equal(ASHENG_RISK_A.trailFromPeakPct, 5);
+  assert.equal(ASHENG_RISK_A.execution, 'alert_only_no_auto_trade');
+  assert.equal(check().alertOnly, true);
+});
+test('hard stop: below or exactly 90% of cost', () => {
+  assert.equal(check({ price: 90, peak: 110 }).action, 'stop_loss_alert');
+  assert.equal(check({ price: 89, peak: 110 }).action, 'stop_loss_alert');
+  assert.equal(check({ price: 90.01, peak: 110 }).action, 'hold');
+});
+test('do not arm before 20% gain', () => {
+  const z = check({ peak: 119.99, price: 113.9 });
+  assert.equal(z.action, 'hold');
+  assert.equal(z.trailingArmed, false);
+});
+test('arm at exactly +20% and set peak minus 5%', () => {
+  const z = check({ peak: 120, price: 120 });
+  assert.equal(z.action, 'hold');
+  assert.equal(z.trailingArmed, true);
+  assert.ok(Math.abs(z.trailingLine - 114) < 1e-10);
+});
+test('exit alert at 5% pullback; hold above threshold', () => {
+  assert.equal(check({ peak: 130, price: 123.5 }).action, 'trailing_exit_alert');
+  assert.equal(check({ peak: 130, price: 123.51 }).action, 'hold');
+  assert.equal(check({ peak: 150, price: 140 }).trailingLine, 142.5);
+  assert.equal(check({ peak: 150, price: 140 }).action, 'trailing_exit_alert');
+});
+test('monotonic highest price cannot decrease', () => {
+  assert.equal(nextVerifiedPeak(135, 130), 135);
+  assert.equal(nextVerifiedPeak(135, 140), 140);
+  assert.equal(nextVerifiedPeak(null, 110), 110);
+  assert.equal(nextVerifiedPeak(150, 0), null);
+});
+test('do not mix two purchases, costs or position highs', () => {
+  assert.equal(check({ peakBasisBoughtAt: '2025-01-01' }).action, 'needs_peak_validation');
+  assert.equal(check({ peakBasisCost: 98 }).action, 'needs_peak_validation');
+  assert.equal(check({ peak: 109, price: 110 }).action, 'needs_peak_validation');
+});
+test('historical peak_close is not validated intraday highest', () => {
+  const z = check({ peak: 130, price: 123.5, peakType: 'closing_high' });
+  assert.equal(z.action, 'needs_peak_validation');
+  assert.equal(z.trailingArmed, false);
+});
+test('do not emit alerts with stale quotes or missing price', () => {
+  assert.equal(check({ quoteDate: '2026-10-28', price: 89 }).action, 'unavailable');
+  assert.equal(check({ price: null }).action, 'unavailable');
+  assert.equal(check({ active: false, price: 89 }).action, 'inactive');
+});
+test('ma20 three closes is review, stop and trailing take precedence', () => {
+  assert.equal(check({ belowMa20Closes: 3 }).action, 'ma20_review');
+  assert.equal(check({ belowMa20Closes: 3, price: 90 }).action, 'stop_loss_alert');
+  assert.equal(check({ belowMa20Closes: 3, peak: 120, price: 114 }).action, 'trailing_exit_alert');
+});
+test('losing holdings never get a default add permission', () => {
+  assert.equal(check({ price: 94, peak: 110 }).mayAddOnLoss, false);
+  assert.equal(check({ price: 89 }).mayAddOnLoss, false);
+});
