@@ -1,0 +1,28 @@
+name: Sector rotation observation QA (no scan or trade)
+on:
+  pull_request:
+    paths:
+      - 'admin.html'
+      - 'supabase/functions/asheng-sector-rotation/**'
+      - 'diagnostics/sector-rotation-observation-20261029.test.mjs'
+      - '.github/workflows/qa-sector-rotation-observation.yml'
+permissions:
+  contents: read
+jobs:
+  check-sector-observation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test sector sampling and front-end syntax
+        run: node --test diagnostics/sector-rotation-observation-20261029.test.mjs
+      - name: Preserve existing stock entry and holding regression
+        run: node diagnostics/radar-regression-gates.js
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Check read-only sector API
+        run: deno check supabase/functions/asheng-sector-rotation/index.ts
