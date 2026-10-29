@@ -1,6 +1,6 @@
 # 阿勝正式風控 A：隔離單元測試（2026-10-29）
 
-**僅隔離測試，非正式部署。不得把本 PR 當作已修復正式雷達。**
+**風控 A 計算器仍僅隔離測試，並未整合正式雷達。唯獨另行查出的舊版持股 API 安全漏洞，已單獨部署身份驗證修正 v3；不代表整體風控部署完成。**
 
 ## 使用者已確定的正式規則
 - 成本下跌 **10%**：停損提醒。
@@ -38,7 +38,7 @@
 - 另 10 筆 `radar_member_holdings` 有有效買入時間/成本，但沒有獨立共享高水位欄位。仍需確認使用者身分、帳戶別與持股事件的關聯。
 - 已新增最高價來源驗證函式 `acceptObservedHigh`：買進後的時間戳、時區、證實的來源、帳戶／股票／買進事件綁定、日期不得倒退、價格不得降低；**不將買進當日未具交易時間的日高當作買後已到達高價**，也不覆蓋正式持股。
 - GitHub Actions [#40798962104](https://github.com/home588885-hue/asheng-stock-radar-web/actions/runs/40798962104)：**15/15 tests passed**，僅在測試分支執行，無正式環境 API 呼叫。
-- **主分支與 ACTIVE Edge Functions 未修改**，未完成完整最高價來源、歷史時點與雙帳戶整合前不得宣稱正式跨裝置移動停利已修復。
+- **主分支、正式分析/選股 Edge Functions 未修改；但舊版 `spring-swallow-holdings` 已單獨部署安全修正 v3。** 完整最高價來源、歷史時點與雙帳戶整合仍未完成，不得宣稱正式跨裝置移動停利已修復。
 
 ### 仍必須補足的真實整合
 
@@ -52,5 +52,14 @@
 - 正式 `admin.html` 把 `HOLDINGS_API` 指向 `asheng-member-api?action=holdings`，使用既有 Supabase 會員登入的 JWT。**不是直接使用**名為 `spring-swallow-holdings` 的舊函式。
 - `asheng-member-api` 有 `auth.getUser()`、會員身分確認。管理員讀寫 `spring_swallow_holdings`，其他會員讀寫按 `auth.uid()` 隔離的 `radar_member_holdings`。資料庫目前 38 筆前者有效、10 筆後者有效；兩者是**不同持股來源，不可混合計數或交叉引用高點**。
 - 已讀到會員 `save_holding` 的正式程式會在「編輯現有有效持股」時保留原 `bought_at`，賣出再買另起；測試版對買入事件和成本變更加入明確隔離。
-- 目前另有舊版 `spring-swallow-holdings` 函式仍 ACTIVE 且 `verify_jwt=false`。此服務是否仍被其他客戶端使用未完全確認，存在權限稽核必要；另開 [Issue #6](https://github.com/home588885-hue/asheng-stock-radar-web/issues/6)。**不應透過舊函式實作跨裝置高價同步**。
+- 目前另有舊版 `spring-swallow-holdings` 函式仍 ACTIVE 且 `verify_jwt=false`。此服務是否仍被其他客戶端使用未完全確認，存在權限稽核必要；另開 [Issue #6](https://github.com/home588885-hue/asheng-stock-radar-web/issues/6)。**不應透過舊函式實作跨裝置高價同步**。該函式已於 2026-10-29 單獨部署安全修正 v3；正式頁面仍使用 `asheng-member-api`。
 - 正式跨裝置高水位應優先在已驗證 JWT 的 `asheng-member-api` 或具嚴格 RLS / RPC 保護的獨立服務實作。未驗收權限與完整時間戳前不新增資料寫入。
+
+## 舊版端點安全熱修實際結果（2026-10-29）
+
+- 將已讀取的正式 `spring-swallow-holdings` v2 原始碼在測試分支加上會員 JWT `auth.getUser()` 驗證、`radar_memberships.role=admin` 權限檢查、GET/POST 的管理員帳戶綁定，以及缺少 `ASHENG_ADMIN_PORTFOLIO_ID` 環境設定時預設拒絕的保護。
+- 完整預先驗收 [GitHub Actions #40800447882](https://github.com/home588885-hue/asheng-stock-radar-web/actions/runs/40800447882)：**22/22 Node 測試通過**；`deno check supabase/functions/spring-swallow-holdings/index.ts` 通過。這些是純測試與程式碼檢查，非有登入測試帳戶的 HTTP E2E。
+- 單獨呼叫 Supabase 部署介面更新此 **舊版** Edge Function，回報 `version=3`、`status=ACTIVE`。部署後以 `get_edge_function` / `list_edge_functions` 核對服務來源確實含身份驗證、管理員與帳戶檢查。為由 handler 驗證 token 的模式，保留原 `verify_jwt=false`，不可將平台未驗 JWT 誤認為全匿名放行。
+- **外部匿名 HTTP 及真實管理員帳戶端到端測試尚未成功執行**（執行環境網路工具無法連通該網址），不得宣稱 live E2E 100% 驗收。部署需要 `ASHENG_ADMIN_PORTFOLIO_ID` 伺服器端環境值；其實際是否已設定無法用現有工具驗證。若未設定則此舊端點按設計回 503、拒絕讀寫；主介面 `admin.html` 的持股主路徑為另一個 `asheng-member-api`，未修改。
+- 原 Issue #6 保持開啟，待確認合法舊客戶端需求、環境設定與合法登入回歸測試，才能結案。
+- **未修改正式 main、`asheng-member-api`、`spring-swallow-analyze`、`spring-swallow-picks`、持股資料、排程、LINE 或房產網站。**
