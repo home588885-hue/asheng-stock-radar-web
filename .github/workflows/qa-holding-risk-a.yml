@@ -9,7 +9,7 @@ on:
       - 'supabase/functions/spring-swallow-analyze/index.ts'
       - 'supabase/functions/spring-swallow-picks/index.ts'
       - 'diagnostics/holding-risk-policy-a-source-contract-20261029.test.mjs'
-      - 'supabase/functions/_shared/asheng-twse-peak-evidence.mjs'
+      - 'supabase/functions/asheng-holding-peak/peak-evidence.mjs'
       - 'supabase/functions/asheng-holding-peak/index.ts'
       - 'supabase/migrations/20261029_asheng_verified_holding_peaks.sql'
       - 'diagnostics/twse-peak-evidence-20261029.test.mjs'
