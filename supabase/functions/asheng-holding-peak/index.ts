@@ -123,6 +123,9 @@ Deno.serve(async(req:Request)=>{
   const q=quotes.get(id);
   const evidence=verifiedTwsePeak(q,holding,now);
   if(!evidence.ok){rejected.push({stock_id:id,reason:evidence.reason});continue;}
+  if(!('high' in evidence)&&!('source' in evidence)){
+    rejected.push({stock_id:id,reason:'no_verifiable_high'});continue;
+  }
   const {data:stored,error:writeError}=await service.rpc('asheng_upsert_verified_holding_peak',{
     p_user_id:user.id,p_stock_id:id,p_bought_at:holding.bought_at,
     p_cost:Number(holding.avg_cost),p_position_updated_at:holding.updated_at,
