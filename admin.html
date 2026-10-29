@@ -1347,6 +1347,7 @@ h1 {
         </div>
       </div>
     </div>
+    <script src="./sector-c-activity.js"></script>
     <script>
     (async()=>{
       const SUPABASE_URL = 'https://qexbtubfoyfsllaiecvv.supabase.co';
@@ -2012,6 +2013,12 @@ h1 {
           return validTodayQuote(cached) ? {...cached,cached_last_trade:true} : null;
         }).filter(validTodayQuote);
         persistLiveQuoteCache();
+        // Display-only sampling from existing C responses; no additional HTTP.
+        if(sectorCActivity){
+          sectorCActivity.observe(quotes.filter(q=>q.cached_last_trade!==true),
+            {now:new Date(),marketOpen:taipeiMarketState().open,stage});
+          refreshSectorRotationLabels();
+        }
         const fetchedNow=quotes.filter(q=>!q.cached_last_trade && incoming.has(String(q.stock_id))).length;
         cQuoteCoverage={requested:unique.length,valid:quotes.length,at:Date.now()};
         showCQuoteDiagnostic();
@@ -6214,23 +6221,39 @@ h1 {
       };
       // DISPLAY ONLY: sector reads an independently dated, sampled S EOD cohort.
       // This MUST NEVER change entry/holding signals, scores, filters or C quotes.
+      const sectorCActivity=window.AshengCSectorActivity?.createCSectorActivity?.()||null;
+      const registerCSectorStock=item=>{
+        if(!sectorCActivity||!item?.stock_id)return;
+        sectorCActivity.track({
+          stock_id:String(item.stock_id),industry:String(item.industry||''),
+          market:String(item.market||''),
+          avg_volume_20_lots:item?.metrics?.avg_volume_20_lots,
+          as_of:String(item.as_of||''),stage
+        });
+      };
       let sectorRotationState = null;
       let sectorRotationLoading = false;
       let sectorRotationLastCheckAt = 0;
-      const sectorRotationText = industry => {
-        const prefix='｜族群樣本：';
+      const sectorRotationText = (industry,market='') => {
+        const prefix='｜S族群樣本：';
         const row=sectorRotationState?.sectors?.get(String(industry||''));
         const day=String(sectorRotationState?.as_of||'').slice(5).replace('-','/');
-        if(!sectorRotationState)return prefix+'讀取中';
-        if(sectorRotationState.stale)return prefix+'資料過期（'+day+'）';
-        if(!row)return prefix+'覆蓋不足（'+day+'）';
-        return prefix+String(row.label||'⚪待確認')+'（'+day+'、'+Number(row.sample_count||0)+'檔）';
+        const eod=!sectorRotationState?prefix+'讀取中'
+          :sectorRotationState.stale?prefix+'資料過期（'+day+'）'
+          :!row?prefix+'覆蓋不足（'+day+'）'
+          :prefix+String(row.label||'⚪待確認')
+            +'（'+day+'、'+Number(row.sample_count||0)+'檔，非即時）';
+        const live=sectorCActivity?.label(industry,market,
+          {now:new Date(),marketOpen:taipeiMarketState().open,stage})
+          ||'｜C盤中族群：資料不足';
+        return eod+live;
       };
       const refreshSectorRotationLabels = () => {
         if(document.hidden)return;
         document.querySelectorAll('[data-sector-industry]').forEach(node=>{
           const industry=String(node.getAttribute('data-sector-industry')||'');
-          const label=sectorRotationText(industry);
+          const market=String(node.getAttribute('data-sector-market')||'');
+          const label=sectorRotationText(industry,market);
           if(node.textContent!==label)node.textContent=label;
         });
       };
@@ -6258,10 +6281,11 @@ h1 {
         }
       };
       const volumePriceHtml = (item, quote = null) => {
+        registerCSectorStock(item);
         const s = volumePriceState(item, quote);
         const ratioText = s.volumeRatio == null || !Number.isFinite(s.volumeRatio) ? '量比待更新' : (s.intraday ? '盤中估算今日量比 ' : '今日量比 ') + num(s.volumeRatio,2) + 'x';
         const positionText = Number.isFinite(s.pos1y) ? '年內位置 '+num(s.pos1y,1)+'%' : '年內位置待更新';
-        return '<div class="volume-price-read"><span class="flow-tag '+esc(s.tone)+'">'+esc(s.tag)+'</span><span class="flow-read-note">'+esc(s.note)+'</span><small>'+esc(ratioText+'｜'+positionText)+'<span data-sector-industry="'+esc(String(item?.industry||''))+'">'+esc(sectorRotationText(item?.industry))+'</span></small></div>';
+        return '<div class="volume-price-read"><span class="flow-tag '+esc(s.tone)+'">'+esc(s.tag)+'</span><span class="flow-read-note">'+esc(s.note)+'</span><small>'+esc(ratioText+'｜'+positionText)+'<span data-sector-industry="'+esc(String(item?.industry||''))+'" data-sector-market="'+esc(String(item?.market||''))+'">'+esc(sectorRotationText(item?.industry,item?.market))+'</span></small></div>';
       };
 
       // Unified display-only C/S quote source and real trade timestamp.
@@ -7950,6 +7974,7 @@ h1 {
       // saved holding cost/P&L, trade buttons, expandable rules, and 12-minute
       // survival (inside holdingActionHtml). Do not duplicate those panels.
       const holdingMiniHtml = (item, quote = null) => {
+        registerCSectorStock(item);
         const id=String(item.stock_id||''),m=item.metrics||{};
         const safeQuote=bestTodayQuote(validTodayQuote(quote)?quote:null,id);
         const live=validTodayQuote(safeQuote)?safeQuote:null;
@@ -8012,7 +8037,7 @@ h1 {
                 <span>${esc(quoteDisplayState(live,item).label)} <b>${price!=null?esc(num(price,2)):'-'}</b></span>
                 <span>損益 <b class="${holdingPnlClass(pnl)}">${pnl==null?'-':(pnl>0?'+':'')+esc(num(pnl,2))+'%'}</b></span></span>
               <span class="holding-mini-status">${esc(positionStatus+addObservation)}</span>
-              <span class="holding-mini-date">量價｜${esc(volumePriceState(item,live).tag)}｜${esc(volumePriceState(item,live).note)}<small data-sector-industry="${esc(String(item?.industry||''))}">${esc(sectorRotationText(item?.industry))}</small></span><span class="holding-mini-date">山川｜${esc(shanchuanBrief(item,live))}</span><span class="holding-mini-date">${esc(tdccHolderBrief(item))}</span>
+              <span class="holding-mini-date">量價｜${esc(volumePriceState(item,live).tag)}｜${esc(volumePriceState(item,live).note)}<small data-sector-industry="${esc(String(item?.industry||''))}" data-sector-market="${esc(String(item?.market||''))}">${esc(sectorRotationText(item?.industry,item?.market))}</small></span><span class="holding-mini-date">山川｜${esc(shanchuanBrief(item,live))}</span><span class="holding-mini-date">${esc(tdccHolderBrief(item))}</span>
               <span class="holding-mini-date">S 模型 ${esc(item.as_of||'待更新')}｜${live?'C 成交時間 '+esc(quoteDisplayState(live,item).moment)+(quoteDisplayState(live,item).live?'｜盤中即時':'｜非即時'):'無有效 C 成交，非即時模型價'}</span>
             </summary>
             <div class="holding-mini-body">
