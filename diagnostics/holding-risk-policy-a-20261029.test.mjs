@@ -96,3 +96,18 @@ test('no cross-account or post-sale historical peak mixing', () => {
   assert.equal(acceptObservedHigh(first.state,{...obs,source:'unverified_cache'},pos).accepted,false);
   assert.equal(acceptObservedHigh(first.state,obs,{...pos,active:false}).accepted,false);
 });
+
+test('daily high is never presumed post-purchase on the buying date', () => {
+  const position={account:'a',stockId:'2330',cost:100,active:true,
+    boughtAt:'2026-10-29T11:00:00+08:00'};
+  const dayHigh={high:125,marketDate:'2026-10-29',
+    source:'verified_exchange_daily_high_after_buy',
+    observedAt:'2026-10-29T14:00:00+08:00'};
+  assert.equal(acceptObservedHigh(null,dayHigh,position).reason,
+    'daily_high_not_proven_post_purchase');
+  const later={...dayHigh,marketDate:'2026-10-30',
+    observedAt:'2026-10-30T14:00:00+08:00'};
+  assert.equal(acceptObservedHigh(null,later,position).accepted,true);
+  const inconsistent={...later,marketDate:'2026-10-31'};
+  assert.equal(acceptObservedHigh(null,inconsistent,position).accepted,false);
+});
