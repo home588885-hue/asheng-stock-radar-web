@@ -46,8 +46,16 @@ function series(change){
  }));
 }
 test('50/10 session relative rotation identifies rising and falling research cohorts',()=>{
- const leading=relativeRotation(series(1.01));
- const lagging=relativeRotation(series(.99));
+ // A constant exponential trend has almost flat normalized RS momentum (~100).
+ // A true "leading" example requires fresh acceleration on top of the trend.
+ const leadingSeries=series(1.004);
+ const laggingSeries=series(.996);
+ for(let i=50;i<65;i++){
+   leadingSeries[i].sector_index*=Math.pow(1.02,i-49);
+   laggingSeries[i].sector_index*=Math.pow(.98,i-49);
+ }
+ const leading=relativeRotation(leadingSeries);
+ const lagging=relativeRotation(laggingSeries);
  assert.equal(leading.ok,true);
  assert.equal(leading.quadrant,'leading');
  assert.ok(leading.relative_strength>100);
