@@ -14,8 +14,16 @@ Deno.serve(async (req:Request)=>{
   if(req.method!=='GET')return respond({ok:false,error:'method_not_allowed'},405);
   const url=Deno.env.get('SUPABASE_URL')||'';
   const key=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')||'';
-  if(!url||!key)return respond({ok:false,error:'config_missing'},503);
+  const anon=Deno.env.get('SUPABASE_ANON_KEY')||'';
+  const bearer=req.headers.get('Authorization')||'';
+  if(!url||!key||!anon)return respond({ok:false,error:'config_missing'},503);
+  if(!/^Bearer\\s+\\S+$/.test(bearer))return respond({ok:false,error:'unauthorized'},401);
   try{
+    // Enforce identity in the handler. Never trust arbitrary client portfolio IDs.
+    const auth=createClient(url,anon,{global:{headers:{Authorization:bearer}},
+      auth:{persistSession:false,autoRefreshToken:false}});
+    const {data:userData,error:userError}=await auth.auth.getUser();
+    if(userError||!userData?.user?.id)return respond({ok:false,error:'unauthorized'},401);
     const db=createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false}});
     const {data:latest,error:le}=await db.from('spring_swallow_scan_results')
       .select('as_of').order('as_of',{ascending:false}).limit(1);
