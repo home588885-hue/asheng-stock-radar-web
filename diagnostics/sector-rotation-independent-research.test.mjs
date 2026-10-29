@@ -5,15 +5,15 @@ import {comparableTurnoverShift,relativeRotation} from './sector-rotation-indepe
 const day1='2026-10-27',day2='2026-10-28';
 const a=[],b=[];
 for(let i=0;i<12;i++){
- a.push({stock_id:'A'+i,industry:'A',date:day1,close:100,volume_lots:100});
- b.push({stock_id:'A'+i,industry:'A',date:day2,close:100,volume_lots:150});
- a.push({stock_id:'B'+i,industry:'B',date:day1,close:100,volume_lots:100});
- b.push({stock_id:'B'+i,industry:'B',date:day2,close:100,volume_lots:50});
+ a.push({stock_id:'A'+i,industry:'A',date:day1,close:100,market:'twse',volume_lots:100,trade_value_twd:10000000});
+ b.push({stock_id:'A'+i,industry:'A',date:day2,close:100,market:'twse',volume_lots:150,trade_value_twd:15000000});
+ a.push({stock_id:'B'+i,industry:'B',date:day1,close:100,market:'twse',volume_lots:100,trade_value_twd:10000000});
+ b.push({stock_id:'B'+i,industry:'B',date:day2,close:100,market:'twse',volume_lots:50,trade_value_twd:5000000});
 }
 test('turnover-share gain/loss sum to approximately zero, not net institutional purchases',()=>{
  const q=comparableTurnoverShift(a,b,day1,day2,{minOverall:20,minGroup:8});
  assert.equal(q.ok,true);
- assert.equal(q.flow_type,'relative_turnover_share_shift_pp_not_net_buying');
+ assert.equal(q.flow_type,'relative_official_traded_value_share_shift_pp_not_net_buying');
  assert.equal(q.comparable_count,24);
  const x=q.groups.find(x=>x.industry==='A');
  const y=q.groups.find(x=>x.industry==='B');
@@ -71,4 +71,17 @@ test('historical index length, duplicate time stamps and zero prices cannot yiel
  const zero=series(1.01);
  zero[20].market_index=0;
  assert.equal(relativeRotation(zero).ok,false);
+});
+
+test('share pp rejects a close × volume proxy and requires real exchange trade value',()=>{
+ const missing=a.map(row=>({...row,trade_value_twd:undefined}));
+ const r=comparableTurnoverShift(missing,b,day1,day2,{minOverall:20,minGroup:8});
+ assert.equal(r.ok,false);
+ assert.equal(r.reason,'noncomparable_or_low_coverage');
+});
+test('a symbol listed on a different exchange cannot silently match historical day',()=>{
+ const changed=b.map((row,i)=>i===0?{...row,market:'tpex'}:row);
+ const r=comparableTurnoverShift(a,changed,day1,day2,{minOverall:20,minCoverage:.9});
+ assert.equal(r.ok,true);
+ assert.equal(r.comparable_count,23);
 });
