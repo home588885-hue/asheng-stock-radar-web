@@ -116,9 +116,18 @@ export function acceptObservedHigh(previous, observation, position) {
       || !onOrAfterPurchase(observation.observedAt, position.boughtAt)
       || !['verified_trade', 'verified_exchange_daily_high_after_buy'].includes(observation.source))
     return { ...base, reason: 'missing_provenance_or_pre_purchase' };
-  if (observation.source === 'verified_exchange_daily_high_after_buy' &&
-      Date.parse(observation.observedAt) < Date.parse(position.boughtAt))
-    return { ...base, reason: 'daily_high_before_purchase' };
+  // A completed exchange daily high is not timestamped to a specific trade.
+  // On the purchase date it could have occurred before this holding was bought.
+  // Only permit completed *later* trading days for this source.
+  if (observation.source === 'verified_exchange_daily_high_after_buy') {
+    const marketDay = typeof observation.marketDate === 'string' ? observation.marketDate : '';
+    const buyDay = new Intl.DateTimeFormat('sv-SE', {timeZone:'Asia/Taipei',
+      year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(position.boughtAt));
+    const observedDay = new Intl.DateTimeFormat('sv-SE', {timeZone:'Asia/Taipei',
+      year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(observation.observedAt));
+    if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(marketDay) || marketDay !== observedDay || marketDay <= buyDay)
+      return { ...base, reason: 'daily_high_not_proven_post_purchase' };
+  }
   const identity = [String(position.account || ''), String(position.stockId || ''),
     position.boughtAt, Number(position.cost).toFixed(4)].join('|');
   if (!position.account || !position.stockId) return { ...base, reason: 'missing_account_or_stock' };
