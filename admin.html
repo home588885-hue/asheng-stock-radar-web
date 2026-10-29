@@ -7439,7 +7439,10 @@ h1 {
         // Only completed EOD volume, not an intraday raw volume comparison.
         const ratio=modelFresh&&avg>0&&dayLots>=0?dayLots/avg:null;
         if(highPosition&&ratio!=null&&ratio>=2.2)return {kind:'volume_exit_watch',risk,trail,title:'🟠 高檔爆量｜建議先走一趟',detail:'一年價格位階 '+num(position,1)+'%｜相對20日均量 '+num(ratio,2)+'倍｜先核對是否爆量轉弱'};
-        if(trail&&(trail.earlyGiveback||trail.shortMaWeak)){
+        // A stale cached C print is not a current intraday reversal.
+        // S-only observations are explicitly dated and never called live.
+        if(trail&&(trail.earlyGiveback||trail.shortMaWeak)
+          &&(!trail.live||quoteRecentForDisplay(quote))){
           const reasons=[trail.earlyGiveback?'已回吐已觀察最高獲利的一半以上':null,
             trail.ma10Broken?'價格跌破MA10':trail.ma5Broken?'價格跌破MA5':null]
             .filter(Boolean).join('；');
