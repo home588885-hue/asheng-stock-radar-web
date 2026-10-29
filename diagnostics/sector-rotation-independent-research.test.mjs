@@ -1,0 +1,87 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {comparableTurnoverShift,relativeRotation} from './sector-rotation-independent-research.mjs';
+
+const day1='2026-10-27',day2='2026-10-28';
+const a=[],b=[];
+for(let i=0;i<12;i++){
+ a.push({stock_id:'A'+i,industry:'A',date:day1,close:100,market:'twse',volume_lots:100,trade_value_twd:10000000});
+ b.push({stock_id:'A'+i,industry:'A',date:day2,close:100,market:'twse',volume_lots:150,trade_value_twd:15000000});
+ a.push({stock_id:'B'+i,industry:'B',date:day1,close:100,market:'twse',volume_lots:100,trade_value_twd:10000000});
+ b.push({stock_id:'B'+i,industry:'B',date:day2,close:100,market:'twse',volume_lots:50,trade_value_twd:5000000});
+}
+test('turnover-share gain/loss sum to approximately zero, not net institutional purchases',()=>{
+ const q=comparableTurnoverShift(a,b,day1,day2,{minOverall:20,minGroup:8});
+ assert.equal(q.ok,true);
+ assert.equal(q.flow_type,'relative_official_traded_value_share_shift_pp_not_net_buying');
+ assert.equal(q.comparable_count,24);
+ const x=q.groups.find(x=>x.industry==='A');
+ const y=q.groups.find(x=>x.industry==='B');
+ assert.equal(x.turnover_share_shift_pp,25);
+ assert.equal(y.turnover_share_shift_pp,-25);
+ assert.equal(x.status,'share_gaining');
+ assert.equal(y.status,'share_losing');
+ assert.equal(+q.groups.reduce((s,x)=>s+x.turnover_share_shift_pp,0).toFixed(3),0);
+});
+test('different cohort, missing source or duplicate ticker do not create fabricated flow',()=>{
+ const poor=comparableTurnoverShift(a,b.slice(0,12),day1,day2,{minOverall:10,minCoverage:.9});
+ assert.equal(poor.ok,false);
+ assert.equal(poor.reason,'noncomparable_or_low_coverage');
+ const dup=comparableTurnoverShift([...a,a[0]],b,day1,day2,{minOverall:20,minCoverage:.99});
+ assert.equal(dup.ok,false);
+ const invalid=comparableTurnoverShift(a,b,day2,day1);
+ assert.equal(invalid.ok,false);
+});
+test('outlier adjusted-event candidate excluded by matching screen',()=>{
+ const x=[...b.slice(0,-1),{...b.at(-1),close:200}];
+ const q=comparableTurnoverShift(a,x,day1,day2,{minOverall:20,minCoverage:.90});
+ assert.equal(q.ok,true);
+ assert.equal(q.comparable_count,23);
+});
+function series(change){
+ const base=Date.parse('2026-01-02T00:00:00Z');
+ return Array.from({length:65},(_,i)=>({
+   date:new Date(base+i*86400000).toISOString().slice(0,10),
+   sector_index:100*Math.pow(change,i),market_index:100
+ }));
+}
+test('50/10 session relative rotation identifies rising and falling research cohorts',()=>{
+ // A constant exponential trend has almost flat normalized RS momentum (~100).
+ // A true "leading" example requires fresh acceleration on top of the trend.
+ const leadingSeries=series(1.004);
+ const laggingSeries=series(.996);
+ for(let i=50;i<65;i++){
+   leadingSeries[i].sector_index*=Math.pow(1.02,i-49);
+   laggingSeries[i].sector_index*=Math.pow(.98,i-49);
+ }
+ const leading=relativeRotation(leadingSeries);
+ const lagging=relativeRotation(laggingSeries);
+ assert.equal(leading.ok,true);
+ assert.equal(leading.quadrant,'leading');
+ assert.ok(leading.relative_strength>100);
+ assert.ok(leading.relative_momentum>100);
+ assert.equal(lagging.ok,true);
+ assert.equal(lagging.quadrant,'lagging');
+});
+test('historical index length, duplicate time stamps and zero prices cannot yield quadrants',()=>{
+ assert.equal(relativeRotation(series(1.01).slice(0,50)).ok,false);
+ const dup=series(1.01);
+ dup[40].date=dup[39].date;
+ assert.equal(relativeRotation(dup).reason,'missing_unadjusted_or_duplicate_session');
+ const zero=series(1.01);
+ zero[20].market_index=0;
+ assert.equal(relativeRotation(zero).ok,false);
+});
+
+test('share pp rejects a close × volume proxy and requires real exchange trade value',()=>{
+ const missing=a.map(row=>({...row,trade_value_twd:undefined}));
+ const r=comparableTurnoverShift(missing,b,day1,day2,{minOverall:20,minGroup:8});
+ assert.equal(r.ok,false);
+ assert.equal(r.reason,'noncomparable_or_low_coverage');
+});
+test('a symbol listed on a different exchange cannot silently match historical day',()=>{
+ const changed=b.map((row,i)=>i===0?{...row,market:'tpex'}:row);
+ const r=comparableTurnoverShift(a,changed,day1,day2,{minOverall:20,minCoverage:.9});
+ assert.equal(r.ok,true);
+ assert.equal(r.comparable_count,23);
+});

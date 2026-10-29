@@ -68,8 +68,11 @@ test('UI only observes sector source, without touching action criteria or paid s
  assert.match(html,/const SECTOR_ROTATION_API = SHARED_DATA_HUB \+ '\/asheng-sector-rotation'/);
  assert.match(html,/data-sector-industry/);
  assert.match(html,/subset_of_EOD_scans_not_full_market/);
- assert.match(html,/data\?\.live!==false/);
- assert.match(html,/data\.stale===true/);
+ assert.match(html,/data\.is_net_inflow===false/);
+ assert.match(html,/mode=intraday/);
+ assert.match(html,/subset_of_verified_current_trade_not_full_market/);
+ assert.match(html,/shown\.stale===true/);
+ assert.match(html,/fallback\?\.scope!=='subset_of_EOD_scans_not_full_market'/);
  assert.match(html,/sectorRotationLastCheckAt<300000/);
  assert.match(html,/void refreshSectorRotationObservation\(\)/);
  assert.match(html,/Authorization:'Bearer '\+memberSession\.access_token/);
