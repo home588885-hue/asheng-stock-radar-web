@@ -31,3 +31,19 @@ test('lack of remote peak API does not block existing holdings or overwrite port
  assert.match(admin,/if\(!changed\|\|!holdingStillCurrent\(\)\)return/);
  assert.doesNotMatch(admin,/autoTrade|placeBrokerOrder/);
 });
+
+test('verified peak watch accepts TWSE quote clocks and YYYYMMDD dates',()=>{
+ const line=admin.split('\n').find(row=>row.includes('const quoteTimeParts='));
+ assert.ok(line,'expected quote-time parse must exist');
+ const literal=line.slice(line.indexOf('=')+1,line.indexOf('.exec(')).trim();
+ const clock=vm.runInNewContext('('+literal+')');
+ assert.equal(clock.test('10:12:20'),true);
+ assert.equal(clock.test('10:12'),true);
+ assert.equal(clock.test('bad clock'),false);
+ assert.equal(clock.test('10:12:99'),false);
+ assert.ok(admin.includes(String.raw`/^\d{8}$/`),'quote date must be 8-digit, not a literal backslash');
+ assert.equal(admin.includes(String.raw`/^\\d{8}$/`),false,
+   'double-escaped date regex silently discards all verified server peaks');
+ const stamp='2026-10-29T10:12:20+08:00';
+ assert.equal(new Date(stamp).toISOString(),'2026-10-29T02:12:20.000Z');
+});
