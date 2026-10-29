@@ -1748,6 +1748,7 @@ h1 {
       const ANALYZER_FALLBACK_API =
         'https://qexbtubfoyfsllaiecvv.supabase.co/functions/v1/spring-swallow-analyze';
       const HOLDINGS_API = MEMBER_API + '?action=holdings';
+      const VERIFIED_PEAK_API = SHARED_DATA_HUB + '/asheng-holding-peak';
       // Model snapshots are public market calculations, not private portfolio rows.
       // Read them directly from the existing S endpoint: one Edge request instead of proxying through member-api.
       const HOLDING_SNAPSHOT_API = SHARED_DATA_HUB + '/spring-swallow-picks';
@@ -6935,7 +6936,26 @@ h1 {
           && Number.isFinite(serverBought) && serverBought===holdingBought
           && Number.isFinite(serverCost) && Math.abs(serverCost-cost)<.0001;
         const serverPeak=serverValid?Number(holding.peak_close):0;
-        const peak=Math.max(price,serverPeak,Number(previous?.peak||0));
+        // Only a JWT-authorized server high that matches this active holding
+        // may enhance the local/EOD *observed* peak. Never claim unobserved history.
+        const remote=holding._verified_observed_peak||null;
+        const remoteAt=Date.parse(String(remote?.observed_at||''));
+        const currentDate=String(observationDate||'').replace(/[^0-9]/g,'').slice(0,8);
+        const quoteTimeParts=/^(\\d{1,2}):([0-5]\\d)(?::([0-5]\\d))?$/.exec(
+          String(liveQuote?.quote_time||''));
+        const safeQuoteClock=quoteTimeParts
+          ?quoteTimeParts[1].padStart(2,'0')+':'+quoteTimeParts[2]+':'+(quoteTimeParts[3]||'00'):'';
+        const observedAt=liveQuote&&/^\\d{8}$/.test(currentDate)&&safeQuoteClock
+          ?Date.parse(currentDate.slice(0,4)+'-'+currentDate.slice(4,6)+'-'+currentDate.slice(6,8)
+            +'T'+safeQuoteClock+'+08:00')
+          :liveQuote?NaN:Date.parse(observationDate+'T23:59:59+08:00');
+        const remoteValid=remote&&Number(remote.price)>0&&Number.isFinite(remoteAt)
+          &&remoteAt>=Date.parse(String(holding.bought_at||''))
+          &&Number.isFinite(observedAt)&&remoteAt<=observedAt+120000
+          &&['twse_mis_last_trade','twse_mis_daily_high_postbuy'].includes(remote.source)
+          &&remote.history_complete===false;
+        const durablePeak=remoteValid?Number(remote.price):0;
+        const peak=Math.max(price,serverPeak,durablePeak,Number(previous?.peak||0));
         if(!previous || peak>Number(previous.peak||0) || observationDate>String(previous.lastDate||'')){
           try { localStorage.setItem(key, JSON.stringify({identity,peak,lastDate:observationDate})); } catch(error){}
         }
@@ -9033,6 +9053,53 @@ h1 {
         return holdingsFetchPromise;
       }
 
+      // On-demand evidence only. A single entry into 已買進 may make at most
+      // ceil(active holdings/30) server-verified TWSE MIS requests, never an S scan.
+      // User ID comes exclusively from the authenticated Edge Function.
+      const refreshVerifiedPeakEvidence = async (symbols) => {
+        if(!symbols?.length || document.hidden) return false;
+        let changed=false;
+        try{
+          const {data}=await authClient.auth.getSession();
+          if(data?.session)memberSession=data.session;
+          if(!memberSession?.access_token)return false;
+          const headers={Authorization:'Bearer '+memberSession.access_token,
+            'Content-Type':'application/json'};
+          const apply=(payload)=>{
+            if(!payload?.ok||!Array.isArray(payload.observations))return;
+            for(const observation of payload.observations){
+              const id=String(observation?.stock_id||''),holding=holdings.get(id);
+              if(!holding)continue;
+              const peak=observation.peak;
+              if(peak?.history_complete===false&&Number(peak.price)>0
+                &&['twse_mis_last_trade','twse_mis_daily_high_postbuy'].includes(String(peak.source||''))){
+                holding._verified_observed_peak={
+                  price:Number(peak.price),observed_at:String(peak.observed_at),
+                  source:String(peak.source),history_complete:false
+                };
+                changed=true;
+              }
+            }
+          };
+          const get=await fetchJsonWithTimeout(VERIFIED_PEAK_API,
+            {headers,cache:'no-store'},6500);
+          if(get.response.ok)apply(get.data);
+          if(taipeiMarketState().open&&cQuoteReadWindow()){
+            for(let i=0;i<symbols.length;i+=30){
+              const batch=symbols.slice(i,i+30);
+              const reply=await fetchJsonWithTimeout(VERIFIED_PEAK_API,
+                {method:'POST',headers,cache:'no-store',
+                 body:JSON.stringify({action:'observe',stock_ids:batch})},12500);
+              if(reply.response.ok)apply(reply.data);
+            }
+          }
+        }catch(error){
+          // The optional verified-peak lane may be temporarily unavailable.
+          // Existing position storage and ordinary C quote display stay intact.
+        }
+        return changed;
+      };
+
       restoreCachedHoldings();
 
       async function loadHoldingCards() {
@@ -9193,6 +9260,14 @@ h1 {
         if (!holdingStillCurrent()) return;
         await render();
         if (!holdingStillCurrent()) return;
+        // Refresh verified cross-device peak evidence without blocking the
+        // first holdings render or adding a recurring poll / paid market scan.
+        void refreshVerifiedPeakEvidence(symbols).then(changed=>{
+          if(!changed||!holdingStillCurrent())return;
+          stableListRender(holdingOverviewHtml(symbols.length,items.length,items)
+            +items.map(item=>holdingMiniHtml(item,bestTodayQuote(null,item.stock_id))).join('')
+            +fallbackHtml,{quoteUpdate:true});
+        });
         // 已買進只保留原有約三分鐘報價取樣，存活統計於13:20停止。
         const refreshHoldingSessionQuotes = async () => {
           if(!holdingStillCurrent()||document.hidden||!taipeiMarketState().open)return;

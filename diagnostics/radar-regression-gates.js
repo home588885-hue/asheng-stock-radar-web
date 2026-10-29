@@ -834,8 +834,14 @@ test('KD-high is an oscillator warning, not a high-price veto for 2633',()=>{
     'chaseOver','chaseLimitNote','num',source+'\nreturn newEntryRiskGate;')(
     ()=>true,()=>null,()=>false,(item,p)=>p>Number(item.metrics.ma20)*1.12,
     ()=>'12%',(x,n=1)=>Number(x).toFixed(n));
-  const item={stock_id:'2633',metrics:{close:26.35,ma20:25.85,ma60:25.96,
+  // Isolate the KD oscillator check from the independently required TDCC
+  // 2-week entry gate. Without these certified fields, the TDCC veto should
+  // correctly block and this test would be testing the wrong decision layer.
+  const asOf='2026-10-28';
+  const item={stock_id:'2633',as_of:asOf,metrics:{close:26.35,ma20:25.85,ma60:25.96,
     position_1y_pct:35.2,daily_k:83.8,daily_d:82.6,
+    tdcc_holder_flow:{version:'2026-10-28-tdcc-ma20-0-8-two-weeks-v1',
+      entry_gate_verified:true,pass:true,covered:true,as_of:asOf},
     entry_candle_guard:{main_bull:true,weak_after_breakout:false},
     holding_management:{strong_breakdown:false}},
     cautions:['日KD偏高']};

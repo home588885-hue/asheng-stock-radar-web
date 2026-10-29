@@ -1,0 +1,60 @@
+name: Holding Risk A Unit Tests (read only)
+on:
+  pull_request:
+    paths:
+      - 'supabase/functions/_shared/asheng-holding-risk-a.mjs'
+      - 'diagnostics/holding-risk-policy-a-20261029.test.mjs'
+      - 'supabase/functions/spring-swallow-holdings/index.ts'
+      - 'diagnostics/legacy-holdings-auth-20261029.test.mjs'
+      - 'supabase/functions/spring-swallow-analyze/index.ts'
+      - 'supabase/functions/spring-swallow-picks/index.ts'
+      - 'diagnostics/holding-risk-policy-a-source-contract-20261029.test.mjs'
+      - 'supabase/functions/asheng-holding-peak/peak-evidence.mjs'
+      - 'supabase/functions/asheng-holding-peak/index.ts'
+      - 'supabase/migrations/20261029_asheng_verified_holding_peaks.sql'
+      - 'diagnostics/twse-peak-evidence-20261029.test.mjs'
+      - 'diagnostics/holding-peak-server-20261029.test.mjs'
+      - 'admin.html'
+      - 'diagnostics/holding-peak-admin-ui-20261029.test.mjs'
+      - 'diagnostics/radar-regression-gates.js'
+      - 'diagnostics/deno-legacy-risk-check.json'
+      - '.github/workflows/qa-holding-risk-a.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  risk-a-pure-qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify pure alert evaluator (no API calls, no scans)
+        run: node --test diagnostics/holding-risk-policy-a-20261029.test.mjs diagnostics/legacy-holdings-auth-20261029.test.mjs diagnostics/holding-risk-policy-a-source-contract-20261029.test.mjs diagnostics/twse-peak-evidence-20261029.test.mjs diagnostics/holding-peak-server-20261029.test.mjs diagnostics/holding-peak-admin-ui-20261029.test.mjs
+      - name: Existing radar regression gates (no C/S requests)
+        run: node diagnostics/radar-regression-gates.js
+      - name: Live anonymous peak endpoint must reject access
+        shell: bash
+        run: |
+          set -euo pipefail
+          ENDPOINT="https://qexbtubfoyfsllaiecvv.supabase.co/functions/v1/asheng-holding-peak"
+          STATUS="unknown"
+          for TRY in 1 2 3; do
+            STATUS="$(curl -sS --max-time 8 -o /tmp/peak_anon.json -w '%{http_code}' "$ENDPOINT")" || STATUS="network_error"
+            if [ "$STATUS" = "401" ]; then
+              echo "PASS: anonymous holding peaks access rejected (HTTP 401)"
+              break
+            fi
+            sleep 2
+          done
+          test "$STATUS" = "401" || { echo "::error::Unauthorized peak access status $STATUS"; exit 1; }
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Compile-check legacy secured handler only
+        run: deno check supabase/functions/spring-swallow-holdings/index.ts supabase/functions/asheng-holding-peak/index.ts
+      - name: Parse and transpile legacy analyzers without executing scans
+        run: npx --yes esbuild@0.25.12 supabase/functions/spring-swallow-analyze/index.ts supabase/functions/spring-swallow-picks/index.ts --format=esm --platform=neutral --outdir=/tmp/asheng-risk-qa --log-level=error
