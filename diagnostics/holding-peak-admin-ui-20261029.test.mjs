@@ -123,7 +123,7 @@ test('observed profit warning cannot replace hard stop or +20% trailing exit',()
      ()=>risk,()=>trail,()=>false,()=> '2026-10-28',
      (n,p)=>Number(n).toFixed(p??2));
  assert.notEqual(staleDecision(item,{price:101}).kind,'profit_giveback_watch');
- assert.match(admin,/bDecision\.kind==='profit_giveback_watch'\?bDecision\.title/);
+ assert.match(admin,/bDecision\.kind==='profit_giveback_watch'\s*\?bDecision\.title/);
  assert.match(admin,/獲利回吐／短均線轉弱/);
 });
 
