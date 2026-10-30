@@ -533,10 +533,11 @@ Deno.serve(async(req)=>{
       ||['starter','formal_candidate'].includes(entryState)
       ||m.v5?.entry_confirmed===true);
     const firstToday=fresh&&(mc.breakout_first_bar===true||box.first_bar_today===true);
-    const kind=broken?'invalid':thinBurst?'overheated':thinNear?'prelaunch'
+    const thinOverheated=thinBurst&&!chase(x,c);
+    const kind=broken?'invalid':thinBurst?(thinOverheated?'overheated':'first_bar'):thinNear?'prelaunch'
       :overheated?'overheated':firstToday?'first_bar':recentFirst?'followup':'prelaunch';
     const label=kind==='invalid'?'🔴 結構轉弱｜已退出有效追蹤'
-      :thinBurst?'⚠️ 薄量首破異動｜高乖離禁追'
+      :thinBurst?(thinOverheated?'⚠️ 薄量首破異動｜高乖離禁追':'⚠️ 薄量首破異動｜量少謹慎（非買點）')
       :thinNear?'🟡 薄量靠近前高｜提前觀察（非買點）'
       :kind==='overheated'?'🔵 距MA20過高｜禁止追價'
       :promoted?'🎯 已轉進場雷達｜前哨留歷史'
@@ -545,7 +546,7 @@ Deno.serve(async(req)=>{
       :'🌱 山川第一根前哨｜尚非買點';
     const reason=kind==='invalid'
       ?(mother.includes('low_broken')?'山川母子K支撐失效':g.weak_after_breakout===true?'完整日K量價轉弱':c<ma20*.985?'MA20支撐已失守':'原結構風控轉弱')
-      :thinBurst?'薄量股票，完成日K量比 '+ratio.toFixed(2)+'倍、成交 '+v+'張、MA20乖離 +'+bias.toFixed(2)+'%；只列風險觀察，不追價'
+      :thinBurst?'薄量股票，完成日K量比 '+ratio.toFixed(2)+'倍、成交 '+v+'張、MA20乖離 '+(bias>=0?'+':'')+bias.toFixed(2)+'%；'+(thinOverheated?'超過原防追高限制，禁追價':'量少流動性風險，僅供觀察，非試單')
       :thinNear?'薄量股票接近20日前高，量比 '+ratio.toFixed(2)+'倍、成交 '+v+'張；僅提前列觀察，需注意流動性風險' 
       :kind==='overheated'?'距MA20 +'+bias.toFixed(2)+'%，超過前哨觀察的5%低乖離範圍'
       :promoted?'S模型 '+(phase||'未標明')+'／'+(entryState||'未標明')+'；以進場雷達最新風控為準，不是第二個買點'
@@ -570,13 +571,18 @@ Deno.serve(async(req)=>{
   const thinNearObservations=scoutObservationPool.filter((x:any)=>
     x.__scout_thin===true&&x.__scout_state==='prelaunch')
     .sort((a:any,b:any)=>String(b.as_of).localeCompare(String(a.as_of))
-      ||Number(b.score)-Number(a.score)).slice(0,4);
+      ||Number(b.score)-Number(a.score));
   const thinRiskObservations=scoutObservationPool.filter((x:any)=>
     x.__scout_thin===true&&x.__scout_state==='overheated')
     .sort((a:any,b:any)=>String(b.as_of).localeCompare(String(a.as_of))
-      ||Number(b.score)-Number(a.score)).slice(0,4);
+      ||Number(b.score)-Number(a.score));
+  const thinFirstBarObservations=scoutObservationPool.filter((x:any)=>
+    x.__scout_thin===true&&x.__scout_state==='first_bar')
+    .sort((a:any,b:any)=>String(b.as_of).localeCompare(String(a.as_of))
+      ||Number(b.score)-Number(a.score));
   const scoutObservations=[...new Map([...scoutActive,...scoutRisk,
-    ...thinNearObservations,...thinRiskObservations].map((x:any)=>[String(x.stock_id),x])).values()];
+    ...thinNearObservations,...thinRiskObservations,...thinFirstBarObservations]
+    .map((x:any)=>[String(x.stock_id),x])).values()];
   // Visibility-only: the analyzer may classify a valid S entry lifecycle as
   // WATCH even when it reports 'starter' or 'formal_candidate'. The old monitor
   // filter discarded these candidates, so C could never observe them in ENTRY.
