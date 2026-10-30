@@ -3602,6 +3602,50 @@ h1 {
             :'📚 山川型態 '+count+'/4'+(failure?'｜支撐跌破警戒':'｜觀察'),
           detail:details.join('｜')+'｜只參考現有法人籌碼；不解鎖🟢正式買點或自動下單'};
       };
+      // Generic signed-S second-leg watch. Annual-high position is a warning,
+      // not proof of price overextension. Observation only: NO trial/buy unlock.
+      const HIGH_POSITION_REBREAK_WATCH_VERSION='2026-10-30-highpos-second-leg-watch-v1';
+      const highPositionRebreakWatchState=(item,quote=null)=>{
+        const no={eligible:false,label:'',advice:'',detail:'',priceOver:false};
+        if(!item||holdings.has(String(item.stock_id||''))
+          ||item.__passive_monitor===true||item.__observation_only===true
+          ||String(item.as_of||'')!==expectedSignalDataDate()
+          ||!unifiedRadarGeneration(item)||!chaseModelReady(item))return no;
+        const m=item.metrics||{},mc=m.ma_cluster||{},g=m.entry_candle_guard||{};
+        const seq=m.launch_sequence||mc.launch_sequence||{};
+        const close=Number(m.close),prev=Number(m.prev_close);
+        const ma10=Number(m.ma10),ma20=Number(m.ma20),ma60=Number(m.ma60);
+        const high=Number(m.high20_prev||mc.breakout_price);
+        const lots=Number(m.current_volume_lots),avg=Number(m.avg_volume_20_lots);
+        const pos=Number(m.position_1y_pct);
+        if(![close,prev,ma10,ma20,ma60,high,lots,avg,pos].every(v=>Number.isFinite(v)&&v>0)
+          ||pos<85||pos>100||seq.second_buy_candidate!==true
+          ||mc.all_rising!==true||mc.above_all_mas!==true
+          ||g.main_bull!==true||g.weak_after_breakout===true
+          ||g.macd_weak===true||g.kd_high_weak===true
+          ||m.holding_management?.strong_breakdown===true
+          ||close<Math.max(ma10,ma20,ma60)
+          ||avg<500||lots<1000||lots/avg<.5||lots/avg>2.5
+          ||(close/prev-1)*100>8
+          ||(close/high-1)*100< -5||(close/high-1)*100>3
+          ||(close/ma20-1)*100<0||(close/ma20-1)*100>8
+          ||chaseOver(item,close))return no;
+        const live=quoteRecentForDisplay(quote)?Number(quote.price):null;
+        const over=live!=null&&chaseOver(item,live);
+        const label=over?'⚡ 前日二次突破候選｜現價高乖離禁追'
+          :'🔁 高位階二次突破｜優先追蹤（非買點）';
+        const detail='S '+String(item.as_of)+' 確認第二波突破候選、三均線上揚'
+          +'｜1年位階 '+num(pos,1)+'%（風險提醒，非單獨否決）'
+          +'｜收盤距MA20 '+num((close/ma20-1)*100,2)+'%'
+          +'｜相對量 '+num(lots/avg,2)+'倍'
+          +'｜20日前高 '+num(high,2)
+          +(seq.first_signal_date?'｜歷史首根記錄 '+String(seq.first_signal_date)+'（模型回溯，不代表當日已提醒）':'')
+          +(over?'｜C現價已超過原MA20乖離上限，不追價':'｜C今日有效量價與原風控仍待確認')
+          +'。本項僅保留追蹤順位，不產生試單、綠色買點或加碼。';
+        return {eligible:true,priceOver:over,label,detail,
+          advice:over?'前次已列二次突破候選，但目前超出防追高限制｜不追價'
+            :'三線轉強、二次突破候選｜優先盯前高與有效成交（非買點）'};
+      };
       const newEntryRiskGate = (item, quote = null) => {
         if(!chaseModelReady(item))return {kind:'hard',key:'legacy_chase_guard',
           phase:'blocked',className:'wait',text:'⚪ 舊版防追高模型｜僅供觀察',
@@ -3627,11 +3671,20 @@ h1 {
           detail:'MA10／20／60主要多頭條件尚未成立，暫不新買；不等於趨勢已破壞',
           keep_candidate:true,buyable:false,trialable:false
         };
-        if(chaseOver(item,price) || Number.isFinite(pos)&&pos>=85) return {
+        const highRebreak=highPositionRebreakWatchState(item,quote);
+        if(chaseOver(item,price) || (Number.isFinite(pos)&&pos>=85&&!highRebreak.eligible)) return {
           kind:'position',key:'wait',rank:10,className:'wait',
-          text:'🔵 趨勢仍在｜位置偏高等回踩',
-          detail:(chaseOver(item,price)?'距MA20 +'+num(gap,1)+'%，已超過'+chaseLimitNote(item):'1年位階 '+num(pos,1)+'%')
+          text:highRebreak.eligible?'⚡ 前日二次突破候選｜現價高乖離禁追':'🔵 趨勢仍在｜位置偏高等回踩',
+          detail:highRebreak.eligible?highRebreak.detail:
+            (chaseOver(item,price)?'距MA20 +'+num(gap,1)+'%，已超過'+chaseLimitNote(item):'1年位階 '+num(pos,1)+'%')
             +'｜不宜追價不等於股票不能繼續漲，等回踩再核對',keep_candidate:true,buyable:false,trialable:false
+        };
+        // A high annual percentile by itself cannot suppress a verified
+        // second-leg S observation if price is still within the MA20 guard.
+        if(highRebreak.eligible)return {
+          kind:'high_rebreak_watch',key:'high_rebreak_watch',rank:45,className:'scout',
+          text:highRebreak.label,detail:highRebreak.detail,keep_candidate:true,
+          buyable:false,trialable:false,high_rebreak_observation:true
         };
         if((Number.isFinite(k)&&Number.isFinite(d)&&k>80&&k<d)
           || g.weak_after_breakout===true) return {
@@ -5636,7 +5689,9 @@ h1 {
           // price is extended. Keep actual overextension/position risk as the
           // sole reason for the blue high-position category. K < D remains
           // covered by newEntryRiskGate() above.
-          const high=(Number.isFinite(pos)&&pos>=85)||chaseOver(item,price)
+          const rebreakWatch=highPositionRebreakWatchState(item,q);
+          const high=((Number.isFinite(pos)&&pos>=85)&&!rebreakWatch.eligible)
+            ||chaseOver(item,price)
             ||detail.includes('位置過高')||risk?.kind==='position';
           if(high){
             const reasons=[];
@@ -5645,6 +5700,14 @@ h1 {
             if(Number.isFinite(k)&&k>80)reasons.push('KD K '+num(k,1)+(Number.isFinite(d)?'／D '+num(d,1):''));
             b.high.push(safeRow(row,{text:'🔵 位置偏高｜等回踩',
               detail:(reasons.join('｜')||'位置風險')+'｜不追價，等回踩確認'}));
+            return;
+          }
+          // Priority observation in ENTRY, never an orange/green permission.
+          if(rebreakWatch.eligible){
+            b.focus.push(safeRow(row,{key:'high_rebreak_watch',phase:'observe',
+              className:'scout',rank:95,text:rebreakWatch.label,
+              detail:rebreakWatch.detail,buyable:false,trialable:false,
+              high_rebreak_observation:true}));
             return;
           }
           if(a.phase==='final_wait'){
@@ -7972,6 +8035,9 @@ h1 {
         if(!item||holdings.has(String(item.stock_id||''))
           ||!unifiedRadarGeneration(item)||!chaseModelReady(item)
           ||String(item.as_of||'')!==expectedSignalDataDate())return none;
+        const highPos=highPositionRebreakWatchState(item,quote);
+        if(highPos.eligible)return {priority:highPos.priceOver?86:90,
+          label:highPos.label,advice:highPos.advice,version:RADAR_WATCH_ATTENTION_VERSION};
         const pre=radarPreBreakoutState(item,quote);
         if(pre.eligible)return {...pre,version:RADAR_WATCH_ATTENTION_VERSION};
         const firstBarWatch=eodVolumeFirstBarObservation(item,quote);
