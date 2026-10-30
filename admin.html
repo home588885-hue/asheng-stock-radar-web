@@ -5592,9 +5592,13 @@ h1 {
         const eodTrialWatchReady=row=>(
           eodStarterWatchEligible(row.item)
           ||(bottomFirstQuality(row.item).trialBase
-            &&['starter','near'].includes(String(row.item?.metrics?.trade_lifecycle?.entry?.state||''))))
+            &&String(row.item?.metrics?.trade_lifecycle?.entry?.state||'')==='starter'
+            &&Number(row.item?.score)>=75))
           &&bottomFirstQuality(row.item).prelaunch
           &&row.action?.stale_model!==true&&row.action?.candle_guard!==true;
+        // WATCH/near and low-score names remain visible in the ordinary
+        // observation shelf, but must not be labeled as a verified trial.
+        // An actual C-validated orange trial still uses its original trade gate.
         // EOD starter is a tracked *candidate*, not a trial. Its wording must
         // follow the live Taiwan market session, never say "open and verify"
         // after 09:00. Explain precisely whether C is absent, stale or failed.
@@ -5603,10 +5607,24 @@ h1 {
           const modelDay=String(item?.as_of||'待確認');
           const setup=starterSetup
             ?'盤後模型接近'+starterSetup.support+'支撐'
-            :'盤後日K列為試單候選';
-          if(now.open&&now.totalMinutes>=800)return {
-            text:'🟡 盤中試單確認已截止｜僅供觀察（非買點）',
-            detail:setup+'｜13:20後不重新確認盤中試單，等下一交易日最新成交及風控'};
+            :'盤後日K處於觀察準備階段';
+          const id=String(item?.stock_id||'');
+          const recordedTrial=String(pullbackWatch.get(id)?.trial_last_as_of||'')===modelDay
+            ||verifiedTrialOutbox.has(id+'@'+modelDay)
+            ||entrySurvivalMap().get(id)?.status==='passed';
+          const entryState=String(item?.metrics?.trade_lifecycle?.entry?.state||'未知');
+          const score=Number(item?.score);
+          const missingEod=(entryState!=='starter'&&entryState!=='formal_candidate'
+            ?'S模型仍為'+entryState+'觀察，尚未確認試單資格':'S模型僅是準備，不是C盤中買點')
+            +(Number.isFinite(score)&&score<75
+              ?'｜MA10先手評分 '+num(score,0)+' 未達75（僅此路線）':'');
+          if(now.open&&now.totalMinutes>=800)return recordedTrial
+            ?{text:'📋 已記錄盤中試單驗證｜目前非買點',
+              detail:'有可核對的試單觀測紀錄；13:20後不再新增盤中確認。'
+                +'這是歷史記錄，不能當作現在可買進'}
+            :{text:'🟡 今日尚未確認可試單｜僅供觀察（非買點）',
+              detail:setup+'｜'+missingEod
+                +'｜13:20後停止新增盤中試單確認；沒有已驗證橘色訊號，不能因時間截止就宣稱曾可試單'};
           if(now.open){
             const todayQuote=validTodayQuote(quote);
             if(!todayQuote)return {
@@ -5629,10 +5647,12 @@ h1 {
           }
           const premarket=now.weekday&&now.totalMinutes<540;
           return premarket
-            ?{text:'🟠 盤前試單準備｜09:00後核對（非買點）',
+            ?{text:'🟡 盤前準備觀察｜待開盤驗證（非買點）',
               detail:setup+'｜目前尚未進入交易時段，須等當日C有效成交及量價風控確認'}
-            :{text:'🌙 盤後試單候選｜下個交易日確認（非買點）',
-              detail:setup+'｜目前非交易時段，最新完整日K僅供觀察，下個交易日再核對C成交與風控'};
+            :{text:recordedTrial?'📋 曾有試單驗證紀錄｜目前非買點'
+                :'🌙 盤後模型觀察｜下個交易日確認（非買點）',
+              detail:setup+'｜'+missingEod
+                +'｜非交易時段僅供觀察，沒有已驗證試單紀錄就不稱作曾可試單；下次再核對C成交與風控'};
         };
         const assign=row=>{
           const item=row.item||{},m=item.metrics||{},a=row.action||{};
@@ -5830,7 +5850,8 @@ h1 {
         // One symbol, one decision area: risk bucket always wins over the overnight shortlist.
         const overnightRiskIds=new Set([...avoidRows,...waitRows].map(row=>String(row?.item?.stock_id||'')).filter(Boolean));
         const researchGroups=[
-          {label:taipeiMarketState().open?'盤中試單待確認':'盤後試單準備',weight:8,rows:eodTrialRows},
+          {label:taipeiMarketState().open&&taipeiMarketState().totalMinutes<800
+            ?'盤中觀察準備（非試單）':'下個交易日觀察準備（非買點）',weight:8,rows:eodTrialRows},
           {label:'箱型第一根觀察',weight:7,rows:boxFirstRows},
           {label:'回踩守穩觀察',weight:6,rows:reclaimRows},
           {label:'轉強候選',weight:5,rows:focusRows},
