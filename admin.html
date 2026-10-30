@@ -3635,27 +3635,8 @@ h1 {
           text:'🟡 短線轉弱｜等重新轉強',
           detail:'KD／K棒動能轉弱，暫不新買；守住支撐後再評估',keep_candidate:true,buyable:false,trialable:false
         };
-        // Official entry/trial authority is gated by the SAME new TDCC weekly cached policy.
-        // Never promote older/analyzer-unsigned snapshots or missing holder data into a buy.
-        const holderFlow=m.tdcc_holder_flow||{};
-        const holderVersion='2026-10-28-tdcc-ma20-0-8-two-weeks-v1';
-        const holderConfirmed=holderFlow.version===holderVersion&&holderFlow.entry_gate_verified===true
-          &&holderFlow.pass===true&&holderFlow.covered===true
-          &&holderFlow.as_of===String(item?.as_of||'');
-        if(!holderConfirmed)return {kind:'hard',key:'tdcc_holder_flow_guard',phase:'blocked',
-          rank:9,className:'wait',buyable:false,trialable:false,keep_candidate:true,
-          text:'🟡 集保大戶＋MA20條件待確認｜暫不試單',
-          detail:'新版要求：400張／1000張以上持股比例各連增兩週＋MA20正乖離0～8%；'
-            +'集保週資料缺漏、過期、未經新版分析或條件不符，一律保留觀察而不核發買點。'
-            +' 最新已核對快照 '+String(holderFlow.snapshot_date||'無')};
-        if(quote&&validTodayQuote(quote)){
-          const livePrice=Number(quote.price),refMa20=Number(m.ma20);
-          const liveBias=livePrice>0&&refMa20>0?(livePrice/refMa20-1)*100:null;
-          if(liveBias===null||liveBias<0||liveBias>8)return {kind:'hard',key:'tdcc_intraday_ma20_bias_guard',
-            phase:'blocked',rank:10,className:'wait',buyable:false,trialable:false,keep_candidate:true,
-            text:'🟡 即時價距MA20不在0～8%｜等安全位置',
-            detail:'最新有效成交相對MA20偏離 '+(liveBias===null?'缺資料':num(liveBias,2)+'%')+'，保持觀察、不試單'};
-        }
+        // TDCC 400/1000 shareholding data is display-only; it never vetoes a stock.
+        // Independent MA20 chase, selloff, structural and candle checks above remain in force.
         return null;
       };
       const entryCandleGuard = (item, quote = null) => {
@@ -6492,7 +6473,7 @@ h1 {
           streakBoth:covered?streak(f.streak_both_weeks):null,
           streakHistory:covered?val(f.streak_history_snapshots):null,
           bias:covered?val(f.bias20_pct):null,ma20Pass:covered&&f.ma20_bias_0_8_pass===true,
-          signed:covered&&f.entry_gate_verified===true};
+          signed:covered&&f.source_verified===true};
       }
       function tdccStreakLabel(weeks) {
         return weeks===null?'週數待更新':weeks>=4?'連增4週以上':weeks>0?'連增'+weeks+'週':'未連續增加';
@@ -6514,7 +6495,7 @@ h1 {
           +' 尚無可用的集保週資料；不能拿後來公布的快照倒補歷史買點。'
           +(s.date?'｜已有快照 '+esc(s.date):'')+'</small></div>';
         const bias=s.bias===null?'MA20偏離待補':'MA20偏離 '+(s.bias>0?'+':'')+num(s.bias,2)+'%'
-          +(s.ma20Pass?'（符合0～8%）':'（不符0～8%）');
+          +'（統計參考，非門檻）';
         return '<div class="tdcc-holder-flow" data-tdcc-flow="available">'
           +'<b>🐋 集保大戶｜'+esc(tdccStreakLabel(s.streakBoth))+'（兩級同步）</b>'
           +'<small>400張以上 '+esc(value(s.p400))+'｜'+esc(tdccStreakLabel(s.streak400))
@@ -6522,8 +6503,8 @@ h1 {
           +'<small>1,000張以上 '+esc(value(s.p1000))+'｜'+esc(tdccStreakLabel(s.streak1000))
             +'｜最近一週 '+esc(delta(s.delta1000))+'</small>'
           +'<small>集保資料日 '+esc(s.date)+'｜模型日 '+esc(s.day)
-            +'｜'+esc(bias)+(s.signed?'｜新版分析已驗證':'｜待新版分析確認')+'</small>'
-          +'<small>週數由最近5份連續有效快照計算，最多辨識4週以上；連增週數僅供觀察。正式買點仍以至少2週與既有風控確認。</small>'
+            +'｜'+esc(bias)+(s.signed?'｜快照已核對':'｜快照待核對')+'</small>'
+          +'<small>週數由最近5份連續有效快照計算，最多辨識4週以上；連增週數僅供觀察，不參與任何股票篩選、橘色試單或綠色買進門檻。</small>'
           +'<small>400張以上包含1,000張以上；不是每日實際買進金額，也不是上漲勝率。</small></div>';
       }
 
