@@ -5698,8 +5698,11 @@ h1 {
             if(Number.isFinite(pos)&&pos>=85)reasons.push('1年位階 '+num(pos,1)+'%');
             if(chaseOver(item,price))reasons.push('距MA20 +'+num(gap,1)+'%（'+chaseLimitNote(item)+'）');
             if(Number.isFinite(k)&&k>80)reasons.push('KD K '+num(k,1)+(Number.isFinite(d)?'／D '+num(d,1):''));
-            b.high.push(safeRow(row,{text:'🔵 位置偏高｜等回踩',
-              detail:(reasons.join('｜')||'位置風險')+'｜不追價，等回踩確認'}));
+            b.high.push(safeRow(row,{
+              text:rebreakWatch.eligible?'⚡ 前日二次突破候選｜現價高乖離禁追':'🔵 位置偏高｜等回踩',
+              detail:rebreakWatch.eligible?rebreakWatch.detail
+                :(reasons.join('｜')||'位置風險')+'｜不追價，等回踩確認',
+              phase:'observe',buyable:false,trialable:false}));
             return;
           }
           // Priority observation in ENTRY, never an orange/green permission.
