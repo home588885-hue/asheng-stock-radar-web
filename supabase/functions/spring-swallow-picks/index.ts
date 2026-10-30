@@ -68,9 +68,8 @@ async function attachTDCC(rows:any[]){
       &&m.tdcc_holder_flow?.as_of===day&&m.tdcc_holder_flow?.snapshot_date===row?.snapshot_date
       &&m.tdcc_holder_flow?.pass===true;
   const verified=passed&&signed;
-  const oldFormal=m.v5?.entry_confirmed===true||m.trade_lifecycle?.entry?.formal_candidate===true;
   m.tdcc_holder_flow={version:TDCC_GATE_VERSION,source:'third_party_archive_of_public_tdcc_csv',snapshot_date:row?.snapshot_date??null,
-   usable_from:row?.usable_from??null,as_of:day,covered,pass:passed,entry_gate_verified:verified,
+   usable_from:row?.usable_from??null,as_of:day,covered,pass:passed,entry_gate_verified:false,source_verified:covered,trade_gate_applied_to_new_entries:false,
    bias20_pct:bias,ma20_bias_0_8_pass:biasOk,holder_400_pct:row?.pct_400??null,holder_1000_pct:row?.pct_1000??null,delta_400_pp:row?.change_400_pp??null,delta_1000_pp:row?.change_1000_pp??null,
    two_week400_up:row?.two_week400_up===true,two_week1000_up:row?.two_week1000_up===true,
    two_week_both_up:row?.two_week_both_up===true,
@@ -80,17 +79,6 @@ async function attachTDCC(rows:any[]){
    reason:!covered?'missing_or_not_yet_available':!biasOk?'ma20_bias_out_of_0_8':!passed?'holder_two_week_increase_not_confirmed':!signed?'await_latest_analyzer_scan':'confirmed',
    no_historical_buy_upgrade:true};
   if(m.model?.advanced_data)m.model.advanced_data.large_small_holder=covered;
-  if(!verified){
-   if(m.v5){m.v5.entry_confirmed=false;m.v5.precision_confirmed=false;}
-   if(m.trade_lifecycle?.entry){
-    const e=m.trade_lifecycle.entry;e.formal_candidate=false;e.starter=false;
-    if(e.state==='formal_candidate'||e.state==='starter')e.state='near';
-   }
-   if(oldFormal||day>='2026-10-27'&&(x.stage==='B'||x.stage==='C')){
-    const cautions=Array.isArray(x.cautions)?x.cautions:[];
-    if(!cautions.some((t:any)=>String(t).includes('集保大戶新版')))x.cautions=[...cautions,'集保大戶新版：'+m.tdcc_holder_flow.reason+'；不升格正式買點'];
-   }
-  }
   return {...x,metrics:m};
  });
 }
