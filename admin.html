@@ -2219,6 +2219,10 @@ h1 {
           ||Number(b.score||0)-Number(a.score||0);
       });
       const scoutHistoryClass=x=>{
+        if(x.state==='overheated'&&String(x.label||'').includes('薄量'))
+          return {status:'⚠️ 薄量首破｜高乖離禁追',next:'流動性偏低，今日急拉不追價；待重新整理及有效成交確認'};
+        if(x.state==='prelaunch'&&String(x.label||'').includes('薄量'))
+          return {status:'🟡 薄量近前高｜提前觀察',next:'留意成交量能否延續；此處不核發試單或買進訊號'};
         if(x.state==='invalid')return {status:'🔴 歷史追蹤｜結構失效',next:'僅保留紀錄，不列入買進清單'};
         if(x.state==='overheated')return {status:'🔵 歷史追蹤｜過熱觀察',next:'等待新的完整日K，禁止追高'};
         if(String(x.label||'').includes('已轉進場雷達'))
