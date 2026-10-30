@@ -6087,6 +6087,7 @@ h1 {
         return 'NONE';
       };
       const isActiveLaunchItem = item =>
+        String(item?.as_of||'')===expectedSignalDataDate() &&
         modelLaunchPhase(item)==='ACTIVE' && !holdings.has(String(item?.stock_id||''));
       const launchQualityState = item => {
         // Personal holdings are managed exclusively in 已買進.
@@ -6100,6 +6101,10 @@ h1 {
           &&item.__observation_zone==='launch'
           ?{keep:true,rank:1,className:'pending-rescan',label:'⚪ 舊日K初選｜等新版補算（非買點）'}
           :{keep:false,rank:0,className:'pending-rescan',label:'⚪ 觀察未通過'};
+        // Only the latest completed trading-day model may enter the primary launch list.
+        // Older signed snapshots remain available in the observation shelf above.
+        if(String(item?.as_of||'')!==expectedSignalDataDate())
+          return {keep:false,rank:0,className:'stale',label:'⚪ 前次完整日K｜僅供觀察（非買點）'};
         if(!chaseModelReady(item))return {keep:false,rank:0,className:'wait',label:'⚪ 舊版待補算'};
         const m=item?.metrics||{};
         const bottom=m.bottom_start||{};
@@ -6780,7 +6785,8 @@ h1 {
              (launchData.progress?.latest_complete!==true ||
               String(launchData.progress?.latest_as_of||'')!==expectedSignalDataDate())){
             const cachedPrevious=readLaunchDataCache();
-            if(cachedPrevious?.picks?.length)launchPicks=cachedPrevious.picks;
+            if(cachedPrevious?.picks?.length)launchPicks=cachedPrevious.picks.filter(item=>
+              String(item?.as_of||'')===expectedSignalDataDate()&&recentModelForDisplay(item));
           }
             // These candidates are already quality-screened by the API before its response limit.
             // Display the true qualified count; never fill the page with lower-score names.
@@ -6870,7 +6876,9 @@ h1 {
             }, 0);
           }
           const launchFiltered = stage === 'LAUNCH' ? allPicks.filter(item => launchQualityState(item).keep) : allPicks;
-          const picks = stage === 'ENTRY' ? allPicks.filter(item => actionableSignals.has(tradeSignal(item).className) || isActiveLaunchItem(item)) : launchFiltered;
+          const picks = stage === 'ENTRY' ? allPicks.filter(item =>
+             String(item?.as_of||'')===expectedSignalDataDate() &&
+             (actionableSignals.has(tradeSignal(item).className) || isActiveLaunchItem(item))) : launchFiltered;
           const stageRank = { C: 3, B: 2, A: 1, WATCH: 0 };
           const signalRank = { highwin: 12, v5buy: 10, first: 6, add: 5, early: 4, position: 3, attack: 2, scout: 1 };
           const rankedPicks = [...picks].sort((a, b) => {
