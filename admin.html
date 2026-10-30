@@ -7941,6 +7941,46 @@ h1 {
           advice:'距前高 '+num(Math.abs(near),1)+'%｜觀察 '+num(high,2)+' 突破與MA10守穩',
           source:signed?'signed-20day-scout':'signed-v2-basic-watch'};
       };
+      // EOD observation rail: first 20-day high on exceptional relative volume,
+      // while MA60/full-bull confirmation is still pending. Never a trial/buy gate.
+      // S is a completed trading-day model; C only updates the chase warning.
+      const eodVolumeFirstBarObservation=(item,quote=null)=>{
+        const none={flag:false,priority:0,label:'',advice:'',detail:''};
+        if(!item||holdings.has(String(item.stock_id||''))||item.__observation_only===true
+          ||!unifiedRadarGeneration(item)||!chaseModelReady(item)
+          ||String(item.as_of||'')!==expectedSignalDataDate())return none;
+        const m=item.metrics||{},mc=m.ma_cluster||{},g=m.entry_candle_guard||{};
+        const close=Number(m.close),prev=Number(m.prev_close);
+        const ma10=Number(m.ma10),ma20=Number(m.ma20),ma60=Number(m.ma60);
+        const lots=Number(m.current_volume_lots),avg=Number(m.avg_volume_20_lots);
+        const pos=Number(m.position_1y_pct);
+        const ratio=avg>0?lots/avg:NaN;
+        const rise=prev>0?(close/prev-1)*100:NaN;
+        const bias=ma20>0?(close/ma20-1)*100:NaN;
+        if(m.first_breakout20!==true||mc.rising?.ma10!==true
+          ||mc.rising?.ma20!==true||mc.above_all_mas!==true
+          ||mc.rising?.ma60===true&&g.main_bull!==false
+          ||m.holding_management?.strong_breakdown===true||g.weak_after_breakout===true
+          ||g.macd_weak===true||g.kd_high_weak===true
+          ||![close,prev,ma10,ma20,ma60].every(v=>Number.isFinite(v)&&v>0)
+          ||close<Math.max(ma10,ma20,ma60)||!Number.isFinite(pos)||pos<0||pos>60
+          ||avg<300||lots<1000||!Number.isFinite(ratio)||ratio<2||ratio>8
+          ||!Number.isFinite(rise)||rise<1||rise>8
+          ||!Number.isFinite(bias)||bias< -2||bias>8)return none;
+        const q=validTodayQuote(quote)?quote:null;
+        const price=q?Number(q.price):close;
+        const over=price>0&&chaseOver(item,price);
+        const label=over?'⚡ 前次日K放量首破｜現在高乖離禁追'
+          :'⚡ 前次日K放量首破｜優先觀察（非買點）';
+        const detail='S '+String(item.as_of)+' 首破前20日高點、量比 '+num(ratio,2)
+          +'倍、當日漲 '+num(rise,2)+'%；MA60尚待驗證。'
+          +(over?'目前價格已超過原追高限制，等回踩守穩。'
+            :'下一交易日仍需確認C成交、MA10支撐及原風控。')
+          +' 觀察層研究提示，不核發橘色試單或綠色買點。';
+        return {flag:true,priority:over?83:88,label,
+          advice:over?'前次放量首破，但當前乖離過高｜不追價'
+            :'前次放量首破、MA60未齊｜優先觀察，非買點',detail};
+      };
       const RADAR_WATCH_ATTENTION_VERSION='2026-10-21-watch-attention-v1';
       const radarWatchAttentionState=(item,quote=null)=>{
         const none={priority:0,label:'',advice:'',version:RADAR_WATCH_ATTENTION_VERSION};
@@ -7949,6 +7989,8 @@ h1 {
           ||String(item.as_of||'')!==expectedSignalDataDate())return none;
         const pre=radarPreBreakoutState(item,quote);
         if(pre.eligible)return {...pre,version:RADAR_WATCH_ATTENTION_VERSION};
+        const firstBarWatch=eodVolumeFirstBarObservation(item,quote);
+        if(firstBarWatch.flag)return {...firstBarWatch,version:RADAR_WATCH_ATTENTION_VERSION};
         const m=item.metrics||{},mc=m.ma_cluster||{},g=m.entry_candle_guard||{};
         if(m.holding_management?.strong_breakdown===true||g.weak_after_breakout===true
           ||g.main_bull===false||mc.above_all_mas!==true
@@ -8100,6 +8142,10 @@ h1 {
           +'<div class="radar-decision-why">'+esc(structure)+'</div>'
           +'<dl class="radar-decision-levels">'+levels.map(([k,v])=>
             '<div><dt>'+esc(k)+'</dt><dd>'+esc(v)+'</dd></div>').join('')+'</dl>'
+          +(zone!=='holding'&&eodVolumeFirstBarObservation(item,q).flag
+            ?'<div class="radar-continuation-risk-full" data-watch-version="2026-10-30-eod-volume-firstbar-observation-v1">'
+              +esc(eodVolumeFirstBarObservation(item,q).label+'｜'+eodVolumeFirstBarObservation(item,q).detail)
+              +'</div>':'')
           +continuationRiskFullHtml(item)
           +'<small class="radar-decision-meta">'+esc(risk)+'｜S '+esc(String(item.as_of||'待更新'))
             +(q?'｜C 成交時間 '+esc(priceSource.moment)+'｜'+(priceSource.live?'盤中即時':'非即時'):'｜無有效 C 成交，S 模型價')+'</small>'
