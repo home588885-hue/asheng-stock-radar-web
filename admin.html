@@ -5083,7 +5083,7 @@ h1 {
             <span class="entry-mini-name"><strong>${esc(id)} ${esc(item.stock_name||'')}</strong><small>${esc(glanceSignal)}</small></span>
             <span class="entry-mini-expand">展開</span>
             <span class="entry-mini-metrics">${esc(quoteDisplayState(q,item).label)} <b>${close>0?esc(num(close,2)):'-'}</b><small>${q?'｜'+esc(quoteDisplayState(q,item).moment):'｜S '+esc(String(item.as_of||'待更新'))}</small></span>
-            <span class="radar-compact-next">量價：${esc(volumePriceState(item,q).tag)}｜${esc(volumePriceState(item,q).note)}</span>${sectorRotationCompactHtml(item)}<span class="radar-compact-next">山川：${esc(shanchuanBrief(item,q))}</span><span class="radar-compact-next">${esc(tdccHolderBrief(item))}</span><span class="radar-compact-next">下一步：${esc(radarShortAdvice(item,safeDisplayAction,q))}｜${esc(entryGapNote)}</span>
+            <span class="radar-compact-next">量價：${esc(volumePriceState(item,q).tag)}｜${esc(volumePriceState(item,q).note)}</span>${sectorRotationCompactHtml(item)}<span class="radar-compact-next">山川：${esc(shanchuanBrief(item,q))}</span><span class="radar-compact-next">${esc(tdccHolderBrief(item))}</span>${thinTurnoverBriefHtml(item,q)}<span class="radar-compact-next">下一步：${esc(radarShortAdvice(item,safeDisplayAction,q))}｜${esc(entryGapNote)}</span>
           </summary>
           <div class="entry-mini-full">${continuationRiskMiniHtml(item)}${expanded}${(activeTrial||activeFormal)
             ?'<div class="entry-survival-status '+esc(survival.tone)+'" data-entry-survival-id="'+esc(id)+'" data-entry-survival-trial="'+(activeTrial?'1':'0')+'">'+esc(survival.text)+'</div>':''}</div>
@@ -6681,7 +6681,7 @@ h1 {
         const detailBody = `<div class="detail-body">${hiddenModelHtml}${v5Html}${chipHtml}${holding ? '' : liquidityHtml}${playbookHtml}<div class="metrics"><span class="pill">3年位階 ${num(metrics.position_3y_pct)}%</span><span class="pill">週K ${num(metrics.weekly_k)}｜${gradeText(weeklyKGrade(metrics.weekly_k))}</span><span class="pill">月K ${num(metrics.monthly_k)}｜${gradeText(monthlyKGrade(metrics.monthly_k))}</span><span class="pill">${backtestSignal(item)}</span>${metrics.backtest ? `<span class="pill">5日 ${num(metrics.backtest.win_rate_5d_pct)}%</span><span class="pill">20日 ${num(metrics.backtest.win_rate_20d_pct)}%</span>` : ''}</div><div class="why">${reasons}</div>${cautions ? `<div class="warn">${cautions}</div>` : ''}</div>`;
         const detailHtml = options.compactHolding && holding ? detailBody : `<details class="card-details"><summary>完整判斷與數據</summary>${detailBody}</details>`;
         const actionHtml = options.hideSignal ? '' : `<div class="trade-signal ${signal.className}">${esc(memberFacingText(signal.text))}<small style="display:block;margin-top:4px;font-weight:500">${esc(memberFacingText(signal.detail || ''))}</small></div>`;
-        return `<article class="card" data-stock-id="${esc(item.stock_id)}" data-model-as-of="${esc(item.as_of || '')}"><div class="top"><div><div class="name">${esc(item.stock_id)} ${esc(item.stock_name)}</div><div class="meta">${esc(item.market)}${item.industry ? '・' + esc(item.industry) : ''}${timeInfoStages() ? '' : '｜資料日 ' + esc(item.as_of || '-')}</div></div><div class="badge ${esc(item.stage)}">模型 ${Number(item.score || 0)}分</div></div>${companyProfileHtml(item)}${activeLaunchVisibleHtml}${volumePriceHtml(item, displayQuote)}${tdccHolderDetailHtml(item)}${researchPanel}${options.historicalObservation?'':pullbackWatchHtml(item, displayQuote)}${holding ? (options.technicalOnly === true ? '' : options.compactHolding ? '' : holdingTodayHtml) : actionHtml + quickHtml + deviationWarningHtml + riskSummary}${holdingHtml}${options.compactHolding && holding ? `<details class="card-details holding-combined"><summary>完整判斷與技術數據</summary>${holdingStatusHtml}${detailHtml}</details>` : holdingStatusHtml+detailHtml}${timeInfoStages() ? timeInfoHtml(item, displayQuote) : '<div class="time">背景模型掃描：' + updated + '</div>'}</article>`;
+        return `<article class="card" data-stock-id="${esc(item.stock_id)}" data-model-as-of="${esc(item.as_of || '')}"><div class="top"><div><div class="name">${esc(item.stock_id)} ${esc(item.stock_name)}</div><div class="meta">${esc(item.market)}${item.industry ? '・' + esc(item.industry) : ''}${timeInfoStages() ? '' : '｜資料日 ' + esc(item.as_of || '-')}</div></div><div class="badge ${esc(item.stage)}">模型 ${Number(item.score || 0)}分</div></div>${companyProfileHtml(item)}${activeLaunchVisibleHtml}${volumePriceHtml(item, displayQuote)}${tdccHolderDetailHtml(item)}${thinTurnoverFullHtml(item,displayQuote)}${researchPanel}${options.historicalObservation?'':pullbackWatchHtml(item, displayQuote)}${holding ? (options.technicalOnly === true ? '' : options.compactHolding ? '' : holdingTodayHtml) : actionHtml + quickHtml + deviationWarningHtml + riskSummary}${holdingHtml}${options.compactHolding && holding ? `<details class="card-details holding-combined"><summary>完整判斷與技術數據</summary>${holdingStatusHtml}${detailHtml}</details>` : holdingStatusHtml+detailHtml}${timeInfoStages() ? timeInfoHtml(item, displayQuote) : '<div class="time">背景模型掃描：' + updated + '</div>'}</article>`;
       }
 
       // Explain an empty launch list using *the actual API result and this
@@ -8064,6 +8064,61 @@ h1 {
           +'<div class="radar-deep-body radar-flat-technical">'+flat+'</div></details>';
       };
 
+      // Every currently signed stock card shares this read-only risk classifier.
+      // It never changes a selection, trading permission, price source or holding action.
+      const THIN_TURNOVER_UI_VERSION='2026-10-30-thin-turnover-all-radar-v2';
+      const thinTurnoverRiskState=(item,quote=null)=>{
+        const none={flag:false,kind:'',label:'',detail:'',asOf:''};
+        if(!item||item.__observation_only===true||item.__passive_monitor===true
+          ||!unifiedRadarGeneration(item)||!chaseModelReady(item)
+          ||String(item.as_of||'')!==expectedSignalDataDate())return none;
+        const m=item.metrics||{},mc=m.ma_cluster||{},g=m.entry_candle_guard||{};
+        const asOf=String(item.as_of||'');
+        const close=Number(m.close),ma20=Number(m.ma20);
+        const high=Number(m.high20_prev||m.recent_high20||mc.breakout_price);
+        const lots=Number(m.current_volume_lots),avg=Number(m.avg_volume_20_lots);
+        const pos=Number(m.position_1y_pct);
+        const ratio=avg>0?lots/avg:NaN;
+        if(![close,ma20,high,lots,avg,pos,ratio].every(Number.isFinite)
+          ||Math.min(close,ma20,high,avg)<=0||pos<0||pos>=85
+          ||avg<5||avg>=200||lots<10||lots>=1000||ratio<1.5||ratio>15)return none;
+        const burst=m.first_breakout20===true&&close>=high&&lots>=20&&ratio>=2.5;
+        const near=close>=high*.94&&close<high
+          &&close/ma20>=.97&&close/ma20<=1.12;
+        if(!burst&&!near)return none;
+        if(near&&(g.weak_after_breakout===true
+          ||m.holding_management?.strong_breakdown===true))return none;
+        const current=quoteRecentForDisplay(quote)?Number(quote.price):close;
+        const over=chaseOver(item,close)||chaseOver(item,current);
+        const kind=burst?(over?'thin-breakout-high-bias':'thin-breakout-risk')
+          :(over?'thin-near-high-bias':'thin-near-watch');
+        const label=kind==='thin-breakout-high-bias'
+          ?'⚠️ 薄量首破異動｜高乖離禁追'
+          :kind==='thin-breakout-risk'
+          ?'⚠️ 薄量首破異動｜量少謹慎（非買點）'
+          :kind==='thin-near-high-bias'
+          ?'⚠️ 薄量近前高｜高乖離禁追'
+          :'🟡 薄量近前高｜提前觀察（非買點）';
+        const bias=(current/ma20-1)*100;
+        const detail='S '+asOf+' 完整日K：成交 '+num(lots,0)+'張、20日均量 '
+          +num(avg,0)+'張、相對量比 '+num(ratio,2)+'倍、距MA20 '
+          +(bias>=0?'+':'')+num(bias,2)+'%；'
+          +(burst?'已首破20日前高。':'距20日前高 '+num((close/high-1)*100,2)+'%。')
+          +(over?'超過原防追高限制，禁追價。':'成交量偏少，留意流動性。')
+          +' 此為全市場觀察／風險提示，不核發試單、正式買點或加碼。';
+        return {flag:true,kind,label,detail,asOf};
+      };
+      const thinTurnoverBriefHtml=(item,quote=null,cssClass='radar-compact-next')=>{
+        const state=thinTurnoverRiskState(item,quote);
+        const klass=cssClass==='holding-mini-date'?'holding-mini-date':'radar-compact-next';
+        return state.flag?'<span class="'+klass+'" data-thin-turnover-version="'
+          +THIN_TURNOVER_UI_VERSION+'">'+esc(state.label)+'｜S '+esc(state.asOf)+'</span>':'';
+      };
+      const thinTurnoverFullHtml=(item,quote=null)=>{
+        const state=thinTurnoverRiskState(item,quote);
+        return state.flag?'<div class="radar-continuation-risk-full" data-thin-turnover-version="'
+          +THIN_TURNOVER_UI_VERSION+'">'+esc(state.label)+'｜'+esc(state.detail)+'</div>':'';
+      };
       // Shared stock movement panel. Read-only S/C snapshot, zero extra requests.
       // The status labels never override ENTRY buy permissions or holdings actions.
       const stockMovementHtml = (item, quote = null, zone = 'entry', action = null) => {
@@ -8131,6 +8186,7 @@ h1 {
             ?'<div class="radar-continuation-risk-full" data-watch-version="2026-10-30-eod-volume-firstbar-observation-v1">'
               +esc(eodVolumeFirstBarObservation(item,q).label+'｜'+eodVolumeFirstBarObservation(item,q).detail)
               +'</div>':'')
+          +thinTurnoverFullHtml(item,q)
           +continuationRiskFullHtml(item)
           +'<small class="radar-decision-meta">'+esc(risk)+'｜S '+esc(String(item.as_of||'待更新'))
             +(q?'｜C 成交時間 '+esc(priceSource.moment)+'｜'+(priceSource.live?'盤中即時':'非即時'):'｜無有效 C 成交，S 模型價')+'</small>'
@@ -8213,7 +8269,7 @@ h1 {
                 <span>${esc(quoteDisplayState(live,item).label)} <b>${price!=null?esc(num(price,2)):'-'}</b></span>
                 <span>損益 <b class="${holdingPnlClass(pnl)}">${pnl==null?'-':(pnl>0?'+':'')+esc(num(pnl,2))+'%'}</b></span></span>
               <span class="holding-mini-status">${esc(positionStatus+addObservation)}</span>
-              <span class="holding-mini-date">量價｜${esc(volumePriceState(item,live).tag)}｜${esc(volumePriceState(item,live).note)}</span>${sectorRotationCompactHtml(item,'holding-mini-date')}<span class="holding-mini-date">山川｜${esc(shanchuanBrief(item,live))}</span><span class="holding-mini-date">${esc(tdccHolderBrief(item))}</span>
+              <span class="holding-mini-date">量價｜${esc(volumePriceState(item,live).tag)}｜${esc(volumePriceState(item,live).note)}</span>${sectorRotationCompactHtml(item,'holding-mini-date')}<span class="holding-mini-date">山川｜${esc(shanchuanBrief(item,live))}</span><span class="holding-mini-date">${esc(tdccHolderBrief(item))}</span>${thinTurnoverBriefHtml(item,live,'holding-mini-date')}
               <span class="holding-mini-date">S 模型 ${esc(item.as_of||'待更新')}｜${live?'C 成交時間 '+esc(quoteDisplayState(live,item).moment)+(quoteDisplayState(live,item).live?'｜盤中即時':'｜非即時'):'無有效 C 成交，非即時模型價'}</span>
             </summary>
             <div class="holding-mini-body">
@@ -8359,7 +8415,7 @@ h1 {
               <span class="entry-mini-name"><strong>${esc(id)} ${esc(item?.stock_name||'')}</strong><small>${esc(glanceStatus)}</small></span>
               <span class="entry-mini-expand">展開</span>
               <span class="entry-mini-metrics">${esc(source)} <b>${price!=null&&price>0?esc(num(price,2)):'-'}</b><small>${esc(quoteTime)}</small></span>
-              <span class="radar-compact-next">量價：${esc(volumePriceState(item,q).tag)}｜${esc(volumePriceState(item,q).note)}</span>${sectorRotationCompactHtml(item)}<span class="radar-compact-next">山川：${esc(shanchuanBrief(item,q))}</span><span class="radar-compact-next">${esc(tdccHolderBrief(item))}</span><span class="radar-compact-next">下一步：${esc(radarShortAdvice(item,{text:status},q))}</span>
+              <span class="radar-compact-next">量價：${esc(volumePriceState(item,q).tag)}｜${esc(volumePriceState(item,q).note)}</span>${sectorRotationCompactHtml(item)}<span class="radar-compact-next">山川：${esc(shanchuanBrief(item,q))}</span><span class="radar-compact-next">${esc(tdccHolderBrief(item))}</span>${thinTurnoverBriefHtml(item,q)}<span class="radar-compact-next">下一步：${esc(radarShortAdvice(item,{text:status},q))}</span>
             </summary>
             <div class="entry-mini-full">${launchScoutHistoryHtml(item)}${continuationRiskMiniHtml(item)}${stockMovementHtml(item,q,'launch',launchDisplayAction)}
               ${radarDeepDetailsHtml((ma10Preliminary?'<div class="model-only-note">MA10 回踩盤中初步轉強，但發動前區不提供試單。須到進場雷達通過新版底部品質、0050 相對強度與有效量價確認。</div>':'')+detailed)}</div>
