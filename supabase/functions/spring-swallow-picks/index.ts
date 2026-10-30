@@ -500,14 +500,23 @@ Deno.serve(async(req)=>{
     const firstAge=(Date.parse(d+'T00:00:00Z')-Date.parse(first+'T00:00:00Z'))/86400000;
     const recentFirst=Boolean(first)&&Number.isFinite(firstAge)&&firstAge>=0&&firstAge<=10;
     const c=Number(m.close),ma20=Number(m.ma20),v=Number(m.current_volume_lots),avg=Number(m.avg_volume_20_lots),pos=Number(m.position_1y_pct);
-    if(!(c>0&&ma20>0&&v>=1000&&avg>=500&&pos>=0&&pos<85))return null;
-    const bias=(c/ma20-1)*100;
     const hi=Number(m.high20_prev||m.recent_high20||mc.breakout_price);
+    const ratio=avg>0?v/avg:NaN;
+    // Observation-only path for stocks that surge on thin absolute turnover.
+    // Never promotes trial/buy or changes the scanner's normal liquidity gates.
+    const thin=avg>=5&&avg<200&&v>=10&&v<1000&&ratio>=1.5&&ratio<=15;
+    const thinNear=thin&&hi>0&&c>=hi*.94&&c<hi&&ma20>0
+      &&c/ma20>=.97&&c/ma20<=1.12;
+    const thinBurst=thin&&m.first_breakout20===true&&hi>0
+      &&c>=hi&&v>=20&&ratio>=2.5;
+    if(!(c>0&&ma20>0&&pos>=0&&pos<85
+      &&((v>=1000&&avg>=500)||thinNear||thinBurst)))return null;
+    const bias=(c/ma20-1)*100;
     const near=hi>0&&c<hi&&c>=hi*.95;
     const structure=box.ready_watch===true||box.state==='box_consolidation'
       ||['formed','waiting_breakout','breakout_held'].includes(mother)
       ||mc.watch_ready===true||m.bottom_start?.current_base===true||near;
-    if(!structure&&!recentFirst)return null;
+    if(!structure&&!recentFirst&&!thinNear&&!thinBurst)return null;
     const broken=mother.includes('low_broken')||mother==='invalid'||mother==='broken'
       ||g.weak_after_breakout===true||m.holding_management?.strong_breakdown===true
       ||c<ma20*.985;
@@ -524,8 +533,11 @@ Deno.serve(async(req)=>{
       ||['starter','formal_candidate'].includes(entryState)
       ||m.v5?.entry_confirmed===true);
     const firstToday=fresh&&(mc.breakout_first_bar===true||box.first_bar_today===true);
-    const kind=broken?'invalid':overheated?'overheated':firstToday?'first_bar':recentFirst?'followup':'prelaunch';
+    const kind=broken?'invalid':thinBurst?'overheated':thinNear?'prelaunch'
+      :overheated?'overheated':firstToday?'first_bar':recentFirst?'followup':'prelaunch';
     const label=kind==='invalid'?'🔴 結構轉弱｜已退出有效追蹤'
+      :thinBurst?'⚠️ 薄量首破異動｜高乖離禁追'
+      :thinNear?'🟡 薄量靠近前高｜提前觀察（非買點）'
       :kind==='overheated'?'🔵 距MA20過高｜禁止追價'
       :promoted?'🎯 已轉進場雷達｜前哨留歷史'
       :kind==='first_bar'?'📍 第一根突破｜仍須驗證'
@@ -533,13 +545,15 @@ Deno.serve(async(req)=>{
       :'🌱 山川第一根前哨｜尚非買點';
     const reason=kind==='invalid'
       ?(mother.includes('low_broken')?'山川母子K支撐失效':g.weak_after_breakout===true?'完整日K量價轉弱':c<ma20*.985?'MA20支撐已失守':'原結構風控轉弱')
+      :thinBurst?'薄量股票，完成日K量比 '+ratio.toFixed(2)+'倍、成交 '+v+'張、MA20乖離 +'+bias.toFixed(2)+'%；只列風險觀察，不追價'
+      :thinNear?'薄量股票接近20日前高，量比 '+ratio.toFixed(2)+'倍、成交 '+v+'張；僅提前列觀察，需注意流動性風險' 
       :kind==='overheated'?'距MA20 +'+bias.toFixed(2)+'%，超過前哨觀察的5%低乖離範圍'
       :promoted?'S模型 '+(phase||'未標明')+'／'+(entryState||'未標明')+'；以進場雷達最新風控為準，不是第二個買點'
       :kind==='first_bar'?'本日模型首破確認；盤中買入仍須原C行情與風控'
       :kind==='followup'?'歷史第一根 '+first+'；持續檢查回踩、過熱與結構'
       :'箱型、母子K或均線接近突破位置；等待第一根量價確認';
     return {stock_id:String(x.stock_id||''),stock_name:String(x.stock_name||''),market:String(x.market||''),as_of:d,scanned_at:x.scanned_at,stage:x.stage,score:x.score,close:c,ma20,volume_lots:v,__scout_version:'2026-10-20-shanchuan-v1',__scout_only:true,__scout_state:kind,
-      __scout_label:label,__scout_reason:reason,
+      __scout_label:label,__scout_reason:reason,__scout_thin:thinNear||thinBurst,
       __scout_first_date:first||null,__scout_bias20:+bias.toFixed(2),
       __scout_score:kind==='first_bar'?160:kind==='prelaunch'?(near?130:115):kind==='followup'?105:kind==='overheated'?30:10};
   };
@@ -551,7 +565,18 @@ Deno.serve(async(req)=>{
   const scoutRisk=scoutObservationPool.filter((x:any)=>['invalid','overheated'].includes(x.__scout_state))
     .sort((a:any,b:any)=>String(b.as_of).localeCompare(String(a.as_of))
       ||Number(b.score)-Number(a.score)).slice(0,8);
-  const scoutObservations=[...scoutActive,...scoutRisk];
+  // Reserve small, bounded visibility slots for thin-turnover setups excluded
+  // by ordinary >=1000/500 lot selectors. These remain risk/observation only.
+  const thinNearObservations=scoutObservationPool.filter((x:any)=>
+    x.__scout_thin===true&&x.__scout_state==='prelaunch')
+    .sort((a:any,b:any)=>String(b.as_of).localeCompare(String(a.as_of))
+      ||Number(b.score)-Number(a.score)).slice(0,4);
+  const thinRiskObservations=scoutObservationPool.filter((x:any)=>
+    x.__scout_thin===true&&x.__scout_state==='overheated')
+    .sort((a:any,b:any)=>String(b.as_of).localeCompare(String(a.as_of))
+      ||Number(b.score)-Number(a.score)).slice(0,4);
+  const scoutObservations=[...new Map([...scoutActive,...scoutRisk,
+    ...thinNearObservations,...thinRiskObservations].map((x:any)=>[String(x.stock_id),x])).values()];
   // Visibility-only: the analyzer may classify a valid S entry lifecycle as
   // WATCH even when it reports 'starter' or 'formal_candidate'. The old monitor
   // filter discarded these candidates, so C could never observe them in ENTRY.
