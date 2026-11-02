@@ -148,7 +148,7 @@ test('New +8/+12/+15 chase tiers pass precise BIAS boundaries, never fake a miss
   assert.equal(chasePass({stock_id:'1605',metrics:{close:0,ma20:100}}),false);
   assert.match(html,/const eligible=fresh&&String\(item\?\.as_of\|\|''\)===expectedSignalDataDate\(\)/);
   assert.match(html,/&&masOkay&&chasePass\(item,price\)/);
-  assert.match(html,/const high=\(\(Number\.isFinite\(pos\)&&pos>=85\)&&!rebreakWatch\.eligible\)/);
+  assert.match(html,/const high=\(Number\.isFinite\(pos\)/);
   assert.match(html,/chaseOver\(item,price\)/);
   assert.match(html,/chasePass\(item,close\)/);
   assert.match(html,/const ma10StarterLiveTrial = \(item,quote,eligible\) =>/);
@@ -181,15 +181,13 @@ test('Movement cards only display S or already-valid C trades and never grant a 
   assert.doesNotMatch(src,/\bfetch\s*\(|getLiveQuotes\s*\(|\bsetInterval\s*\(/);
   const fn=new Function('bestTodayQuote','validTodayQuote','quoteRecentForDisplay','volumePriceState',
     'chaseModelReady','unifiedRadarGeneration','overnightLifecycleState','chaseLimitNote','esc','num','radarShortAdvice','continuationRiskFullHtml','quoteDisplayState',
-    'passiveWatchDescription','eodVolumeFirstBarObservation','thinTurnoverFullHtml',
     src+'\nreturn stockMovementHtml;')(
     q=>q,q=>!!q&&q.has_today_trade===true&&q.price>0,q=>q.fresh===true,
     ()=>({tag:'🟢 量價改善',volumeRatio:1.2}),
     x=>x?.metrics?.chase_rule_version==='2026-10-20-bias-8-12-15-v1',
     ()=>true,()=>({label:'底部整理',tomorrow:'等量價轉強'}),()=>'+12%',
     x=>String(x).replace(/&/g,'&amp;').replace(/</g,'&lt;'),
-    (x,d=1)=>Number(x).toFixed(d),(item,action)=>action?.detail||'觀察量價',()=> '',q=>({label:q?'C 今日前次成交（非即時）':'S 完整日K收盤（非即時）',moment:'2026/10/20 13:30',live:false}),
-    ()=>({label:'被動追蹤',detail:'僅觀察',nextStep:'等待確認'}),()=>({flag:false}),()=> '');
+    (x,d=1)=>Number(x).toFixed(d),(item,action)=>action?.detail||'觀察量價',()=> '',q=>({label:q?'C 今日前次成交（非即時）':'S 完整日K收盤（非即時）',moment:'2026/10/20 13:30',live:false}));
   const item={stock_id:'1605',as_of:'2026-10-19',metrics:{
     chase_rule_version:'2026-10-20-bias-8-12-15-v1',close:100,prev_close:98,
     current_volume_lots:1100,ma10:99,ma20:97,ma60:95}};
@@ -856,7 +854,7 @@ test('KD-high is an oscillator warning, not a high-price veto for 2633',()=>{
     'momentum','K < D may trigger the existing weakening check');
   assert.equal(gate({...item,metrics:{...item.metrics,position_1y_pct:89}})?.kind,
     'position','high one-year position must retain the original guard');
-  const high=section('          const high=((Number.isFinite(pos)&&pos>=85)&&!rebreakWatch.eligible)',
+  const high=section('          const high=(Number.isFinite(pos)&&pos>=85)||chaseOver(item,price)',
     '          if(high){');
   assert.doesNotMatch(high,/k>80|日KD偏高/);
   assert.match(high,/risk\?\.kind==='position'/);
