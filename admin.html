@@ -6896,8 +6896,30 @@ h1 {
               if (!response.ok || !body.ok || !isLockedRulePayload(body)) throw new Error('模型版本鎖定保護：拒絕不同選股版本');
               return body;
             };
-            const results = await Promise.all(['A', 'B', 'C'].map(fetchStage));
-            data = { ...results[0], picks: results.flatMap(result => result.picks || []) };
+            // Preserve A/B/C. Include signed WATCH lifecycle candidates from
+            // the read-only S monitor snapshot; this adds no C quote polling.
+            const [results, watchRows] = await Promise.all([
+              Promise.all(['A', 'B', 'C'].map(fetchStage)),
+              (async () => {
+                const query = new URLSearchParams({ limit:'100', fresh_hours:'144', mode:'monitor' });
+                const result = await fetchJsonWithTimeout(API + '&' + query.toString(), { cache:'no-store' }, 10000);
+                const body = result.data;
+                if (!result.response.ok || !body?.ok || !isLockedRulePayload(body)) return [];
+                return (body.picks || []).filter(item =>
+                  item?.stage === 'WATCH'
+                  && String(item?.as_of || '') === expectedSignalDataDate()
+                  && ['starter', 'formal_candidate'].includes(String(item?.metrics?.trade_lifecycle?.entry?.state || ''))
+                  && chaseModelReady(item) && unifiedRadarGeneration(item));
+              })().catch(() => [])
+            ]);
+            const seenEntryIds = new Set();
+            data = { ...results[0], picks:[...results.flatMap(result => result.picks || []), ...watchRows]
+              .filter(item => {
+                const id = String(item?.stock_id || '');
+                if (!id || seenEntryIds.has(id)) return false;
+                seenEntryIds.add(id);
+                return true;
+              }) };
           } else {
             const query = new URLSearchParams({ limit: '80', fresh_hours:'144' });
             if (stage && stage !== 'ENTRY') query.set('stage', stage);
@@ -6950,7 +6972,9 @@ h1 {
           const launchFiltered = stage === 'LAUNCH' ? allPicks.filter(item => launchQualityState(item).keep) : allPicks;
           const picks = stage === 'ENTRY' ? allPicks.filter(item =>
              String(item?.as_of||'')===expectedSignalDataDate() &&
-             (actionableSignals.has(tradeSignal(item).className) || isActiveLaunchItem(item))) : launchFiltered;
+             (actionableSignals.has(tradeSignal(item).className) || isActiveLaunchItem(item)
+               || (item?.stage === 'WATCH' && chaseModelReady(item) && unifiedRadarGeneration(item)
+                 && ['starter', 'formal_candidate'].includes(String(item?.metrics?.trade_lifecycle?.entry?.state || ''))))) : launchFiltered;
           const stageRank = { C: 3, B: 2, A: 1, WATCH: 0 };
           const signalRank = { highwin: 12, v5buy: 10, first: 6, add: 5, early: 4, position: 3, attack: 2, scout: 1 };
           const rankedPicks = [...picks].sort((a, b) => {
