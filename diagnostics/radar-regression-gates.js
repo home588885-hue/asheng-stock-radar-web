@@ -726,7 +726,7 @@ test('Current and historical scouts render as one-level clickable stock cards wi
   const savedOpen=new Set(['1609']);
   const renderFn=new Function('scoutHistory','holdings','stage','esc','num',
     'launchExpandedIds','document','marketBridgeReady','liveQuoteCache',
-    'validTodayQuote','quoteDisplayState',src+
+    'validTodayQuote','quoteDisplayState','Date',src+
     '\nreturn {scoutOnlyLaunchRows,launchScoutOnlyHtml,renderScoutPanel,setVisible:xs=>{launchDisplayedIds=new Set(xs)}};');
   let content='',fakePresent=false;
   const list={
@@ -742,7 +742,7 @@ test('Current and historical scouts render as one-level clickable stock cards wi
   // This historical S-only fixture must never fabricate a live quote.
   const sut=renderFn(rows,new Map(),'LAUNCH',escape,(n,p)=>Number(n).toFixed(p),
     savedOpen,{getElementById:id=>id==='list'?list:null},
-    ()=>false,new Map(),()=>false,()=>({}));
+    ()=>false,new Map(),()=>false,()=>({}),class extends Date {static now(){return Date.parse('2026-10-22T00:00:00Z');}});
   sut.setVisible(['5521']);
   const watch=sut.scoutOnlyLaunchRows();
   assert.deepEqual(watch.map(x=>x.stock_id),['3062','3013','1609','1802']);
