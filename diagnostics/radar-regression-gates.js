@@ -643,11 +643,11 @@ test('Signed watch attention cannot invent a buy or hide a strong overextended s
     '      // Presentation only. The original action/risk model stays untouched.');
   const attention=new Function('holdings','unifiedRadarGeneration','chaseModelReady',
     'expectedSignalDataDate','validTodayQuote','chasePass','chaseOver','num',
-    src+'\nreturn radarWatchAttentionState;')(
+    'highPositionRebreakWatchState',src+'\nreturn radarWatchAttentionState;')(
     new Map(),()=>true,()=>true,()=> '2026-10-20',q=>!!q&&q.price>0,
     (item,price)=>(price/Number(item.metrics.ma20)-1)*100<=12,
     (item,price)=>(price/Number(item.metrics.ma20)-1)*100>12,
-    (x,d=1)=>Number(x).toFixed(d));
+    (x,d=1)=>Number(x).toFixed(d),()=>({eligible:false}));
   const sample=(id,price,lots,avg,ma20)=>({stock_id:id,as_of:'2026-10-20',
     metrics:{close:price,ma20,current_volume_lots:lots,avg_volume_20_lots:avg,
       ma_cluster:{above_all_mas:true,rising:{ma10:true,ma20:true,ma60:true}},
