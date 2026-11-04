@@ -1042,11 +1042,11 @@ test('Open-market EOD trial candidate shows live C status, never preopen instruc
   const snippet=section('        const entryTrialPreparationCopy=(item,quote,starterSetup=null)=>{','        const assign=row=>{');
   let current={open:true,weekday:true,totalMinutes:646};
   let trial=false;
-  const factory=new Function('taipeiMarketState','validTodayQuote','quoteFreshForTrial','bottomFirstQuality','num',
+  const factory=new Function('taipeiMarketState','validTodayQuote','quoteFreshForTrial','bottomFirstQuality','num','pullbackWatch','verifiedTrialOutbox','entrySurvivalMap',
     snippet+'\nreturn entryTrialPreparationCopy;');
   const label=factory(()=>current,q=>q?.valid===true,q=>q?.fresh===true,
     ()=>({trial,reasons:['累計成交量未達1,000張','支撐未確認']}),
-    (v,d=2)=>Number(v).toFixed(d));
+    (v,d=2)=>Number(v).toFixed(d),new Map(),new Set(),()=>new Map());
   const model={stock_id:'5521',as_of:'2026-10-27'};
   const missing=label(model,null);
   assert.match(missing.text,/已開盤｜尚未取得今日C成交/);
@@ -1066,11 +1066,11 @@ test('Open-market EOD trial candidate shows live C status, never preopen instruc
   assert.match(eligibleButNotPromoted.text,/原進場條件未確認/);
   assert.match(eligibleButNotPromoted.detail,/非買點|不可視為橘色/);
   current={open:true,weekday:true,totalMinutes:805};
-  assert.match(label(model,fresh).text,/盤中試單確認已截止/);
+  assert.match(label(model,fresh).text,/今日尚未確認可試單/);
   current={open:false,weekday:true,totalMinutes:530};
-  assert.match(label(model,null).text,/盤前試單準備｜09:00後核對/);
+  assert.match(label(model,null).text,/盤前準備觀察｜待開盤驗證/);
   current={open:false,weekday:true,totalMinutes:845};
-  assert.match(label(model,null).text,/盤後試單候選｜下個交易日確認/);
+  assert.match(label(model,null).text,/盤後模型觀察｜下個交易日確認/);
   assert.doesNotMatch(html,/🟠 試單準備｜開盤再確認/);
   assert.match(html,/const status=entryTrialPreparationCopy\(item,q,starterSetup\)/);
   assert.match(html,/盤中試單待確認 \${groups\.eodTrialRows\.length}/);
