@@ -5280,7 +5280,26 @@ h1 {
           ...add(labels.pullbackRows,'🔵 高乖離｜持續追蹤等回踩')];
         // Risk-safe ATTENTION order inside the existing tracking shelf.
         // Volatile / overextended names stay OBSERVATION, never TODAY BUY.
-        watch.sort((a,b)=>radarWatchAttentionState(b.row?.item,b.row?.quote).priority
+        const entryQualityScore=item=>{
+          const m=item?.metrics||{},g=m.entry_candle_guard||{},mc=m.ma_cluster||{};
+          const close=Number(m.close),ma20=Number(m.ma20);
+          const vol=Number(m.current_volume_lots),avg=Number(m.avg_volume_20_lots);
+          if(!(close>0&&ma20>0&&vol>0&&avg>0))return -100;
+          const gap=(close/ma20-1)*100;
+          let score=0;
+          if(vol>=1000&&avg>=500)score+=25;
+          else if(vol<500||avg<300)score-=35;
+          if(gap>=0&&gap<=5)score+=25;
+          else if(gap>8)score-=Math.min(45,Math.round((gap-8)*5));
+          else if(gap<0)score-=15;
+          if(g.weak_after_breakout===true||m.holding_management?.strong_breakdown===true)score-=60;
+          if(g.main_bull===false)score-=30;
+          if(mc.rising?.ma20===true)score+=10;
+          if(m.pullback_rebreak===true)score+=15;
+          return score;
+        };
+        watch.sort((a,b)=>entryQualityScore(b.row?.item)-entryQualityScore(a.row?.item)
+          ||radarWatchAttentionState(b.row?.item,b.row?.quote).priority
           -radarWatchAttentionState(a.row?.item,a.row?.quote).priority
           ||strongRebreakStudyRank(b.row?.item)-strongRebreakStudyRank(a.row?.item)
           ||Number(b.row?.item?.score||0)-Number(a.row?.item?.score||0));
