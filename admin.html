@@ -5268,9 +5268,9 @@ h1 {
           ...add((labels.completedRows||[]).filter(row=>!safeCompleted.includes(row)),'🟡 正式買點待重新確認｜非買點'),
           ...add((labels.starterRows||[]).filter(row=>!safeStarter.includes(row)),'🟡 試單待重新確認｜非買點'),
           ...add(labels.eodTrialRows,taipeiMarketState().open
-            ?'🟡 盤中試單待確認｜非買點':'🌙 下個交易日試單觀察｜非買點'),
-          ...add(labels.boxFirstRows,'📦 箱型突破第一根｜等確認'),
-          ...add(labels.focusRows,'⭐ 優先觀察｜非買點'),
+            ?'🟠 早期試單候選｜盤中待核對・非買點':'🟠 早期試單候選｜下個交易日核對・非買點'),
+          ...add(labels.boxFirstRows,'🎯 強勢突破候選｜第一根待確認・非買點'),
+          ...add(labels.focusRows,'🔎 早期試單研究｜條件待核對・非買點'),
           ...add(labels.signalRows,'🟠 訊號待核對｜非買點'),
           ...add(labels.eodTrackRows,'📌 已起漲追蹤｜非買點'),
           ...add(labels.reclaimRows,'🟡 MA10／MA20回踩｜非買點'),
