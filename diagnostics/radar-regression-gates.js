@@ -837,9 +837,9 @@ test('KD-high is an oscillator warning, not a high-price veto for 2633',()=>{
   const source=section('      const newEntryRiskGate = (item, quote = null) => {',
     '      const entryCandleGuard =');
   const gate=new Function('chaseModelReady','liveSelloffRisk','validTodayQuote',
-    'chaseOver','chaseLimitNote','num',source+'\nreturn newEntryRiskGate;')(
+    'chaseOver','chaseLimitNote','num','highPositionRebreakWatchState',source+'\nreturn newEntryRiskGate;')(
     ()=>true,()=>null,()=>false,(item,p)=>p>Number(item.metrics.ma20)*1.12,
-    ()=>'12%',(x,n=1)=>Number(x).toFixed(n));
+    ()=>'12%',(x,n=1)=>Number(x).toFixed(n),()=>({eligible:false}));
   // Isolate the KD oscillator check from the independently required TDCC
   // 2-week entry gate. Without these certified fields, the TDCC veto should
   // correctly block and this test would be testing the wrong decision layer.
@@ -856,10 +856,9 @@ test('KD-high is an oscillator warning, not a high-price veto for 2633',()=>{
     'momentum','K < D may trigger the existing weakening check');
   assert.equal(gate({...item,metrics:{...item.metrics,position_1y_pct:89}})?.kind,
     'position','high one-year position must retain the original guard');
-  const high=section('          const high=(Number.isFinite(pos)&&pos>=85)||chaseOver(item,price)',
-    '          if(high){');
-  assert.doesNotMatch(high,/k>80|日KD偏高/);
-  assert.match(high,/risk\?\.kind==='position'/);
+  assert.match(source,/chaseOver\(item,price\) \|\| \(Number\.isFinite\(pos\)&&pos>=85&&!highRebreak\.eligible\)/);
+  assert.match(source,/if\(highRebreak\.eligible\)return/);
+  assert.doesNotMatch(source.slice(0,source.indexOf('if((Number.isFinite(k)')),/k>80|日KD偏高/);
 });
 test('Compact summary, expanded decision and technical guide share one action',()=>{
   assert.match(html,/const decisionText=activeFormal\?/);
