@@ -148,7 +148,8 @@ test('New +8/+12/+15 chase tiers pass precise BIAS boundaries, never fake a miss
   assert.equal(chasePass({stock_id:'1605',metrics:{close:0,ma20:100}}),false);
   assert.match(html,/const eligible=fresh&&String\(item\?\.as_of\|\|''\)===expectedSignalDataDate\(\)/);
   assert.match(html,/&&masOkay&&chasePass\(item,price\)/);
-  assert.match(html,/const high=\(Number\.isFinite\(pos\)/);
+  assert.match(html,/const high=\(\(Number\.isFinite\(pos\)&&pos>=85\)&&!rebreakWatch\.eligible\)/);
+  assert.match(html,/\|\|chaseOver\(item,price\)/);
   assert.match(html,/chaseOver\(item,price\)/);
   assert.match(html,/chasePass\(item,close\)/);
   assert.match(html,/const ma10StarterLiveTrial = \(item,quote,eligible\) =>/);
