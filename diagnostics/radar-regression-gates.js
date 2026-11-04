@@ -148,7 +148,8 @@ test('New +8/+12/+15 chase tiers pass precise BIAS boundaries, never fake a miss
   assert.equal(chasePass({stock_id:'1605',metrics:{close:0,ma20:100}}),false);
   assert.match(html,/const eligible=fresh&&String\(item\?\.as_of\|\|''\)===expectedSignalDataDate\(\)/);
   assert.match(html,/&&masOkay&&chasePass\(item,price\)/);
-  assert.match(html,/const high=\(Number\.isFinite\(pos\)/);
+  assert.match(html,/const high=\(\(Number\.isFinite\(pos\)&&pos>=85\)&&!rebreakWatch\.eligible\)/);
+  assert.match(html,/\|\|chaseOver\(item,price\)/);
   assert.match(html,/chaseOver\(item,price\)/);
   assert.match(html,/chasePass\(item,close\)/);
   assert.match(html,/const ma10StarterLiveTrial = \(item,quote,eligible\) =>/);
@@ -180,14 +181,14 @@ test('Movement cards only display S or already-valid C trades and never grant a 
   const src=section('      const stockMovementHtml = ', '      // UI-only folding. The holdings Map remains verified by the server.');
   assert.doesNotMatch(src,/\bfetch\s*\(|getLiveQuotes\s*\(|\bsetInterval\s*\(/);
   const fn=new Function('bestTodayQuote','validTodayQuote','quoteRecentForDisplay','volumePriceState',
-    'chaseModelReady','unifiedRadarGeneration','overnightLifecycleState','chaseLimitNote','esc','num','radarShortAdvice','continuationRiskFullHtml','quoteDisplayState',
+    'chaseModelReady','unifiedRadarGeneration','overnightLifecycleState','chaseLimitNote','esc','num','radarShortAdvice','continuationRiskFullHtml','quoteDisplayState','eodVolumeFirstBarObservation','thinTurnoverFullHtml','passiveWatchDescription',
     src+'\nreturn stockMovementHtml;')(
     q=>q,q=>!!q&&q.has_today_trade===true&&q.price>0,q=>q.fresh===true,
     ()=>({tag:'🟢 量價改善',volumeRatio:1.2}),
     x=>x?.metrics?.chase_rule_version==='2026-10-20-bias-8-12-15-v1',
     ()=>true,()=>({label:'底部整理',tomorrow:'等量價轉強'}),()=>'+12%',
     x=>String(x).replace(/&/g,'&amp;').replace(/</g,'&lt;'),
-    (x,d=1)=>Number(x).toFixed(d),(item,action)=>action?.detail||'觀察量價',()=> '',q=>({label:q?'C 今日前次成交（非即時）':'S 完整日K收盤（非即時）',moment:'2026/10/20 13:30',live:false}));
+    (x,d=1)=>Number(x).toFixed(d),(item,action)=>action?.detail||'觀察量價',()=> '',q=>({label:q?'C 今日前次成交（非即時）':'S 完整日K收盤（非即時）',moment:'2026/10/20 13:30',live:false}),()=>({flag:false}),()=>'',()=>({label:'觀察',detail:'',nextStep:'觀察'}));
   const item={stock_id:'1605',as_of:'2026-10-19',metrics:{
     chase_rule_version:'2026-10-20-bias-8-12-15-v1',close:100,prev_close:98,
     current_volume_lots:1100,ma10:99,ma20:97,ma60:95}};
@@ -642,11 +643,11 @@ test('Signed watch attention cannot invent a buy or hide a strong overextended s
     '      // Presentation only. The original action/risk model stays untouched.');
   const attention=new Function('holdings','unifiedRadarGeneration','chaseModelReady',
     'expectedSignalDataDate','validTodayQuote','chasePass','chaseOver','num',
-    src+'\nreturn radarWatchAttentionState;')(
+    'highPositionRebreakWatchState',src+'\nreturn radarWatchAttentionState;')(
     new Map(),()=>true,()=>true,()=> '2026-10-20',q=>!!q&&q.price>0,
     (item,price)=>(price/Number(item.metrics.ma20)-1)*100<=12,
     (item,price)=>(price/Number(item.metrics.ma20)-1)*100>12,
-    (x,d=1)=>Number(x).toFixed(d));
+    (x,d=1)=>Number(x).toFixed(d),()=>({eligible:false}));
   const sample=(id,price,lots,avg,ma20)=>({stock_id:id,as_of:'2026-10-20',
     metrics:{close:price,ma20,current_volume_lots:lots,avg_volume_20_lots:avg,
       ma_cluster:{above_all_mas:true,rising:{ma10:true,ma20:true,ma60:true}},
@@ -662,7 +663,8 @@ test('Signed watch attention cannot invent a buy or hide a strong overextended s
   assert.equal(attention(weak).priority,0);
   assert.doesNotMatch(src,/fetch\s*\(|getLiveQuotes\s*\(|savePullbackWatchRows\s*\(/);
   const htmlEntry=section('      const simplifiedEntryHtml =', '      // Only compare existing EOD radar snapshots;');
-  assert.match(htmlEntry,/watch\.sort\(\(a,b\)=>radarWatchAttentionState/);
+  assert.match(htmlEntry,/watch\.sort\(\(a,b\)=>entryQualityScore\(b\.row\?\.item\)-entryQualityScore\(a\.row\?\.item\)/);
+  assert.match(htmlEntry,/radarWatchAttentionState\(b\.row\?\.item,b\.row\?\.quote\)\.priority/);
   assert.match(html,/radarWatchAttentionState\(item,q\)/);
   assert.match(html,/const maxVisible=key==='today'\?5:key==='tracking'\?9:4/);
   assert.match(html,/const entryCompactStock =/);
@@ -724,7 +726,7 @@ test('Current and historical scouts render as one-level clickable stock cards wi
   const savedOpen=new Set(['1609']);
   const renderFn=new Function('scoutHistory','holdings','stage','esc','num',
     'launchExpandedIds','document','marketBridgeReady','liveQuoteCache',
-    'validTodayQuote','quoteDisplayState',src+
+    'validTodayQuote','quoteDisplayState','Date',src+
     '\nreturn {scoutOnlyLaunchRows,launchScoutOnlyHtml,renderScoutPanel,setVisible:xs=>{launchDisplayedIds=new Set(xs)}};');
   let content='',fakePresent=false;
   const list={
@@ -740,7 +742,7 @@ test('Current and historical scouts render as one-level clickable stock cards wi
   // This historical S-only fixture must never fabricate a live quote.
   const sut=renderFn(rows,new Map(),'LAUNCH',escape,(n,p)=>Number(n).toFixed(p),
     savedOpen,{getElementById:id=>id==='list'?list:null},
-    ()=>false,new Map(),()=>false,()=>({}));
+    ()=>false,new Map(),()=>false,()=>({}),class extends Date {static now(){return Date.parse('2026-10-22T00:00:00Z');}});
   sut.setVisible(['5521']);
   const watch=sut.scoutOnlyLaunchRows();
   assert.deepEqual(watch.map(x=>x.stock_id),['3062','3013','1609','1802']);
@@ -835,9 +837,9 @@ test('KD-high is an oscillator warning, not a high-price veto for 2633',()=>{
   const source=section('      const newEntryRiskGate = (item, quote = null) => {',
     '      const entryCandleGuard =');
   const gate=new Function('chaseModelReady','liveSelloffRisk','validTodayQuote',
-    'chaseOver','chaseLimitNote','num',source+'\nreturn newEntryRiskGate;')(
+    'chaseOver','chaseLimitNote','num','highPositionRebreakWatchState',source+'\nreturn newEntryRiskGate;')(
     ()=>true,()=>null,()=>false,(item,p)=>p>Number(item.metrics.ma20)*1.12,
-    ()=>'12%',(x,n=1)=>Number(x).toFixed(n));
+    ()=>'12%',(x,n=1)=>Number(x).toFixed(n),()=>({eligible:false}));
   // Isolate the KD oscillator check from the independently required TDCC
   // 2-week entry gate. Without these certified fields, the TDCC veto should
   // correctly block and this test would be testing the wrong decision layer.
@@ -854,10 +856,9 @@ test('KD-high is an oscillator warning, not a high-price veto for 2633',()=>{
     'momentum','K < D may trigger the existing weakening check');
   assert.equal(gate({...item,metrics:{...item.metrics,position_1y_pct:89}})?.kind,
     'position','high one-year position must retain the original guard');
-  const high=section('          const high=(Number.isFinite(pos)&&pos>=85)||chaseOver(item,price)',
-    '          if(high){');
-  assert.doesNotMatch(high,/k>80|日KD偏高/);
-  assert.match(high,/risk\?\.kind==='position'/);
+  assert.match(source,/chaseOver\(item,price\) \|\| \(Number\.isFinite\(pos\)&&pos>=85&&!highRebreak\.eligible\)/);
+  assert.match(source,/if\(highRebreak\.eligible\)return/);
+  assert.doesNotMatch(source.slice(0,source.indexOf('if((Number.isFinite(k)')),/k>80|日KD偏高/);
 });
 test('Compact summary, expanded decision and technical guide share one action',()=>{
   assert.match(html,/const decisionText=activeFormal\?/);
@@ -1041,11 +1042,11 @@ test('Open-market EOD trial candidate shows live C status, never preopen instruc
   const snippet=section('        const entryTrialPreparationCopy=(item,quote,starterSetup=null)=>{','        const assign=row=>{');
   let current={open:true,weekday:true,totalMinutes:646};
   let trial=false;
-  const factory=new Function('taipeiMarketState','validTodayQuote','quoteFreshForTrial','bottomFirstQuality','num',
+  const factory=new Function('taipeiMarketState','validTodayQuote','quoteFreshForTrial','bottomFirstQuality','num','pullbackWatch','verifiedTrialOutbox','entrySurvivalMap',
     snippet+'\nreturn entryTrialPreparationCopy;');
   const label=factory(()=>current,q=>q?.valid===true,q=>q?.fresh===true,
     ()=>({trial,reasons:['累計成交量未達1,000張','支撐未確認']}),
-    (v,d=2)=>Number(v).toFixed(d));
+    (v,d=2)=>Number(v).toFixed(d),new Map(),new Set(),()=>new Map());
   const model={stock_id:'5521',as_of:'2026-10-27'};
   const missing=label(model,null);
   assert.match(missing.text,/已開盤｜尚未取得今日C成交/);
@@ -1065,11 +1066,11 @@ test('Open-market EOD trial candidate shows live C status, never preopen instruc
   assert.match(eligibleButNotPromoted.text,/原進場條件未確認/);
   assert.match(eligibleButNotPromoted.detail,/非買點|不可視為橘色/);
   current={open:true,weekday:true,totalMinutes:805};
-  assert.match(label(model,fresh).text,/盤中試單確認已截止/);
+  assert.match(label(model,fresh).text,/今日尚未確認可試單/);
   current={open:false,weekday:true,totalMinutes:530};
-  assert.match(label(model,null).text,/盤前試單準備｜09:00後核對/);
+  assert.match(label(model,null).text,/盤前準備觀察｜待開盤驗證/);
   current={open:false,weekday:true,totalMinutes:845};
-  assert.match(label(model,null).text,/盤後試單候選｜下個交易日確認/);
+  assert.match(label(model,null).text,/盤後模型觀察｜下個交易日確認/);
   assert.doesNotMatch(html,/🟠 試單準備｜開盤再確認/);
   assert.match(html,/const status=entryTrialPreparationCopy\(item,q,starterSetup\)/);
   assert.match(html,/盤中試單待確認 \${groups\.eodTrialRows\.length}/);
