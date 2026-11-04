@@ -181,14 +181,14 @@ test('Movement cards only display S or already-valid C trades and never grant a 
   const src=section('      const stockMovementHtml = ', '      // UI-only folding. The holdings Map remains verified by the server.');
   assert.doesNotMatch(src,/\bfetch\s*\(|getLiveQuotes\s*\(|\bsetInterval\s*\(/);
   const fn=new Function('bestTodayQuote','validTodayQuote','quoteRecentForDisplay','volumePriceState',
-    'chaseModelReady','unifiedRadarGeneration','overnightLifecycleState','chaseLimitNote','esc','num','radarShortAdvice','continuationRiskFullHtml','quoteDisplayState',
+    'chaseModelReady','unifiedRadarGeneration','overnightLifecycleState','chaseLimitNote','esc','num','radarShortAdvice','continuationRiskFullHtml','quoteDisplayState','eodVolumeFirstBarObservation',
     src+'\nreturn stockMovementHtml;')(
     q=>q,q=>!!q&&q.has_today_trade===true&&q.price>0,q=>q.fresh===true,
     ()=>({tag:'🟢 量價改善',volumeRatio:1.2}),
     x=>x?.metrics?.chase_rule_version==='2026-10-20-bias-8-12-15-v1',
     ()=>true,()=>({label:'底部整理',tomorrow:'等量價轉強'}),()=>'+12%',
     x=>String(x).replace(/&/g,'&amp;').replace(/</g,'&lt;'),
-    (x,d=1)=>Number(x).toFixed(d),(item,action)=>action?.detail||'觀察量價',()=> '',q=>({label:q?'C 今日前次成交（非即時）':'S 完整日K收盤（非即時）',moment:'2026/10/20 13:30',live:false}));
+    (x,d=1)=>Number(x).toFixed(d),(item,action)=>action?.detail||'觀察量價',()=> '',q=>({label:q?'C 今日前次成交（非即時）':'S 完整日K收盤（非即時）',moment:'2026/10/20 13:30',live:false}),()=>({flag:false}));
   const item={stock_id:'1605',as_of:'2026-10-19',metrics:{
     chase_rule_version:'2026-10-20-bias-8-12-15-v1',close:100,prev_close:98,
     current_volume_lots:1100,ma10:99,ma20:97,ma60:95}};
