@@ -663,7 +663,8 @@ test('Signed watch attention cannot invent a buy or hide a strong overextended s
   assert.equal(attention(weak).priority,0);
   assert.doesNotMatch(src,/fetch\s*\(|getLiveQuotes\s*\(|savePullbackWatchRows\s*\(/);
   const htmlEntry=section('      const simplifiedEntryHtml =', '      // Only compare existing EOD radar snapshots;');
-  assert.match(htmlEntry,/watch\.sort\(\(a,b\)=>radarWatchAttentionState/);
+  assert.match(htmlEntry,/watch\.sort\(\(a,b\)=>entryQualityScore\(b\.row\?\.item\)-entryQualityScore\(a\.row\?\.item\)/);
+  assert.match(htmlEntry,/radarWatchAttentionState\(b\.row\?\.item,b\.row\?\.quote\)\.priority/);
   assert.match(html,/radarWatchAttentionState\(item,q\)/);
   assert.match(html,/const maxVisible=key==='today'\?5:key==='tracking'\?9:4/);
   assert.match(html,/const entryCompactStock =/);
