@@ -4912,12 +4912,12 @@ h1 {
           ||m.bottom_start?.current_base===true||m.prebreakout_scout?.eligible===true
           ||mc.watch_ready===true;
         const mother=String(m.shanchuan_v2?.mother_child?.lifecycle?.state||'');
-        const badMother=['mother_low_broken','child_low_broken','invalid','broken'].includes(mother);
+        // Expired mother/child patterns cannot override a NEW independent price recovery.
         const nums=[close,ma10,ma20,ma60,avg,eodLots,pos,price,open,high,prev,lots,
           fraction,pace,projected,minLots];
         if(!nums.every(Number.isFinite)||Math.min(close,ma10,ma20,ma60,avg,price,open,high,prev)<=0
           ||Number(item.score)<70||!discovery||avg<500||eodLots<500
-          ||pos<0||pos>=85||badMother||m.quality_gate?.pass===false
+          ||pos<0||pos>=85||m.quality_gate?.pass===false
           ||g.weak_after_breakout===true||g.kd_high_weak===true
           ||m.holding_management?.strong_breakdown===true
           ||close<Math.max(ma20,ma60)*.98||close>ma20*1.08
