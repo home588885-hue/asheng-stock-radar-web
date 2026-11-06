@@ -576,6 +576,9 @@ h1 {
 #app .radar-simple-one-liner{display:block;grid-column:1/-1;font-size:13px;line-height:1.55;color:#f1f6fe;font-weight:650;overflow-wrap:anywhere}
 #app .radar-simple-source{display:block;grid-column:1/-1;color:#9eb4d0;font-size:11px;line-height:1.45;overflow-wrap:anywhere}
 #app .holding-simple-prices{margin-top:5px}
+#app .radar-simple-prices .pnl-up{color:#86efac}
+#app .radar-simple-prices .pnl-down{color:#fca5a5}
+#app .radar-simple-prices .pnl-flat{color:#f8fafc}
 @media(max-width:640px){#app .radar-simple-prices{gap:4px}#app .radar-simple-prices>span{padding:7px 5px}#app .radar-simple-prices b{font-size:14px}#app .radar-simple-one-liner{font-size:13px}}
 
 .c-quote-diagnostic{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;padding:8px;border:1px solid #536a87;border-radius:8px;background:#172740;color:#e3eeff;font-size:12px;line-height:1.5}
@@ -5267,13 +5270,19 @@ h1 {
           const attention=existing?radarWatchAttentionState(item,q):null;
           const displayLabel=attention?.priority>=70?attention.label:label;
           const next=existing?radarShortAdvice(item,{detail:note},q):'等待完整日K回補';
+          const simple=existing
+            ?radarSimpleView(item,q,{...safeAction,phase:label.startsWith('🔴')?'blocked':'observe'},'entry')
+            :{status:'wait',label:'🟡 等待買點',html:'<span class="radar-simple-prices">'
+              +'<span><small>參考現價</small><b>待確認</b></span>'
+              +'<span><small>回測／突破</small><b>待確認</b></span>'
+              +'<span><small>失效觀察</small><b>待確認</b></span></span>'
+              +'<span class="radar-simple-one-liner">一句話：尚無完整日K，不能試單</span>'
+              +'<span class="radar-simple-source">已保留追蹤，等待原排程補算</span>'};
           return '<details class="entry-mini entry-saved-mini" data-stock-key="'+esc(id)+'" data-tracking-symbol="'+esc(id)+'"'+selected+'>'
             +'<summary class="entry-mini-summary radar-compact-summary">'
-            +'<span class="entry-mini-name"><strong>'+esc(id+' '+name)+'</strong><small>'+esc(displayLabel)+'</small></span>'
+            +'<span class="entry-mini-name"><strong>'+esc(id+' '+name)+'</strong><small class="radar-simple-badge '+simple.status+'">'+esc(simple.label)+'</small></span>'
             +'<span class="entry-mini-expand">展開</span>'
-            +'<span class="entry-mini-metrics">'+esc(quoteLabel)+'｜S '+esc(day)+'</span>'
-            +continuationRiskMiniHtml(item)
-            +'<span class="radar-compact-next">量價：'+esc(existing?volumePriceState(item,q).tag:'待最新模型')+'</span>'+'<span class="radar-compact-next">山川：'+esc(existing?shanchuanBrief(item,q):'待最新模型')+'</span>'+'<span class="radar-compact-next">🔎 '+esc(next)+'</span></summary>'
+            +simple.html+'</summary>'
             +'<div class="entry-mini-full">'+movement+(detail?radarDeepDetailsHtml(detail):'')+'</div></details>';
         };
         let pendingCount=0;
@@ -8472,11 +8481,13 @@ h1 {
             <summary class="holding-mini-summary">
               <span class="holding-mini-name"><strong>${esc(id)} ${esc(displayName||'')}</strong><small>持股已核對｜新版模型補算中</small></span>
               <span class="holding-mini-action ${stopHit?'exit':'warn'}">${stopHit?'🔴 -10%硬停損｜立即核對出場':'⚪ 模型待更新'}</span><span class="holding-mini-expand">詳情</span>
-              <span class="holding-mini-stats">成本 <b>${Number.isFinite(cost)&&cost>0?esc(num(cost,2)):'-'}</b>${todayPrice>0
-                ?'｜今日有效成交 <b>'+esc(num(todayPrice,2))+'</b>'
-                  +(pnl!=null?'｜損益 <b class="'+holdingPnlClass(pnl)+'">'+(pnl>0?'+':'')+esc(num(pnl,2))+'%</b>':'')
-                :'｜今日成交及損益待核對'}</span>
-              <span class="holding-ma20-days pending"><strong>⚪ MA20 跌破天數：模型載入中</strong><small>後台連續交易日計數載入後才顯示，不以舊股價冒充</small></span>
+              <span class="radar-simple-prices holding-simple-prices">
+                 <span><small>今日成交</small><b>${todayPrice>0?esc(num(todayPrice,2)):'待確認'}</b></span>
+                 <span><small>持股成本</small><b>${Number.isFinite(cost)&&cost>0?esc(num(cost,2)):'-'}</b></span>
+                 <span><small>目前損益</small><b class="${holdingPnlClass(pnl)}">${pnl==null?'待確認':(pnl>0?'+':'')+esc(num(pnl,2))+'%'}</b></span>
+               </span>
+               <span class="radar-simple-one-liner">一句話：${stopHit?'已碰到停損參考價，請核對券商行情':'模型載入中，先遵守原持股風控'}</span>
+               <span class="holding-ma20-days pending"><strong>⚪ MA20 跌破天數：模型載入中</strong><small>後台連續交易日計數載入後才顯示，不以舊股價冒充</small></span>
               <span class="holding-mini-date">持有 ${Number.isFinite(qty)&&qty>0?esc(qty.toLocaleString('zh-TW')):'-'} 股｜點擊查看狀態</span>
             </summary>
             <div class="holding-mini-body"><div class="box empty ${isError?'error':''}">${stopHit?'🔴 今日C有效成交已達成本-10%；請核對券商行情自行停損。 ':''}${esc(note)}</div></div>
