@@ -4757,6 +4757,11 @@ h1 {
       };
       const guardBottomFirstAction=(item,quote,action)=>{
         if(!action||!['trial','confirmed'].includes(String(action.phase||'')))return action;
+        if(action.key==='early_recovery_trial'&&action.research_trial===true){
+          const early=earlyRecoveryTrialState(item,quote),risk=newEntryRiskGate(item,quote);
+          if(early&&(!risk||risk.kind==='incomplete')&&action.buyable!==true)
+            return {...action,quality_version:'2026-11-06-early-recovery-research-trial-v1'};
+        }
         const quality=bottomFirstQuality(item,quote);
         if(quality.trial)return {...action,quality_version:BOTTOM_FIRST_QUALITY_VERSION,
           detail:String(action.detail||'')+'｜'+(quality.relativePct==null
@@ -4881,6 +4886,54 @@ h1 {
           el.classList.toggle('pending',info.tone==='pending');
         });
       };
+
+      // Explicit research-only ORANGE route: signed S + fresh C reversal.
+      // No scanner, quote cadence, formal V5, position or holding changes.
+      const earlyRecoveryTrialState=(item,quote)=>{
+        if(!item||item.__observation_only===true||item.__passive_monitor===true
+          ||holdings.has(String(item.stock_id||''))
+          ||!unifiedRadarGeneration(item)||!chaseModelReady(item)
+          ||String(item.as_of||'')!==expectedSignalDataDate()
+          ||!quoteFreshForTrial(quote))return null;
+        const m=item.metrics||{},g=m.entry_candle_guard||{},mc=m.ma_cluster||{};
+        const close=Number(m.close),ma10=Number(m.ma10),ma20=Number(m.ma20),ma60=Number(m.ma60);
+        const avg=Number(m.avg_volume_20_lots),eodLots=Number(m.current_volume_lots);
+        const pos=m.position_1y_pct==null?NaN:Number(m.position_1y_pct);
+        const price=Number(quote.price),open=Number(quote.open),high=Number(quote.high);
+        const prev=Number(quote.prev_close),lots=Number(quote.volume_lots);
+        const fraction=marketFraction(quote.quote_time);
+        const pace=avg>0&&fraction>0?lots/(avg*fraction):NaN;
+        const projected=fraction>0?lots/fraction:NaN;
+        const minLots=fraction>0?Math.max(200,Math.min(1000,Math.ceil(avg*fraction*.6))):NaN;
+        const entryLife=String(m.trade_lifecycle?.entry?.state||'');
+        const discovery=['near','starter','formal_candidate'].includes(entryLife)
+          ||['PRELAUNCH','ACTIVE','ENTRY'].includes(String(m.scan_intelligence?.effective_lifecycle||''))
+          ||m.pullback_rebreak===true||m.prior_b_confirmed===true
+          ||m.bottom_start?.current_base===true||m.prebreakout_scout?.eligible===true
+          ||mc.watch_ready===true;
+        const mother=String(m.shanchuan_v2?.mother_child?.lifecycle?.state||'');
+        // Expired mother/child patterns cannot override a NEW independent price recovery.
+        const nums=[close,ma10,ma20,ma60,avg,eodLots,pos,price,open,high,prev,lots,
+          fraction,pace,projected,minLots];
+        if(!nums.every(Number.isFinite)||Math.min(close,ma10,ma20,ma60,avg,price,open,high,prev)<=0
+          ||Number(item.score)<70||!discovery||avg<500||eodLots<500
+          ||pos<0||pos>=85||m.quality_gate?.pass===false
+          ||g.weak_after_breakout===true||g.kd_high_weak===true
+          ||m.holding_management?.strong_breakdown===true
+          ||close<Math.max(ma20,ma60)*.98||close>ma20*1.08
+          ||price<Math.max(ma10,ma20,ma60)
+          ||price<open*1.003||price<prev*.985||price<high*.985
+          ||price>ma20*1.065||price>prev*1.06||price>open*1.055
+          ||lots<minLots||projected<1000||pace<.7||pace>4
+          ||!chasePass(item,price))return null;
+        // Existing 0050 quote is a weakness veto only. No additional fetch.
+        const bench=quoteFreshForTrial(benchmark0050Quote)?benchmark0050Quote:null;
+        const benchPrev=Number(bench?.prev_close);
+        const relative=bench&&benchPrev>0?(price/prev-Number(bench.price)/benchPrev)*100:null;
+        if(relative!=null&&relative<-.8)return null;
+        return {price,lots,pace,projected,ma20,relative};
+      };
+
       const entrySnapshotState = (item, baseAction, quote = null) => {
         if(!chaseModelReady(item))return {key:'legacy_chase_observe',rank:0,
           phase:'observe',className:'wait',stale_model:true,buyable:false,trialable:false,
@@ -4904,13 +4957,24 @@ h1 {
           &&Number(item?.metrics?.avg_volume_20_lots)>=500
           &&Number(item?.metrics?.current_volume_lots)>=1000
           &&item?.metrics?.entry_candle_guard?.weak_after_breakout!==true;
-        if(!baseAction&&!recovery&&!originalMa10Watch&&!motherChildWatch&&!boxSetup&&!legacyDiscovery)return null;
+        const recoveryTrial=modelFresh?earlyRecoveryTrialState(item,quote):null;
+        if(!baseAction&&!recovery&&!originalMa10Watch&&!motherChildWatch&&!boxSetup&&!legacyDiscovery&&!recoveryTrial)return null;
         if(!baseAction)baseAction={key:'pullback_watch',rank:32,className:'scout',
           text:motherChildWatch?'🟡 母子K突破｜研究追蹤':boxSetup?'🟡 箱型整理｜突破追蹤':'🟡 回踩支撐觀察｜等盤中量價',
           detail:motherChildWatch?'母子K量價與籌碼條件齊，等待獨立獲利驗證':boxSetup?'等待箱頂突破並核對盤中成交量':'最近完整日K模型待核對',
           keep_candidate:true};
         const quoteValid=marketBridgeReady()&&validTodayQuote(quote),fresh=quoteFreshForTrial(quote);
         const risk=newEntryRiskGate(item,quoteValid?quote:null);
+        // A weak previous-day MA verdict can recover TODAY, but not hard
+        // selloff, position, momentum or chase vetoes.
+        if(recoveryTrial&&(!risk||risk.kind==='incomplete'))return {...baseAction,
+          key:'early_recovery_trial',phase:'trial',className:'trial',rank:96,
+          buyable:false,trialable:true,candle_guard:false,live_quote_verified:true,
+          research_trial:true,
+          text:'🟠 盤中轉強｜研究型小量試單',
+          detail:'有效C成交 '+num(recoveryTrial.price,2)+'｜量速 '
+            +num(recoveryTrial.pace,2)+'倍｜支撐MA20 '+num(recoveryTrial.ma20,2)
+            +'｜非V5正式買點、此路線尚未獨立績效驗證，僅供小部位自行評估'};
         if(risk)return {...risk,phase:risk.kind==='hard'?'blocked':'observe',
           live_quote_verified:quoteValid,buyable:false,trialable:false};
         const m=item?.metrics||{},price=Number(quote?.price),ma20=Number(m.ma20);
@@ -5132,6 +5196,7 @@ h1 {
         const price=q?Number(q.price):Number(m.close);
         const line=status==='ready'?(a.buyable===true
           ?'今日正式條件已驗證，仍需核對下單價格與風險'
+          :a.key==='early_recovery_trial'?'研究型小量試單：盤中轉強已核對，這條路線尚未獨立績效驗證'
           :'今日試單條件已驗證，只評估小部位')
           :status==='avoid'?'風控或型態未通過，先不要新買'
           :!currentDay?'資料未更新至最新交易日，等待重新確認'
@@ -5839,7 +5904,16 @@ h1 {
               detail:'模型日 '+String(item.as_of)+'｜原MA10/20/60、V5及風控決定真正買進資格'}));
             return;
           }
+          // Early orange trial is the only allowed exception to yesterday's incomplete MA.
+
+          if(a.key==='early_recovery_trial'&&a.research_trial===true
+
+            &&a.phase==='trial'&&a.trialable===true&&quoteFreshForTrial(q)
+
+            &&(!risk||risk.kind==='incomplete')){b.focus.push(row);return;}
+
           if(risk){
+
             b.wait.push(safeRow(row,{...risk,phase:'observe',
               text:risk.text||'🟡 條件未齊｜先觀察'}));return;
           }
