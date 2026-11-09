@@ -5275,6 +5275,7 @@ h1 {
       const entryCompactStock = (row, bucketLabel) => {
         const item=row.item||{}, m=item.metrics||{}, id=String(item.stock_id||'');
         const score=Number(item.score), q=marketBridgeReady()&&validTodayQuote(row.quote)?row.quote:null;
+        const limitNow=priceLimitState(item,q);
         const close=Number(q?.price ?? m.close), ma20=Number(m.ma20);
         const dist=close>0&&ma20>0?(close/ma20-1)*100:null;
         const vol=Number(q?.volume_lots ?? m.current_volume_lots);
@@ -5283,8 +5284,8 @@ h1 {
         const tradeContext=(row.action?.phase==='blocked'||bucketLabel.includes('避開'))?'風險警示':
            q ? quoteDisplayState(q,item).label+'｜'+quoteDisplayState(q,item).moment+'｜日K模型未重算' : '盤後模型觀察，非即時買點';
         const originalAction=row.action||{};
-        const activeTrial=originalAction.phase==='trial'&&originalAction.trialable===true&&quoteFreshForTrial(q);
-        const activeFormal=originalAction.phase==='confirmed'&&originalAction.buyable===true
+        const activeTrial=!limitNow&&originalAction.phase==='trial'&&originalAction.trialable===true&&quoteFreshForTrial(q);
+        const activeFormal=!limitNow&&originalAction.phase==='confirmed'&&originalAction.buyable===true
           &&formalEntryValidation.enabled&&quoteFreshForTrial(q);
         const v5=m.v5||{},missing=[];
         if(v5.weekly_k_pass===false)missing.push('V5週K');
@@ -5294,7 +5295,9 @@ h1 {
         if(m.entry_candle_guard?.main_bull===false)missing.push('MA10／20／60結構');
         if(chaseOver(item,close))missing.push('距MA20超過'+chaseLimitNote(item));
         const missingText=missing.length?'｜未達：'+missing.slice(0,4).join('、'):'';
-        const decisionText=activeFormal?'🟢 正式買點（當日驗證）'
+        const decisionText=limitNow?.kind==='up'?'🔴 已觸及漲停｜不追價'
+          :limitNow?.kind==='down'?'🟢 已觸及跌停｜暫不買'
+          :activeFormal?'🟢 正式買點（當日驗證）'
           :activeTrial?'🟠 可小量試單（當日驗證）'
           :bucketLabel.includes('避開')?(originalAction.text||'🔴 風險警戒')
           :originalAction.text||'🟡 模型候選';
