@@ -631,8 +631,8 @@ test('Unified passive C/S status is identical for mini, deep guide and next step
   assert.match(movement,/passive\?passive\.nextStep/);
   const short=section('      const radarShortAdvice=','      \/\/ 2026-10-20-continuation-risk-display-v1');
   assert.match(short,/passiveWatchDescription\(item,quote\)\.shortAdvice/);
-  assert.match(html,/radarShortAdvice\(item,safeDisplayAction,q\)/);
-  assert.match(html,/radarShortAdvice\(item,\{text:status\},q\)/);
+  assert.match(html,/radarSimpleView\(item,q,safeDisplayAction,'entry'\)/);
+  assert.match(html,/radarShortAdvice\(item,\{detail:note\},q\)/);
   assert.match(html,/radarShortAdvice\(item,action,q\)/);
   assert.match(html,/const rawStudyLabel=blocked\?'🔴 暫不進場｜風控待核對'/);
   assert.match(html,/passive\?passive\.label:String\(original\.text\|\|phaseInfo\.label\)/);
@@ -777,7 +777,7 @@ test('Current and historical scouts render as one-level clickable stock cards wi
   assert.doesNotMatch(src,/getLiveQuotes\s*\(|scanBatch\s*\(|setInterval\s*\(/);
 });
 test('Tomorrow ENTRY research and continued pullback share one nonduplicated card shelf',()=>{
-  assert.match(html,/compactEntryGroupHtml\('tracking','🌙 明日看盤清單｜追蹤與等待回踩'/);
+  assert.match(html,/compactEntryGroupHtml\('tracking','⚡ 強攻觀察與候選'/);
   assert.match(html,/const tomorrowResearchRows=\[/);
   assert.match(html,/\.{3}topResearch\.map\(x=>x\.row\)/);
   assert.match(html,/\.{3}strongFollowups/);
@@ -861,7 +861,7 @@ test('KD-high is an oscillator warning, not a high-price veto for 2633',()=>{
   assert.doesNotMatch(source.slice(0,source.indexOf('if((Number.isFinite(k)')),/k>80|日KD偏高/);
 });
 test('Compact summary, expanded decision and technical guide share one action',()=>{
-  assert.match(html,/const decisionText=activeFormal\?/);
+  assert.match(html,/const decisionText=limitNow\?\.kind==='up'\?/);
   assert.match(html,/const safeDisplayAction=\{\.\.\.originalAction,buyable:activeFormal,trialable:activeTrial,[\s\S]*?text:decisionText/);
   assert.match(html,/const glanceSignal=String\(decisionText\)\.split/);
   assert.match(html,/const stageLabel=rawStageLabel\.includes\('非買點'\)/);
