@@ -233,7 +233,7 @@ test('Launch, entry and tomorrow cards are brief when closed, compact when open,
   assert.match(html,/\.radar-compact-summary/);
   // User's previously approved holdings layout is outside these refactors.
   const holding=section('      const holdingMiniHtml = (item, quote = null) => {','      const holdingPlaceholderHtml =');
-  assert.match(holding,/holdingMini-stats|holding-mini-stats/);
+  assert.match(holding,/holding-simple-prices/);
   assert.match(holding,/holdingMa20DaysHtml\(item,live\)/);
 });
 test('Signed saved and research watch stocks share existing C quote batch',()=>{
