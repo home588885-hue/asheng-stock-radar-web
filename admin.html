@@ -9850,12 +9850,13 @@ h1 {
             return metrics.breakout20 !== true && Number.isFinite(close) && Number.isFinite(high) && high > 0 && close >= high * 0.95 && close <= high && chipFollow ? 1 : 0;
           };
           liveBasePicks = merged.filter(liveBaseCandidate).sort((a, b) => {
-            const volumeDiff=radarVolumePriority(b).rank-radarVolumePriority(a).rank;
-            if(volumeDiff)return volumeDiff;
+            // Preserve any existing signal priority before WATCH volume tiers.
             const prepDiff = preBreakoutReady(b) - preBreakoutReady(a);
             if (prepDiff) return prepDiff;
             const signalDiff = (priority[tradeSignal(b).className] || 1) - (priority[tradeSignal(a).className] || 1);
             if (signalDiff) return signalDiff;
+            const volumeDiff=radarVolumePriority(b).rank-radarVolumePriority(a).rank;
+            if(volumeDiff)return volumeDiff;
             const bCombined = Number(b.metrics?.chip?.combined_score ?? b.score ?? 0);
             const aCombined = Number(a.metrics?.chip?.combined_score ?? a.score ?? 0);
             return bCombined - aCombined;
