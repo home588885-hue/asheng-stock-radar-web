@@ -181,14 +181,14 @@ test('Movement cards only display S or already-valid C trades and never grant a 
   const src=section('      const stockMovementHtml = ', '      // UI-only folding. The holdings Map remains verified by the server.');
   assert.doesNotMatch(src,/\bfetch\s*\(|getLiveQuotes\s*\(|\bsetInterval\s*\(/);
   const fn=new Function('bestTodayQuote','validTodayQuote','quoteRecentForDisplay','volumePriceState',
-    'chaseModelReady','unifiedRadarGeneration','overnightLifecycleState','chaseLimitNote','esc','num','radarShortAdvice','continuationRiskFullHtml','quoteDisplayState','eodVolumeFirstBarObservation','thinTurnoverFullHtml','passiveWatchDescription',
+    'chaseModelReady','unifiedRadarGeneration','overnightLifecycleState','chaseLimitNote','esc','num','radarShortAdvice','continuationRiskFullHtml','quoteDisplayState','eodVolumeFirstBarObservation','thinTurnoverFullHtml','passiveWatchDescription','priceLimitTagHtml',
     src+'\nreturn stockMovementHtml;')(
     q=>q,q=>!!q&&q.has_today_trade===true&&q.price>0,q=>q.fresh===true,
     ()=>({tag:'🟢 量價改善',volumeRatio:1.2}),
     x=>x?.metrics?.chase_rule_version==='2026-10-20-bias-8-12-15-v1',
     ()=>true,()=>({label:'底部整理',tomorrow:'等量價轉強'}),()=>'+12%',
     x=>String(x).replace(/&/g,'&amp;').replace(/</g,'&lt;'),
-    (x,d=1)=>Number(x).toFixed(d),(item,action)=>action?.detail||'觀察量價',()=> '',q=>({label:q?'C 今日前次成交（非即時）':'S 完整日K收盤（非即時）',moment:'2026/10/20 13:30',live:false}),()=>({flag:false}),()=>'',()=>({label:'觀察',detail:'',nextStep:'觀察'}));
+    (x,d=1)=>Number(x).toFixed(d),(item,action)=>action?.detail||'觀察量價',()=> '',q=>({label:q?'C 今日前次成交（非即時）':'S 完整日K收盤（非即時）',moment:'2026/10/20 13:30',live:false}),()=>({flag:false}),()=>'',()=>({label:'觀察',detail:'',nextStep:'觀察'}),()=> '');
   const item={stock_id:'1605',as_of:'2026-10-19',metrics:{
     chase_rule_version:'2026-10-20-bias-8-12-15-v1',close:100,prev_close:98,
     current_volume_lots:1100,ma10:99,ma20:97,ma60:95}};
@@ -233,7 +233,7 @@ test('Launch, entry and tomorrow cards are brief when closed, compact when open,
   assert.match(html,/\.radar-compact-summary/);
   // User's previously approved holdings layout is outside these refactors.
   const holding=section('      const holdingMiniHtml = (item, quote = null) => {','      const holdingPlaceholderHtml =');
-  assert.match(holding,/holdingMini-stats|holding-mini-stats/);
+  assert.match(holding,/holding-simple-prices/);
   assert.match(holding,/holdingMa20DaysHtml\(item,live\)/);
 });
 test('Signed saved and research watch stocks share existing C quote batch',()=>{
@@ -325,8 +325,8 @@ test('Passive lifecycle is visible in LAUNCH, ENTRY and tomorrow watchlist only'
   assert.match(entrySection,/const passiveResearch=/);
   assert.match(entrySection,/passiveResearchHtml/);
   assert.match(source,/overnightPassiveResearch=/);
-  assert.match(html,/const activeTrial=originalAction\.phase==='trial'&&originalAction\.trialable===true/);
-  assert.match(html,/const activeFormal=originalAction\.phase==='confirmed'&&originalAction\.buyable===true/);
+  assert.match(html,/const activeTrial=!limitNow&&originalAction\.phase==='trial'&&originalAction\.trialable===true&&quoteFreshForTrial\(q\)/);
+  assert.match(html,/const activeFormal=!limitNow&&originalAction\.phase==='confirmed'&&originalAction\.buyable===true/);
   assert.doesNotMatch(source,/spring-swallow-scan-batch/);
 });
 test('Latest S-signed continuation warning is read-only and appears in all radar areas',()=>{
@@ -347,11 +347,11 @@ test('Latest S-signed continuation warning is read-only and appears in all radar
  for(const [a,b] of [
  ['      const launchMiniHtml = (item, quote = null) => {','      const launchListHtml ='],
  ['      const entryCompactStock = (row, bucketLabel) => {','      const entryBucketHtml='],
- ['      const groupedEntrySavedWatches = visibleIds => {','      const simplifiedEntryHtml ='],
  ['        const riskStudyHtml=','        const researchCard=info=>{'],
  ['        const researchCard=info=>{','        // One stock per evening research panel.'],
  ['      const holdingMiniHtml = (item, quote = null) => {','      const holdingPlaceholderHtml =']
  ])assert.match(section(a,b),/continuationRiskMiniHtml\(item\)/);
+ assert.match(section('      const groupedEntrySavedWatches = visibleIds => {','      const simplifiedEntryHtml ='),/stockMovementHtml\(item,q,'entry'/);
  assert.match(section('      const stockMovementHtml = (item, quote = null, zone =',
       '      // UI-only folding. The holdings Map remains verified by the server.'),
       /continuationRiskFullHtml\(item\)/);
@@ -631,8 +631,8 @@ test('Unified passive C/S status is identical for mini, deep guide and next step
   assert.match(movement,/passive\?passive\.nextStep/);
   const short=section('      const radarShortAdvice=','      \/\/ 2026-10-20-continuation-risk-display-v1');
   assert.match(short,/passiveWatchDescription\(item,quote\)\.shortAdvice/);
-  assert.match(html,/radarShortAdvice\(item,safeDisplayAction,q\)/);
-  assert.match(html,/radarShortAdvice\(item,\{text:status\},q\)/);
+  assert.match(html,/radarSimpleView\(item,q,safeDisplayAction,'entry'\)/);
+  assert.match(html,/radarShortAdvice\(item,\{detail:note\},q\)/);
   assert.match(html,/radarShortAdvice\(item,action,q\)/);
   assert.match(html,/const rawStudyLabel=blocked\?'🔴 暫不進場｜風控待核對'/);
   assert.match(html,/passive\?passive\.label:String\(original\.text\|\|phaseInfo\.label\)/);
@@ -663,7 +663,8 @@ test('Signed watch attention cannot invent a buy or hide a strong overextended s
   assert.equal(attention(weak).priority,0);
   assert.doesNotMatch(src,/fetch\s*\(|getLiveQuotes\s*\(|savePullbackWatchRows\s*\(/);
   const htmlEntry=section('      const simplifiedEntryHtml =', '      // Only compare existing EOD radar snapshots;');
-  assert.match(htmlEntry,/watch\.sort\(\(a,b\)=>entryQualityScore\(b\.row\?\.item\)-entryQualityScore\(a\.row\?\.item\)/);
+  assert.match(htmlEntry,/watch\.sort\(\(a,b\)=>radarVolumePriority\(b\.row\?\.item,b\.row\?\.quote\)\.rank/);
+  assert.match(htmlEntry,/entryQualityScore\(b\.row\?\.item\)-entryQualityScore\(a\.row\?\.item\)/);
   assert.match(htmlEntry,/radarWatchAttentionState\(b\.row\?\.item,b\.row\?\.quote\)\.priority/);
   assert.match(html,/radarWatchAttentionState\(item,q\)/);
   assert.match(html,/const maxVisible=key==='today'\?5:key==='tracking'\?9:4/);
@@ -750,7 +751,8 @@ test('Current and historical scouts render as one-level clickable stock cards wi
   for(const card of cards){
     assert.match(card,/class="entry-mini" data-stock-key="/);
     assert.match(card,/class="card radar-scout-detail"/);
-    assert.match(card,/歷史收盤（非即時）/);
+    assert.match(card,/歷史 S 收盤/);
+    assert.match(card,/歷史追蹤資料，只能研究，不能用來試單/);
     assert.match(card,/歷史資料，非目前買點/);
     assert.equal((card.match(/<details/g)||[]).length,1,'ONE fold level per historical stock');
     assert.doesNotMatch(card,/data-holding-buy|buyable:true|trialable:true|🟢 正式買點/);
@@ -777,7 +779,7 @@ test('Current and historical scouts render as one-level clickable stock cards wi
   assert.doesNotMatch(src,/getLiveQuotes\s*\(|scanBatch\s*\(|setInterval\s*\(/);
 });
 test('Tomorrow ENTRY research and continued pullback share one nonduplicated card shelf',()=>{
-  assert.match(html,/compactEntryGroupHtml\('tracking','🌙 明日看盤清單｜追蹤與等待回踩'/);
+  assert.match(html,/compactEntryGroupHtml\('tracking','⚡ 強攻觀察與候選'/);
   assert.match(html,/const tomorrowResearchRows=\[/);
   assert.match(html,/\.{3}topResearch\.map\(x=>x\.row\)/);
   assert.match(html,/\.{3}strongFollowups/);
@@ -861,7 +863,7 @@ test('KD-high is an oscillator warning, not a high-price veto for 2633',()=>{
   assert.doesNotMatch(source.slice(0,source.indexOf('if((Number.isFinite(k)')),/k>80|日KD偏高/);
 });
 test('Compact summary, expanded decision and technical guide share one action',()=>{
-  assert.match(html,/const decisionText=activeFormal\?/);
+  assert.match(html,/const decisionText=limitNow\?\.kind==='up'\?/);
   assert.match(html,/const safeDisplayAction=\{\.\.\.originalAction,buyable:activeFormal,trialable:activeTrial,[\s\S]*?text:decisionText/);
   assert.match(html,/const glanceSignal=String\(decisionText\)\.split/);
   assert.match(html,/const stageLabel=rawStageLabel\.includes\('非買點'\)/);

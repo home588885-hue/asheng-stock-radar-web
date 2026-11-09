@@ -151,6 +151,6 @@ test('entry ready card displays missing C, signed model and trial quality withou
  assert.match(helper(item,{valid:true},{phase:'trial',trialable:true}),/已驗證/);
  assert.match(helper(item,{valid:true},{phase:'blocked'}),/不可試單/);
  assert.match(admin,/entryGapNote=entryTrialGapNote/);
- assert.match(admin,/｜\$\{esc\(entryGapNote\)\}/);
+ assert.match(admin,/\+'｜'\+entryGapNote/);
  assert.match(admin,/formalEntryValidation\.enabled&&m\.v5\?\.entry_confirmed===true/);
 });
