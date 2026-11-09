@@ -566,6 +566,8 @@ h1 {
 
 /* 2026-11-06 single-glance radar summary: display-only, original S/C gate unchanged. */
 #app .radar-simple-badge{display:inline-flex;align-items:center;width:max-content;max-width:100%;padding:4px 9px;border:1px solid #9ca3af66;border-radius:999px;background:#263548;color:#e2e8f0;font-size:13px;font-weight:800}
+/* Observation cards show pattern, MA position and existing launch history. */
+#app .radar-simple-badge.radar-pattern-badge{display:inline-block;width:fit-content;max-width:100%;border-radius:9px;white-space:normal;overflow-wrap:anywhere;text-align:left;line-height:1.5;padding:5px 9px}
 #app .radar-simple-badge.ready{border-color:#34d399;background:#134e3b;color:#bbf7d0}
 #app .radar-simple-badge.wait{border-color:#fbbf24;background:#42351c;color:#fde68a}
 #app .radar-simple-badge.avoid{border-color:#94a3b8;background:#263244;color:#e2e8f0}
@@ -5240,6 +5242,50 @@ h1 {
       };
       const entryExpandedIds = new Set();
 
+
+      // Presentation only. Reuse existing launch guidance and volumePriceState;
+      // an observation pattern never becomes an orange/green buy authorization.
+      const observationPatternLabel=(item,quote=null)=>{
+        const m=item?.metrics||{},lc=m.launch_candidate||{};
+        const parts=[];
+        const q=validTodayQuote(quote)?quote:null;
+        const volume=volumePriceState(item,q);
+        if(volume?.tag&&volume.tag!=='⚪ 量價中性')parts.push(volume.tag);
+        const shape=String(selectionGuide(item,null)?.shape||'');
+        const isLaunch=lc.eligible===true&&shape.startsWith('🔥 發動候選');
+        if(isLaunch)parts.push('🔥 發動候選');
+        else{
+          const life=overnightLifecycleState(item);
+          const short={
+            first:'🚀 第一根突破',continuation:'🚀 起漲延續',
+            ready:'🌱 底部整理',near:'🌱 均線轉強',
+            extended:'⚠️ 起漲後高乖離',weak:'🔴 結構轉弱',
+            pending:'📋 型態整理中'
+          };
+          const stage=short[life.key]||'📋 型態待確認';
+          if(!parts.includes(stage))parts.push(stage);
+        }
+        const price=q?Number(q.price):Number(m.close);
+        const mas=[['MA10',Number(m.ma10)],['MA20',Number(m.ma20)],['MA60',Number(m.ma60)]];
+        if(price>0&&mas.every(([,v])=>Number.isFinite(v)&&v>0)){
+          const overhead=mas.filter(([,v])=>price<v);
+          const source=q?'C成交':'S收盤';
+          if(overhead.length===0)parts.push('✅ 站上全部均線（'+source+'）');
+          else if(overhead.length===1)parts.push('🟡 '+overhead[0][0]+'仍有反壓（'+source+'）');
+          else parts.push('⚠️ '+overhead.length+'條均線仍在上方（'+source+'）');
+        }else parts.push('均線位置待確認');
+        if(isLaunch){
+          // Use the existing official launchCandidate recent BC label.
+          const history=shape.split('｜').slice(2).join('｜');
+          if(history)parts.push(history);
+        }else{
+          const seq=m.launch_sequence||m.ma_cluster?.launch_sequence||{};
+          const first=String(seq.first_signal_date||'').slice(0,10);
+          if(/^20\d{2}-\d{2}-\d{2}$/.test(first))parts.push('首次發動紀錄 '+first);
+          else parts.push('近期轉強紀錄未確認');
+        }
+        return parts.join('｜');
+      };
       // Shared read-only presentation. Only the original entry action may grant a green state.
       const radarSimpleView=(item,quote=null,action=null,zone='entry',riskInfo=null)=>{
         const m=item?.metrics||{},q=validTodayQuote(quote)?quote:null;
@@ -5261,7 +5307,7 @@ h1 {
           :momentum?.stale?'⚡ 放量起勢｜模型待更新'
           :momentum?.level===2?'⚡ 強攻加速｜留意風險'
           :momentum?.level===1?'🌱 早期轉強｜優先追蹤'
-          :'📋 持續觀察';
+          :observationPatternLabel(item,q);
         const ma10=Number(m.ma10),ma20=Number(m.ma20);
         const has10=Number.isFinite(ma10)&&ma10>0,has20=Number.isFinite(ma20)&&ma20>0;
         const supportLow=has10&&has20?Math.min(ma10,ma20):has10?ma10:has20?ma20:null;
@@ -5299,7 +5345,7 @@ h1 {
           +'<span><small>失效觀察（非停損）</small><b>'+esc(invalidText)+'</b></span>'
           +'</span><span class="radar-simple-one-liner">一句話：'+esc(line)+'</span>'
           +'<span class="radar-simple-source">'+esc(source)+'｜失效參考不是固定停損價</span>';
-        return {status,label,html};
+        return {status,label,html,pattern:status==='wait'&&!momentum};
       };
 
       // Display-only price limit label. Never creates a trading signal.
@@ -5384,7 +5430,7 @@ h1 {
         const simple=radarSimpleView(item,q,safeDisplayAction,'entry');
         return `<details class="entry-mini" data-stock-key="${esc(id)}"${selected}>
           <summary class="entry-mini-summary radar-compact-summary">
-            <span class="entry-mini-name"><strong>${esc(id)} ${esc(item.stock_name||'')}</strong>${priceLimitTagHtml(item,q)}<small class="radar-simple-badge ${simple.status}">${esc(simple.label)}</small></span>
+            <span class="entry-mini-name"><strong>${esc(id)} ${esc(item.stock_name||'')}</strong>${priceLimitTagHtml(item,q)}<small class="radar-simple-badge ${simple.status}${simple.pattern?' radar-pattern-badge':''}">${esc(simple.label)}</small></span>
             <span class="entry-mini-expand">展開</span>
             ${simple.html}
           </summary>
@@ -5465,7 +5511,7 @@ h1 {
               +'<span class="radar-simple-source">已保留追蹤，等待原排程補算</span>'};
           return '<details class="entry-mini entry-saved-mini" data-stock-key="'+esc(id)+'" data-tracking-symbol="'+esc(id)+'"'+selected+'>'
             +'<summary class="entry-mini-summary radar-compact-summary">'
-            +'<span class="entry-mini-name"><strong>'+esc(id+' '+name)+'</strong><small class="radar-simple-badge '+simple.status+'">'+esc(simple.label)+'</small></span>'
+            +'<span class="entry-mini-name"><strong>'+esc(id+' '+name)+'</strong><small class="radar-simple-badge '+simple.status+(simple.pattern?' radar-pattern-badge':'')+'">'+esc(simple.label)+'</small></span>'
             +'<span class="entry-mini-expand">展開</span>'
             +simple.html+'</summary>'
             +'<div class="entry-mini-full">'+movement+(detail?radarDeepDetailsHtml(detail):'')+'</div></details>';
@@ -8916,7 +8962,7 @@ h1 {
         return `<section class="launch-mini-wrap" data-stock-id="${esc(id)}">
           <details class="entry-mini" data-stock-key="${esc(id)}"${selected}>
             <summary class="entry-mini-summary radar-compact-summary" aria-label="${esc(id+' '+String(item?.stock_name||'')+' '+status)}">
-              <span class="entry-mini-name"><strong>${esc(id)} ${esc(item?.stock_name||'')}</strong>${priceLimitTagHtml(item,q)}<small class="radar-simple-badge ${simple.status}">${esc(simple.label)}</small></span>
+              <span class="entry-mini-name"><strong>${esc(id)} ${esc(item?.stock_name||'')}</strong>${priceLimitTagHtml(item,q)}<small class="radar-simple-badge ${simple.status}${simple.pattern?' radar-pattern-badge':''}">${esc(simple.label)}</small></span>
               <span class="entry-mini-expand">展開</span>
               ${simple.html}
              </summary>
