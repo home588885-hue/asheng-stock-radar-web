@@ -4960,6 +4960,10 @@ h1 {
         return {price,lots,pace,projected,ma20:setup.ma20,route:'ma_reclaim'};
       };
 
+      // Earlier research-only orange detection: soften only the scan score, EOD
+      // participation and live projected-volume floor. A valid same-day C trade,
+      // positive price structure, signed S model, chase cap and risk veto remain
+      // mandatory; the V5 formal green gate is unchanged.
       const earlyRecoveryTrialState=(item,quote)=>{
         if(!item||item.__observation_only===true||item.__passive_monitor===true
           ||holdings.has(String(item.stock_id||''))
@@ -4989,7 +4993,7 @@ h1 {
         const nums=[close,ma10,ma20,ma60,avg,eodLots,pos,price,open,high,prev,lots,
           fraction,pace,projected,minLots];
         if(!nums.every(Number.isFinite)||Math.min(close,ma10,ma20,ma60,avg,price,open,high,prev)<=0
-          ||Number(item.score)<62||!discovery||avg<300||eodLots<200
+          ||Number(item.score)<58||!discovery||avg<250||eodLots<150
           ||pos<0||pos>=80||m.quality_gate?.pass===false
           ||g.weak_after_breakout===true||g.kd_high_weak===true
           ||m.holding_management?.strong_breakdown===true
@@ -4997,7 +5001,7 @@ h1 {
           ||price<Math.max(ma10,ma20,ma60)
           ||price<open*1.001||price<prev*.985||price<high*.985
           ||price>ma20*1.065||price>prev*1.06||price>open*1.055
-          ||lots<minLots||projected<600||pace<.6||pace>4
+          ||lots<minLots||projected<500||pace<.55||pace>4
           ||!chasePass(item,price))return null;
         // Existing 0050 quote is a weakness veto only. No additional fetch.
         const bench=quoteFreshForTrial(benchmark0050Quote)?benchmark0050Quote:null;
