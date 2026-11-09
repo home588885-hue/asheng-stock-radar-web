@@ -606,6 +606,11 @@ h1 {
 .price-limit-tag{display:inline-flex;align-items:center;margin-left:6px;padding:2px 7px;border-radius:7px;font-size:12px;font-weight:800;white-space:nowrap;vertical-align:middle}
 .price-limit-tag.price-limit-up{color:#fee2e2;background:#991b1b;border:1px solid #f87171}
 .price-limit-tag.price-limit-down{color:#dcfce7;background:#166534;border:1px solid #4ade80}
+.prelimit-alert-setup{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:10px 0;color:#cbd5e1}
+.prelimit-alert-setup small{font-size:12px;line-height:1.5}
+.prelimit-toast{position:fixed;right:16px;top:100px;max-width:min(390px,calc(100vw - 24px));z-index:1400;box-shadow:0 12px 36px #0009;border:2px solid #fb923c;background:#18263d;border-radius:12px;padding:14px;color:#f8fafc}
+#preLimitNotice[hidden]{display:none}
+.prelimit-toast .risk-note{margin-top:7px}
 .entry-bucket-focus { border-color:#4ade8088; }
 .entry-bucket-trial { border-color:#fb923c; }
 .entry-bucket-formal { border-color:#4ade80; }
@@ -1335,6 +1340,11 @@ h1 {
           </details>
 
         <section id="buySignalNotice" class="box" role="status" aria-live="polite" hidden></section>
+        <div class="prelimit-alert-setup">
+          <button type="button" id="enablePreLimitDesktop">🔔 啟用漲停前桌面提醒</button>
+          <small id="preLimitDesktopStatus">只用雷達既有 C 行情，須保持雷達頁面開啟；不會自動下單。</small>
+        </div>
+        <section id="preLimitNotice" class="prelimit-toast" role="status" aria-live="assertive" hidden></section>
 
         <section class="box control-panel">
           <div class="nav-label">三區追蹤｜S 模型・C 今日成交</div>
@@ -5502,6 +5512,110 @@ h1 {
         return groups.join('');
       };
 
+
+      // Ahead-of-limit WATCH: use only existing validated C quote waves and signed S.
+      // A fast upward move is not a predicted limit-up or a new buy permission.
+      const PRELIMIT_ALERT_KEY='asheng-prelimit-alert-v1-'+portfolioId;
+      let preLimitSeen={};
+      try{const old=JSON.parse(localStorage.getItem(PRELIMIT_ALERT_KEY)||'{}');
+        if(old&&typeof old==='object'&&!Array.isArray(old))preLimitSeen=old;
+      }catch{}
+      const desktopOpt=document.getElementById('enablePreLimitDesktop');
+      const desktopStatus=document.getElementById('preLimitDesktopStatus');
+      if(desktopOpt){
+        const refreshDesktopOpt=()=>{
+          const supported=typeof Notification!=='undefined';
+          const permission=supported?Notification.permission:'unsupported';
+          desktopOpt.disabled=!supported||permission==='granted';
+          desktopOpt.textContent=permission==='granted'?'✅ 漲停前桌面提醒已啟用'
+            :permission==='denied'?'🔕 瀏覽器已拒絕通知，請在網站權限開啟'
+            :'🔔 啟用漲停前桌面提醒';
+          if(desktopStatus)desktopStatus.textContent=permission==='granted'
+            ?'僅雷達頁面開啟並取得新的有效 C 成交時提醒；非背景監控。'
+            :'只用既有 C 行情；先按左側授權，並保持雷達頁面開啟。';
+        };
+        desktopOpt.addEventListener('click',async()=>{
+          if(typeof Notification==='undefined')return;
+          if(Notification.permission==='default'){
+            try{await Notification.requestPermission()}catch{}
+          }
+          refreshDesktopOpt();
+        });
+        refreshDesktopOpt();
+      }
+      const preLimitStrongMove=(item,quote,action=null)=>{
+        if(!item||item.__passive_monitor===true||item.__observation_only===true
+          ||holdings.has(String(item.stock_id||''))
+          ||!unifiedRadarGeneration(item)||!chaseModelReady(item)
+          ||String(item.as_of||'')!==expectedSignalDataDate()
+          ||!quoteFreshForTrial(quote)||priceLimitState(item,quote)?.kind)return null;
+        const m=item.metrics||{},g=m.entry_candle_guard||{},mc=m.ma_cluster||{};
+        const price=Number(quote.price),prev=Number(quote.prev_close),
+          open=Number(quote.open),high=Number(quote.high),vol=Number(quote.volume_lots);
+        const ma10=Number(m.ma10),ma20=Number(m.ma20),ma60=Number(m.ma60);
+        const avg=Number(m.avg_volume_20_lots),frac=marketFraction(quote.quote_time);
+        const pace=frac>0&&avg>0?vol/(avg*frac):NaN;
+        const pct=prev>0?(price/prev-1)*100:NaN;
+        const pos=Number(m.position_1y_pct);
+        const recentHigh=Number(m.high20_prev||mc.breakout_price||m.recent_high20);
+        const breakout=recentHigh>0&&price>=recentHigh*.985;
+        const recovery=m.pullback_rebreak===true||mc.breakout_first_bar===true
+          ||(mc.watch_ready===true&&price>=ma10&&ma10>=ma20*.985);
+        if(![price,prev,open,high,vol,avg,frac,pace,pct,ma10,ma20,ma60,pos].every(Number.isFinite)
+          ||Math.min(price,prev,open,high,avg,ma10,ma20,ma60)<=0
+          ||pct<2.5||pct>7.5||vol<180||avg<350||pace<1.3||pace>5.5||frac<.03
+          ||price<open*1.008||price<high*.992||price<Math.max(ma10,ma20,ma60)
+          ||ma10<ma20*.985||ma20<ma60*.97||price>ma20*1.08
+          ||Number(item.score)<65||pos>=85||pos<0||(!breakout&&!recovery)
+          ||g.weak_after_breakout===true||g.kd_high_weak===true
+          ||m.holding_management?.strong_breakdown===true
+          ||m.quality_gate?.pass===false||!chasePass(item,price))
+          return null;
+        const canTrial=action?.phase==='trial'&&action.trialable===true
+          &&action.buyable!==true&&action.live_quote_verified===true;
+        return {id:String(item.stock_id),name:String(item.stock_name||''),
+          modelDay:String(item.as_of),day:todayQuoteDate(),
+          price,pct,pace,quoteTime:String(quote.quote_time||''),level:canTrial?2:1};
+      };
+      const checkPreLimitAlerts=rows=>{
+        const host=document.getElementById('preLimitNotice');
+        if(!host||!Array.isArray(rows)||!marketBridgeReady()||!taipeiMarketState().open)return;
+        const hits=[];
+        for(const row of rows){
+          const signal=preLimitStrongMove(row?.item,row?.quote,row?.action);
+          if(!signal)continue;
+          const old=preLimitSeen[signal.id];
+          if(old?.day===signal.day&&Number(old.level)>=signal.level)continue;
+          preLimitSeen[signal.id]={day:signal.day,level:signal.level};
+          hits.push(signal);
+        }
+        if(!hits.length)return;
+        preLimitSeen=Object.fromEntries(Object.entries(preLimitSeen).slice(-500));
+        try{localStorage.setItem(PRELIMIT_ALERT_KEY,JSON.stringify(preLimitSeen))}catch{}
+        const lead=hits[0];
+        host.hidden=false;
+        host.innerHTML='<div><b>⚡ 漲停前強攻預警｜'+hits.length+' 檔</b>'
+          +' <button type="button" id="dismissPreLimitNotice" aria-label="關閉提醒">✕</button></div>'
+          +hits.slice(0,5).map(x=>'<div class="risk-note"><b>'+esc(x.id)+' '+esc(x.name)+'</b>'
+            +'｜C現價 '+esc(num(x.price,2))+'｜今日 '+esc(num(x.pct,2))+'%'
+            +'｜量速 '+esc(num(x.pace,2))+'倍'
+            +'｜成交 '+esc(x.quoteTime)
+            +'｜'+(x.level===2?'🟠 既有小量試單條件已確認，可評估小部位'
+              :'🔎 強攻初段，仍待進場雷達核對試單資格')
+            +'</div>').join('')
+          +'<small>僅在今日漲幅2.5%～7.5%且量價／原風控通過時提醒。非保證漲停、非直接買進指令；請核對券商即時行情。</small>';
+        host.querySelector('#dismissPreLimitNotice')?.addEventListener('click',()=>{host.hidden=true});
+        if(typeof Notification!=='undefined'&&Notification.permission==='granted'){
+          for(const x of hits.slice(0,3)){
+            try{new Notification((x.level===2?'🟠 試單條件成立｜':'⚡ 強攻初段｜')
+              +x.id+' '+x.name,{body:'C '+num(x.price,2)+'｜漲 '+num(x.pct,2)
+                +'%｜量速 '+num(x.pace,2)+'倍｜'+x.quoteTime
+                +'｜仍須自行核對券商報價與風險',
+                tag:'prelimit-'+x.day+'-'+x.id})}catch{}
+          }
+        }
+      };
+
       // Only compare existing EOD radar snapshots; no new quote calls, market scans, or jobs.
       const BUY_NOTICE_KEY = 'asheng-buy-alert-v1-' + portfolioId;
       let buyNoticeState;
@@ -8913,6 +9027,9 @@ h1 {
 
           // 發動前要跟今日即時／收盤位置同步：
           // 已突破、位置過高、跌離發動區、跌破三線者不再留在發動前。
+          checkPreLimitAlerts(liveBasePicks.map(item=>({
+            item,quote:quoteMap.get(String(item.stock_id))||null
+          })));
           const rows = liveBasePicks.map(item => ({ item, quote: quoteMap.get(String(item.stock_id)) || null }))
             .filter(row => {
               const item=row.item, q=validTodayQuote(row.quote) ? row.quote : null;
@@ -9207,6 +9324,7 @@ h1 {
               })
               .filter(row => row.action)
               .sort((a,b)=>b.action.rank-a.action.rank);
+            checkPreLimitAlerts(rows);
             if (finalQuoteWindow) refreshEntryEodPriority(rows);
             const groups = renderEntrySections(rows,{quoteUpdate:true});
             const missingQuoteIds=liveBasePicks.filter(item=>!quoteMap.has(String(item.stock_id))).map(item=>String(item.stock_id)).slice(0,9);
