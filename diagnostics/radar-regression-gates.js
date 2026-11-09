@@ -325,8 +325,8 @@ test('Passive lifecycle is visible in LAUNCH, ENTRY and tomorrow watchlist only'
   assert.match(entrySection,/const passiveResearch=/);
   assert.match(entrySection,/passiveResearchHtml/);
   assert.match(source,/overnightPassiveResearch=/);
-  assert.match(html,/const activeTrial=originalAction\.phase==='trial'&&originalAction\.trialable===true/);
-  assert.match(html,/const activeFormal=originalAction\.phase==='confirmed'&&originalAction\.buyable===true/);
+  assert.match(html,/const activeTrial=!limitNow&&originalAction\.phase==='trial'&&originalAction\.trialable===true&&quoteFreshForTrial\(q\)/);
+  assert.match(html,/const activeFormal=!limitNow&&originalAction\.phase==='confirmed'&&originalAction\.buyable===true/);
   assert.doesNotMatch(source,/spring-swallow-scan-batch/);
 });
 test('Latest S-signed continuation warning is read-only and appears in all radar areas',()=>{
