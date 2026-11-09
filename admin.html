@@ -2304,7 +2304,7 @@ h1 {
           +'<span class="entry-mini-name"><strong>'+esc(id+' '+name)
           +'</strong><small class="radar-simple-badge avoid">⚪ 暫不考慮</small></span>'
           +'<span class="entry-mini-expand">展開</span>'
-          +'<span class="radar-simple-prices"><span><small>歷史 S 收盤</small><b>'+esc(recordPrice)+'</b></span>'
+          +'<span class="radar-simple-prices"><span><small>'+esc(todayTrade?cLabel:'歷史 S 收盤（非即時）')+'</small><b>'+esc(todayTrade?cPrice:recordPrice)+'</b></span>'
            +'<span><small>突破觀察</small><b>待最新模型</b></span>'
            +'<span><small>失效觀察</small><b>待最新模型</b></span></span>'
            +'<span class="radar-simple-one-liner">一句話：歷史追蹤資料，只能研究，不能用來試單</span>'
@@ -5343,8 +5343,10 @@ h1 {
         const priceText=Number.isFinite(price)&&price>0?num(price,2):'待更新';
         const triggerText=trigger!=null?num(trigger,2):'待確認';
         const invalidText=invalid!=null?num(invalid,2):'待確認';
+        const priceLabel=q&&quoteDisplayState(q,item).label.includes('13:30收盤成交')
+          ?'13:30收盤成交價':q?'今日成交參考價':'S模型收盤價（非即時）';
         const html='<span class="radar-simple-prices" data-radar-simple-zone="'+esc(zone)+'">'
-          +'<span><small>參考現價</small><b>'+esc(priceText)+'</b></span>'
+          +'<span><small>'+esc(priceLabel)+'</small><b>'+esc(priceText)+'</b></span>'
           +'<span><small>回測支撐／突破 '+esc(triggerText)+'</small><b>'+esc(support)+'</b></span>'
           +'<span><small>失效觀察（非停損）</small><b>'+esc(invalidText)+'</b></span>'
           +'</span><span class="radar-simple-one-liner">一句話：'+esc(line)+'</span>'
@@ -6989,10 +6991,14 @@ h1 {
           const fresh=quoteRecentForDisplay(q),market=taipeiMarketState();
           const sameDay=rawDate===todayQuoteDate();
           const afterClose=market.weekday&&!market.open&&market.totalMinutes>=810;
-          const finalTrade=afterClose&&(q.post_close_checked===true||qt>='13:30:00');
+          // A post-close MIS last trade is not automatically the exchange's
+          // official close. Only a confirmed 13:30 trade earns the 13:30 label.
+          const checkedClose=afterClose&&sameDay&&q.post_close_checked===true;
+          const atClosingAuction=/^13:30(?::[0-5][0-9])?$/.test(qt);
           const label=fresh?'C 今日即時成交'
-            :sameDay&&finalTrade?'C 今日最後有效成交（盤後非即時）'
-            :sameDay?'C 今日前次成交（非即時）'
+            :checkedClose&&atClosingAuction?'C 今日13:30收盤成交（盤後核對）'
+            :checkedClose?'C 今日盤後核對最後成交（非13:30收盤）'
+            :sameDay?'C 今日前次成交（尚未核對收盤）'
             :'C '+day+' 有效成交（非即時）';
           return {label,value:Number(q.price),waiting:false,time:qt||'-',
             date:rawDate,moment,live:fresh,today_trade:true};
@@ -7546,7 +7552,7 @@ h1 {
             // source currently has zero cards: scout cloud names can load later.
             // refreshSimpleQuotes itself returns without I/O if no targets exist.
             liveTimer = setInterval(() => {
-              if (stage === 'LAUNCH' && !document.hidden && taipeiMarketState().open) refreshSimpleQuotes();
+              if (stage === 'LAUNCH' && !document.hidden && cQuoteReadWindow()) refreshSimpleQuotes();
             }, 180000);
           }
         } catch (error) {
@@ -9789,7 +9795,7 @@ h1 {
               if (liveBasePicks.length) {
                 await refreshLiveQuotes();
                 liveTimer = setInterval(() => {
-                  if (stage === 'ENTRY' && !document.hidden && taipeiMarketState().open) refreshLiveQuotes();
+                  if (stage === 'ENTRY' && !document.hidden && cQuoteReadWindow()) refreshLiveQuotes();
                 }, 180000);
                 livePoolTimer = null; // 候選快照由夜間掃描更新
                 return;
@@ -9805,7 +9811,7 @@ h1 {
               setCandidateSummary('bCount', null, '模型來源暫時無法讀取');
               livePoolTimer = null;
               if(savedCount)liveTimer=setInterval(()=>{
-                if(stage==='ENTRY'&&!document.hidden&&taipeiMarketState().open)
+                if(stage==='ENTRY'&&!document.hidden&&cQuoteReadWindow())
                   refreshLiveQuotes();
               },180000);
               return;
@@ -9843,7 +9849,7 @@ h1 {
             await refreshLiveQuotes();
             lastEntryPoolRefreshAt = Date.now();
             liveTimer = setInterval(() => {
-              if (stage === 'ENTRY' && !document.hidden && taipeiMarketState().open) refreshLiveQuotes();
+              if (stage === 'ENTRY' && !document.hidden && cQuoteReadWindow()) refreshLiveQuotes();
             }, 180000);
             livePoolTimer = null; // 候選快照由夜間掃描更新
             return;
@@ -10215,7 +10221,7 @@ h1 {
         });
         // 已買進只保留原有約三分鐘報價取樣，存活統計於13:20停止。
         const refreshHoldingSessionQuotes = async () => {
-          if(!holdingStillCurrent()||document.hidden||!taipeiMarketState().open)return;
+          if(!holdingStillCurrent()||document.hidden||!cQuoteReadWindow())return;
           if(!marketBridgeReady())await configureCloudflareMarketBridge();
           if(holdingStillCurrent()&&!document.hidden)await render();
         };
@@ -10230,12 +10236,12 @@ h1 {
               if (liveTimer) { clearInterval(liveTimer); liveTimer = null; }
               return;
             }
-            if (taipeiMarketState().open) refreshHoldingSessionQuotes(); // Reconnect C if needed, no S quote fallback
+            if (cQuoteReadWindow()) refreshHoldingSessionQuotes(); // One after-close C snapshot per held stock; no S fallback
           }, LOCKED_SETTINGS.holdingQuoteRefreshMs);
         };
         holdingVisibilityControl = () => {
           manageHoldingQuoteTimer();
-          if (holdingStillCurrent() && !document.hidden && taipeiMarketState().open
+          if (holdingStillCurrent() && !document.hidden && cQuoteReadWindow()
               && !holdingQuoteRefreshing && Date.now() - lastHoldingQuoteRequestAt >= 150000) {
             refreshHoldingSessionQuotes(); // 回到前景先重連 C（低頻防重）
           }
