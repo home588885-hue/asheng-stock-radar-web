@@ -5600,7 +5600,9 @@ h1 {
           if(m.pullback_rebreak===true)score+=15;
           return score;
         };
-        watch.sort((a,b)=>entryQualityScore(b.row?.item)-entryQualityScore(a.row?.item)
+        watch.sort((a,b)=>radarVolumePriority(b.row?.item,b.row?.quote).rank
+          -radarVolumePriority(a.row?.item,a.row?.quote).rank
+          ||entryQualityScore(b.row?.item)-entryQualityScore(a.row?.item)
           ||radarWatchAttentionState(b.row?.item,b.row?.quote).priority
           -radarWatchAttentionState(a.row?.item,a.row?.quote).priority
           ||strongRebreakStudyRank(b.row?.item)-strongRebreakStudyRank(a.row?.item)
@@ -6016,6 +6018,7 @@ h1 {
         const expected=expectedSignalDataDate();
         const byRank = a=>[...a].sort((x,y)=>
           Number(y.action?.rank||0)-Number(x.action?.rank||0)
+          ||radarVolumePriority(y.item,y.quote).rank-radarVolumePriority(x.item,x.quote).rank
           ||strongRebreakStudyRank(y.item)-strongRebreakStudyRank(x.item)
           ||Number(y.item?.score||0)-Number(x.item?.score||0)
           ||Number(y.item?.metrics?.current_volume_lots||0)-Number(x.item?.metrics?.current_volume_lots||0)
@@ -6772,8 +6775,16 @@ h1 {
         const high = Number.isFinite(pos1y) && pos1y >= 80;
         let tag='⚪ 量價中性', tone='neutral', note='方向不明｜先觀察';
         if (volumeRatio != null && volumeRatio >= 1.8 && bottom) {
-          tag='🚀 底部爆量'; tone='strong';
-          note=changePct != null && changePct < 0 ? '低位大量換手但價格轉弱｜先等止跌' : '低位資金明顯放大｜偏多，留意能否續強';
+          if(changePct!=null&&changePct>=1){
+            tag='🚀 底部爆量價漲';tone='strong';
+            note='低位放量且價格同步上漲；確認均線與突破位置後優先觀察';
+          }else if(changePct!=null&&changePct<0){
+            tag='⚠️ 底部爆量價跌';tone='risk';
+            note='低位大量換手但價格下跌，不可誤認為買盤發動';
+          }else{
+            tag='🟡 底部大量換手';tone='watch';
+            note='大量換手尚未證實價漲；等價格與均線同步轉強';
+          }
         } else if (volumeRatio != null && volumeRatio >= 1.8 && high) {
           tag=changePct != null && changePct < 0 ? '🔴 高檔爆量價跌' : '⚠️ 高檔爆量'; tone='risk';
           note=changePct != null && changePct < 0 ? '高檔大量賣壓｜偏空，注意出貨風險' : '高檔大量換手｜可續強也可能出貨，不追高';
@@ -6803,6 +6814,35 @@ h1 {
         const intraday = !!q && String(q.quote_time || '') < '13:30:00';
         return { tag, tone, note, changePct, volumeRatio, pos1y, intraday };
       };
+      // Unified WATCH ordering across launch, entry and early-alert display.
+      // Existing volumePriceState owns volume labels. This is a presentation
+      // priority only; it cannot change model scores, signals or buy permissions.
+      const radarVolumePriority=(item,quote=null)=>{
+        const m=item?.metrics||{},guard=m.entry_candle_guard||{};
+        const q=quoteRecentForDisplay(quote)?quote:null;
+        const v=volumePriceState(item,q);
+        const price=q?Number(q.price):Number(m.close);
+        const ma10=Number(m.ma10),ma20=Number(m.ma20),ma60=Number(m.ma60);
+        const position=Number(m.position_1y_pct),pct=v.changePct,ratio=v.volumeRatio;
+        const threeAbove=price>0&&[ma10,ma20,ma60].every(x=>Number.isFinite(x)&&x>0&&price>=x);
+        const risk=guard.weak_after_breakout===true
+          ||m.holding_management?.strong_breakdown===true
+          ||(price>0&&ma20>0&&price<ma20)
+          ||(Number.isFinite(position)&&position>=80)
+          ||(price>0&&chaseOver(item,price));
+        if(risk)return {rank:-400,tier:'risk'};
+        if(!threeAbove)return {rank:-60,tier:'ma_wait'};
+        if(Number.isFinite(position)&&position<=35
+          &&ratio!=null&&ratio>=1.8&&pct!=null&&pct>=1)
+          return {rank:420,tier:'bottom_volume_rise'};
+        if(ratio!=null&&ratio>=1.8&&pct!=null&&pct>=1)
+          return {rank:300,tier:'strong_volume_rise'};
+        if(ratio!=null&&ratio>=1.2&&pct!=null&&pct>=1)
+          return {rank:240,tier:'gradual_volume_rise'};
+        if(pct!=null&&pct>0)return {rank:140,tier:'price_rise'};
+        return {rank:0,tier:'observe'};
+      };
+
       // Reuse the existing Shan-Chuan model; show one short research status under volume-price.
       const shanchuanBrief = (item, quote = null) => {
         const state=shanchuanState(item,quote);
@@ -7411,6 +7451,8 @@ h1 {
           const signalRank = { highwin: 12, v5buy: 10, first: 6, add: 5, early: 4, position: 3, attack: 2, scout: 1 };
           const rankedPicks = [...picks].sort((a, b) => {
             if (stage === 'LAUNCH') {
+              const volumeDiff=radarVolumePriority(b).rank-radarVolumePriority(a).rank;
+              if(volumeDiff)return volumeDiff;
               const qualityDiff = launchQualityState(b).rank - launchQualityState(a).rank;
               if (qualityDiff) return qualityDiff;
               const bottomRank = item => item.metrics?.bottom_start?.confirmed === true ? 5 : item.metrics?.bottom_start?.current_base === true ? 4 : 0;
@@ -8972,8 +9014,12 @@ h1 {
         </section>`;
       };
       const launchListHtml = (items,quoteMap=null) => {
-        launchDisplayedIds=new Set(items.map(item=>String(item.stock_id||'')));
-        return items.map(item=>launchMiniHtml(item,quoteMap?.get(String(item.stock_id||''))||null)).join('')
+        const sorted=[...items].sort((a,b)=>
+          radarVolumePriority(b,quoteMap?.get(String(b.stock_id||''))).rank
+          -radarVolumePriority(a,quoteMap?.get(String(a.stock_id||''))).rank
+          ||launchQualityState(b).rank-launchQualityState(a).rank);
+        launchDisplayedIds=new Set(sorted.map(item=>String(item.stock_id||'')));
+        return sorted.map(item=>launchMiniHtml(item,quoteMap?.get(String(item.stock_id||''))||null)).join('')
           +scoutOnlyLaunchRows().map(x=>launchScoutOnlyHtml(x)).join('');
       };
       const recoveryPattern = (item, quote) => {
@@ -9617,7 +9663,9 @@ h1 {
         return [...merged.values()]
           .filter(item=>recentModelForDisplay(item)&&rankItem(item)>0
             &&(!launchShownIds.has(String(item.stock_id||''))||!!reclaimResearchSetup(item)))
-          .sort((a,b) => rankItem(b) - rankItem(a) || companyProfileState(b).rank - companyProfileState(a).rank)
+          .sort((a,b) => rankItem(b) - rankItem(a)
+            ||radarVolumePriority(b).rank-radarVolumePriority(a).rank
+            ||companyProfileState(b).rank - companyProfileState(a).rank)
           .slice(0, 60);
       };
 
@@ -9798,6 +9846,8 @@ h1 {
             return metrics.breakout20 !== true && Number.isFinite(close) && Number.isFinite(high) && high > 0 && close >= high * 0.95 && close <= high && chipFollow ? 1 : 0;
           };
           liveBasePicks = merged.filter(liveBaseCandidate).sort((a, b) => {
+            const volumeDiff=radarVolumePriority(b).rank-radarVolumePriority(a).rank;
+            if(volumeDiff)return volumeDiff;
             const prepDiff = preBreakoutReady(b) - preBreakoutReady(a);
             if (prepDiff) return prepDiff;
             const signalDiff = (priority[tradeSignal(b).className] || 1) - (priority[tradeSignal(a).className] || 1);
