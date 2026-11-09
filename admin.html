@@ -4776,7 +4776,7 @@ h1 {
           const early=earlyRecoveryTrialState(item,quote),risk=newEntryRiskGate(item,quote);
           if(early&&(!risk||risk.kind==='incomplete')&&action.buyable!==true)
             return {...action,quality_version:early.route==='ma_reclaim'
-              ?'2026-11-09-ma-reclaim-research-orange-v1':'2026-11-06-early-recovery-research-trial-v1'};
+              ?'2026-11-09-ma-reclaim-research-orange-v2':'2026-11-06-early-recovery-research-trial-v1'};
         }
         const quality=bottomFirstQuality(item,quote);
         if(quality.trial)return {...action,quality_version:BOTTOM_FIRST_QUALITY_VERSION,
@@ -4925,8 +4925,8 @@ h1 {
         const pattern=String(m.shanchuan_v2?.mother_child?.lifecycle?.state||'');
         if(![close,ma10,ma20,ma60,avg,eodLots,pos].every(Number.isFinite)
           ||Math.min(close,ma10,ma20,ma60)<=0
-          ||Number(item.score)<60||!discover||avg<250||eodLots<150
-          ||pos<0||pos>=85||ma10<ma20*.975||ma20<ma60*.96
+          ||Number(item.score)<58||!discover||avg<200||eodLots<100
+          ||pos<0||pos>=80||ma10<ma20*.975||ma20<ma60*.96
           ||close<ma20*.945||close<ma60*.945||close>ma20*1.065
           ||g.weak_after_breakout===true||g.kd_high_weak===true
           ||m.holding_management?.strong_breakdown===true
@@ -4944,13 +4944,13 @@ h1 {
         const pace=setup.avg>0&&fraction>0?lots/(setup.avg*fraction):NaN;
         const projected=fraction>0?lots/fraction:NaN;
         const minLots=fraction>0
-          ?Math.max(120,Math.min(700,Math.ceil(setup.avg*fraction*.55))):NaN;
+          ?Math.max(100,Math.min(600,Math.ceil(setup.avg*fraction*.5))):NaN;
         if(![price,open,high,prev,lots,fraction,pace,projected,minLots].every(Number.isFinite)
           ||Math.min(price,open,high,prev)<=0||lots<minLots
-          ||projected<600||pace<.8||pace>4.2
+          ||projected<500||pace<.75||pace>4.2
           ||price<Math.max(setup.ma10,setup.ma20,setup.ma60)
           ||price<open*1.001||price<prev*.985||price<high*.985
-          ||price>setup.ma20*1.045||price>open*1.045||price>prev*1.045
+          ||price>setup.ma20*1.04||price>open*1.045||price>prev*1.045
           ||!chasePass(item,price))return null;
         // Reuse the already-cached 0050 trade only as a relative weakness veto.
         const bench=quoteFreshForTrial(benchmark0050Quote)?benchmark0050Quote:null;
@@ -4977,7 +4977,7 @@ h1 {
         const fraction=marketFraction(quote.quote_time);
         const pace=avg>0&&fraction>0?lots/(avg*fraction):NaN;
         const projected=fraction>0?lots/fraction:NaN;
-        const minLots=fraction>0?Math.max(150,Math.min(900,Math.ceil(avg*fraction*.55))):NaN;
+        const minLots=fraction>0?Math.max(120,Math.min(800,Math.ceil(avg*fraction*.5))):NaN;
         const entryLife=String(m.trade_lifecycle?.entry?.state||'');
         const discovery=['near','starter','formal_candidate'].includes(entryLife)
           ||['PRELAUNCH','ACTIVE','ENTRY'].includes(String(m.scan_intelligence?.effective_lifecycle||''))
@@ -4989,15 +4989,15 @@ h1 {
         const nums=[close,ma10,ma20,ma60,avg,eodLots,pos,price,open,high,prev,lots,
           fraction,pace,projected,minLots];
         if(!nums.every(Number.isFinite)||Math.min(close,ma10,ma20,ma60,avg,price,open,high,prev)<=0
-          ||Number(item.score)<65||!discovery||avg<350||eodLots<300
-          ||pos<0||pos>=85||m.quality_gate?.pass===false
+          ||Number(item.score)<62||!discovery||avg<300||eodLots<200
+          ||pos<0||pos>=80||m.quality_gate?.pass===false
           ||g.weak_after_breakout===true||g.kd_high_weak===true
           ||m.holding_management?.strong_breakdown===true
           ||close<Math.max(ma20,ma60)*.98||close>ma20*1.08
           ||price<Math.max(ma10,ma20,ma60)
           ||price<open*1.001||price<prev*.985||price<high*.985
           ||price>ma20*1.065||price>prev*1.06||price>open*1.055
-          ||lots<minLots||projected<700||pace<.6||pace>4
+          ||lots<minLots||projected<600||pace<.6||pace>4
           ||!chasePass(item,price))return null;
         // Existing 0050 quote is a weakness veto only. No additional fetch.
         const bench=quoteFreshForTrial(benchmark0050Quote)?benchmark0050Quote:null;
@@ -5045,10 +5045,10 @@ h1 {
           buyable:false,trialable:true,candle_guard:false,live_quote_verified:true,
           research_trial:true,
           text:recoveryTrial.route==='ma_reclaim'
-            ?'🟠 站回均線｜研究型小量試單':'🟠 盤中轉強｜研究型小量試單',
+            ?'🟠 站回三線｜可評估小量試單':'🟠 盤中轉強｜研究型小量試單',
           detail:'有效C成交 '+num(recoveryTrial.price,2)+'｜量速 '
             +num(recoveryTrial.pace,2)+'倍｜支撐MA20 '+num(recoveryTrial.ma20,2)
-            +'｜非V5正式買點、此路線尚未獨立績效驗證，僅供小部位自行評估'};
+            +'｜研究型小量試單，尚未通過獨立正期望驗證；非正式買進訊號'};
         if(risk)return {...risk,phase:risk.kind==='hard'?'blocked':'observe',
           live_quote_verified:quoteValid,buyable:false,trialable:false};
         const m=item?.metrics||{},price=Number(quote?.price),ma20=Number(m.ma20);
