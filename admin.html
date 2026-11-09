@@ -6185,6 +6185,17 @@ h1 {
             &&a.live_quote_verified===true&&(!risk||risk.kind==='incomplete')){
             b.focus.push(row);return;
           }
+          // A verified current-session entry must not be demoted by the later
+          // observation-only rebreak, candle or box-first preview branches.
+          // Hard / momentum / high-position vetoes above still take precedence.
+          // This does not grant permission from an EOD lifecycle label alone.
+          const verifiedEntryAction=String(item.as_of||'')===expected
+            &&a.live_quote_verified===true&&quoteFreshForTrial(q)
+            &&unifiedRadarGeneration(item)&&chaseModelReady(item)
+            &&a.candle_guard!==true&&!risk
+            &&((a.phase==='trial'&&a.trialable===true&&a.buyable!==true)
+              ||(a.phase==='confirmed'&&a.buyable===true&&formalEntryValidation.enabled));
+          if(verifiedEntryAction){b.focus.push(row);return;}
           // Priority observation in ENTRY, never an orange/green permission.
           if(rebreakWatch.eligible){
             b.focus.push(safeRow(row,{key:'high_rebreak_watch',phase:'observe',
