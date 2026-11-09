@@ -456,12 +456,13 @@ test('All three zones show actual C trade time, never falsely live after the clo
     q=>q?.fresh===true,()=>'20261020',()=>({weekday:true,open:false,totalMinutes:967}),
     (n,d=2)=>Number(n).toFixed(d));
  const item={as_of:'2026-10-19',metrics:{close:37.55}};
- const q={has_today_trade:true,quote_date:'20261020',quote_time:'13:30:00',price:37};
+ const q={has_today_trade:true,quote_date:'20261020',quote_time:'13:30:00',price:37,post_close_checked:true};
  assert.equal(fn(q,item).value,37);
  assert.equal(fn(q,item).moment,'2026/10/20 13:30');
  assert.equal(fn(q,item).live,false);
- assert.match(fn(q,item).label,/今日最後有效成交（盤後非即時）/);
- assert.match(fn({...q,quote_time:'12:20:00'},item).label,/今日前次成交（非即時）/);
+ assert.match(fn(q,item).label,/今日13:30收盤成交（盤後核對）/);
+ assert.match(fn({...q,post_close_checked:false},item).label,/尚未核對收盤/);
+ assert.match(fn({...q,quote_time:'12:20:00'},item).label,/盤後核對最後成交（非13:30收盤）/);
  assert.match(fn(null,item).label,/S 模型收盤（非即時）/);
  assert.equal(fn(null,item).value,37.55);
  const timing=section('      const timeInfoHtml = (item, quote) => {','      function card(item, options = {}) {');
