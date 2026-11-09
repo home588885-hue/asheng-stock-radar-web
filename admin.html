@@ -6994,7 +6994,7 @@ h1 {
           // A post-close MIS last trade is not automatically the exchange's
           // official close. Only a confirmed 13:30 trade earns the 13:30 label.
           const checkedClose=afterClose&&sameDay&&q.post_close_checked===true;
-          const atClosingAuction=/^13:30(?::[0-5]\\d)?$/.test(qt);
+          const atClosingAuction=/^13:30(?::[0-5][0-9])?$/.test(qt);
           const label=fresh?'C 今日即時成交'
             :checkedClose&&atClosingAuction?'C 今日13:30收盤成交（盤後核對）'
             :checkedClose?'C 今日盤後核對最後成交（非13:30收盤）'
