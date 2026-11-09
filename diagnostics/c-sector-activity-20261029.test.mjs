@@ -212,7 +212,9 @@ test('historical scout cards receive today-only verified C trades without becomi
  assert.match(historic,/validTodayQuote\(quote\)\?quote:null/);
  assert.match(historic,/liveQuoteCache\.get\(String\(id\|\|''\)\)/);
  assert.match(historic,/C 今日有效成交待取得/);
- assert.match(historic,/S 歷史收盤（非即時）/);
+ assert.match(historic,/歷史 S 收盤/);
+ assert.match(historic,/歷史追蹤資料，只能研究，不能用來試單/);
+ assert.match(historic,/尚無今日有效成交/);
  assert.match(historic,/尚非買點|禁止追高|非目前買點/);
  const quoteStart=ui.indexOf('async function refreshSimpleQuotes()');
  const quoteEnd=ui.indexOf('const v5MonitorState',quoteStart);
