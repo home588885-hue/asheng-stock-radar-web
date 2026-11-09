@@ -347,11 +347,11 @@ test('Latest S-signed continuation warning is read-only and appears in all radar
  for(const [a,b] of [
  ['      const launchMiniHtml = (item, quote = null) => {','      const launchListHtml ='],
  ['      const entryCompactStock = (row, bucketLabel) => {','      const entryBucketHtml='],
- ['      const groupedEntrySavedWatches = visibleIds => {','      const simplifiedEntryHtml ='],
  ['        const riskStudyHtml=','        const researchCard=info=>{'],
  ['        const researchCard=info=>{','        // One stock per evening research panel.'],
  ['      const holdingMiniHtml = (item, quote = null) => {','      const holdingPlaceholderHtml =']
  ])assert.match(section(a,b),/continuationRiskMiniHtml\(item\)/);
+ assert.match(section('      const groupedEntrySavedWatches = visibleIds => {','      const simplifiedEntryHtml ='),/stockMovementHtml\(item,q,'entry'/);
  assert.match(section('      const stockMovementHtml = (item, quote = null, zone =',
       '      // UI-only folding. The holdings Map remains verified by the server.'),
       /continuationRiskFullHtml\(item\)/);
