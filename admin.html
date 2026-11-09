@@ -6125,6 +6125,13 @@ h1 {
               phase:'observe',buyable:false,trialable:false}));
             return;
           }
+          // Verified live orange trial outranks observation-only rebreak and
+          // first-bar shelf, but NEVER bypasses hard, weak, high or chase vetoes.
+          if(a.key==='early_recovery_trial'&&a.research_trial===true
+            &&a.phase==='trial'&&a.trialable===true&&quoteFreshForTrial(q)
+            &&a.live_quote_verified===true&&(!risk||risk.kind==='incomplete')){
+            b.focus.push(row);return;
+          }
           // Priority observation in ENTRY, never an orange/green permission.
           if(rebreakWatch.eligible){
             b.focus.push(safeRow(row,{key:'high_rebreak_watch',phase:'observe',
@@ -6149,14 +6156,6 @@ h1 {
               detail:'模型日 '+String(item.as_of)+'｜原MA10/20/60、V5及風控決定真正買進資格'}));
             return;
           }
-          // Early orange trial is the only allowed exception to yesterday's incomplete MA.
-
-          if(a.key==='early_recovery_trial'&&a.research_trial===true
-
-            &&a.phase==='trial'&&a.trialable===true&&quoteFreshForTrial(q)
-
-            &&(!risk||risk.kind==='incomplete')){b.focus.push(row);return;}
-
           if(risk){
 
             b.wait.push(safeRow(row,{...risk,phase:'observe',
@@ -6477,9 +6476,11 @@ h1 {
           ?'🔒 正式綠色買點維持關閉（樣本外驗證未過）'
           :formalEntryValidation.enabled?'🟢 正式買點仍須當日成交及原風控'
           :'🔒 正式綠色買點尚未驗證通過';
+        const reclaimPrepared=liveBasePicks.filter(item=>reclaimResearchSetup(item)).length;
         const entryBlockingNote=formalGateNote
           +'｜S生命週期候選 '+signedLifeRows.length+' 檔（非買點）'
-          +'｜MA10早期路線75分門檻達標 '+ma10ScoreQualified+' 檔';
+          +'｜MA10早期路線75分門檻達標 '+ma10ScoreQualified+' 檔'
+          +'｜均線收復試單準備 '+reclaimPrepared+' 檔（須盤中C成交再驗，非買點）';
         const banner='<div class="entry-list-overview" data-stable-key="entry-overview">'
           +'<strong>🎯 進場雷達｜三種決策，一眼看懂</strong>'
           +'<span>🟢 正式買點 '+completedRows.length+'｜🟠 盤中試單 '+starterRows.length
