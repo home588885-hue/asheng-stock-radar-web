@@ -1305,7 +1305,7 @@ h1 {
     <div id="app" style="display:none">
       <div class="wrap">
         <h1>📈 阿勝底部起漲雷達｜管理員</h1>
-        <p class="lead">三種決策：🟢 可以試單｜🟡 等待買點｜⚪ 暫不考慮。點開才看技術細節；已買進另保留原停損、停利與警戒判斷。</p>
+        <p class="lead">三種決策：🟢 可以試單｜⚡ 強攻觀察｜⚪ 暫不考慮。點開才看技術細節；已買進另保留原停損、停利與警戒判斷。</p>
 
         <section class="box">
           <div class="stats">
@@ -5190,8 +5190,19 @@ h1 {
           &&((a.phase==='trial'&&a.trialable===true&&a.buyable!==true)
             ||(a.phase==='confirmed'&&a.buyable===true&&formalEntryValidation.enabled));
         const blocked=a.phase==='blocked'||a.key==='avoid'||riskInfo?.kind==='hard';
-        const status=confirmed?'ready':blocked?'avoid':'wait';
-        const label=status==='ready'?'🟢 可以試單':status==='avoid'?'⚪ 暫不考慮':'🟡 等待買點';
+        // Current matched C trade always takes visual precedence over stale S advice.
+        // Limit-up/down and early-momentum statuses are DISPLAY ONLY.
+        const limit=priceLimitState(item,q);
+        const momentum=!limit&&q?preLimitStrongMove(item,q,a):null;
+        const status=limit?'avoid':confirmed?'ready':blocked?'avoid':'wait';
+        const label=limit?.kind==='up'?'🔴 已漲停'+(limit.label.includes('估')?'（估）':'')
+          :limit?.kind==='down'?'🟢 已跌停'+(limit.label.includes('估')?'（估）':'')
+          :status==='ready'?'🟢 可以試單'
+          :status==='avoid'?'⚪ 暫不考慮'
+          :momentum?.stale?'⚡ 放量起勢｜模型待更新'
+          :momentum?.level===2?'⚡ 強攻加速｜留意風險'
+          :momentum?.level===1?'🌱 早期轉強｜優先追蹤'
+          :'📋 持續觀察';
         const ma10=Number(m.ma10),ma20=Number(m.ma20);
         const has10=Number.isFinite(ma10)&&ma10>0,has20=Number.isFinite(ma20)&&ma20>0;
         const supportLow=has10&&has20?Math.min(ma10,ma20):has10?ma10:has20?ma20:null;
@@ -5207,7 +5218,12 @@ h1 {
         const source=q?quoteDisplayState(q,item).label+' '+quoteDisplayState(q,item).moment
           :'S '+String(item?.as_of||'待更新')+' 收盤';
         const price=q?Number(q.price):Number(m.close);
-        const line=status==='ready'?(a.buyable===true
+        const line=limit?.kind==='up'?'已觸及漲停價'+(limit.label.includes('估')?'（推算）':'')+'，目前不追價；等回踩與新版模型再評估'
+          :limit?.kind==='down'?'已觸及跌停價'+(limit.label.includes('估')?'（推算）':'')+'，先控風險，不試單'
+          :momentum?.stale?'盤中量價轉強，但S模型日期較舊；僅提前提醒，不具備試單資格'
+          :momentum?.level===2?'盤中放量接近高點，屬強攻預警；確認橘色試單資格前不可直接買'
+          :momentum?.level===1?'放量起勢的早期觀察訊號，留意下一筆有效成交與突破位置'
+          :status==='ready'?(a.buyable===true
           ?'今日正式條件已驗證，仍需核對下單價格與風險'
           :a.key==='early_recovery_trial'?'研究型小量試單：盤中轉強已核對，這條路線尚未獨立績效驗證'
           :'今日試單條件已驗證，只評估小部位')
@@ -5259,6 +5275,7 @@ h1 {
       const entryCompactStock = (row, bucketLabel) => {
         const item=row.item||{}, m=item.metrics||{}, id=String(item.stock_id||'');
         const score=Number(item.score), q=marketBridgeReady()&&validTodayQuote(row.quote)?row.quote:null;
+        const limitNow=priceLimitState(item,q);
         const close=Number(q?.price ?? m.close), ma20=Number(m.ma20);
         const dist=close>0&&ma20>0?(close/ma20-1)*100:null;
         const vol=Number(q?.volume_lots ?? m.current_volume_lots);
@@ -5267,8 +5284,8 @@ h1 {
         const tradeContext=(row.action?.phase==='blocked'||bucketLabel.includes('避開'))?'風險警示':
            q ? quoteDisplayState(q,item).label+'｜'+quoteDisplayState(q,item).moment+'｜日K模型未重算' : '盤後模型觀察，非即時買點';
         const originalAction=row.action||{};
-        const activeTrial=originalAction.phase==='trial'&&originalAction.trialable===true&&quoteFreshForTrial(q);
-        const activeFormal=originalAction.phase==='confirmed'&&originalAction.buyable===true
+        const activeTrial=!limitNow&&originalAction.phase==='trial'&&originalAction.trialable===true&&quoteFreshForTrial(q);
+        const activeFormal=!limitNow&&originalAction.phase==='confirmed'&&originalAction.buyable===true
           &&formalEntryValidation.enabled&&quoteFreshForTrial(q);
         const v5=m.v5||{},missing=[];
         if(v5.weekly_k_pass===false)missing.push('V5週K');
@@ -5278,7 +5295,9 @@ h1 {
         if(m.entry_candle_guard?.main_bull===false)missing.push('MA10／20／60結構');
         if(chaseOver(item,close))missing.push('距MA20超過'+chaseLimitNote(item));
         const missingText=missing.length?'｜未達：'+missing.slice(0,4).join('、'):'';
-        const decisionText=activeFormal?'🟢 正式買點（當日驗證）'
+        const decisionText=limitNow?.kind==='up'?'🔴 已觸及漲停｜不追價'
+          :limitNow?.kind==='down'?'🟢 已觸及跌停｜暫不買'
+          :activeFormal?'🟢 正式買點（當日驗證）'
           :activeTrial?'🟠 可小量試單（當日驗證）'
           :bucketLabel.includes('避開')?(originalAction.text||'🔴 風險警戒')
           :originalAction.text||'🟡 模型候選';
@@ -5379,7 +5398,7 @@ h1 {
           const next=existing?radarShortAdvice(item,{detail:note},q):'等待完整日K回補';
           const simple=existing
             ?radarSimpleView(item,q,{...safeAction,phase:label.startsWith('🔴')?'blocked':'observe'},'entry')
-            :{status:'wait',label:'🟡 等待買點',html:'<span class="radar-simple-prices">'
+            :{status:'wait',label:'📋 模型待確認',html:'<span class="radar-simple-prices">'
               +'<span><small>參考現價</small><b>待確認</b></span>'
               +'<span><small>回測／突破</small><b>待確認</b></span>'
               +'<span><small>失效觀察</small><b>待確認</b></span></span>'
@@ -5498,7 +5517,7 @@ h1 {
         const groups=[
           compactEntryGroupHtml('today','🟢 可以試單',
             '只有當日確認才可試單或買進',today,{open:true,alwaysShow:true}),
-          compactEntryGroupHtml('tracking','🟡 等待買點',
+          compactEntryGroupHtml('tracking','⚡ 強攻觀察與候選',
             '第一根、回踩與跨日觀察合併，僅供明日研究（非買點）',
             uniqueWatch,{open:true,extraHtml:persistent.savedHtml,extraCount:persistent.savedCount,alwaysShow:true}),
           compactEntryGroupHtml('risk','⚪ 暫不考慮',
@@ -5515,7 +5534,7 @@ h1 {
 
       // Ahead-of-limit WATCH: use only existing validated C quote waves and signed S.
       // A fast upward move is not a predicted limit-up or a new buy permission.
-      const PRELIMIT_ALERT_KEY='asheng-prelimit-alert-v1-'+portfolioId;
+      const PRELIMIT_ALERT_KEY='asheng-prelimit-alert-v2-'+portfolioId;
       let preLimitSeen={};
       try{const old=JSON.parse(localStorage.getItem(PRELIMIT_ALERT_KEY)||'{}');
         if(old&&typeof old==='object'&&!Array.isArray(old))preLimitSeen=old;
@@ -5543,39 +5562,54 @@ h1 {
         });
         refreshDesktopOpt();
       }
+      // Pre-limit EARLY warning based only on existing matched C quote waves.
+      // Two stages: 0.8-2.5% early momentum, 2.5-7.5% accelerating.
+      // A recently stale SIGNED S snapshot may warn, but NEVER grant a trial.
       const preLimitStrongMove=(item,quote,action=null)=>{
         if(!item||item.__passive_monitor===true||item.__observation_only===true
           ||holdings.has(String(item.stock_id||''))
           ||!unifiedRadarGeneration(item)||!chaseModelReady(item)
-          ||String(item.as_of||'')!==expectedSignalDataDate()
           ||!quoteFreshForTrial(quote)||priceLimitState(item,quote)?.kind)return null;
+        const modelDay=String(item.as_of||''),target=expectedSignalDataDate();
+        const age=(Date.parse(target+'T00:00:00Z')-Date.parse(modelDay+'T00:00:00Z'))/86400000;
+        if(!Number.isFinite(age)||age<0||age>5)return null;
+        const stale=modelDay!==target;
         const m=item.metrics||{},g=m.entry_candle_guard||{},mc=m.ma_cluster||{};
         const price=Number(quote.price),prev=Number(quote.prev_close),
           open=Number(quote.open),high=Number(quote.high),vol=Number(quote.volume_lots);
         const ma10=Number(m.ma10),ma20=Number(m.ma20),ma60=Number(m.ma60);
         const avg=Number(m.avg_volume_20_lots),frac=marketFraction(quote.quote_time);
         const pace=frac>0&&avg>0?vol/(avg*frac):NaN;
+        const projected=frac>0?vol/frac:NaN;
         const pct=prev>0?(price/prev-1)*100:NaN;
         const pos=Number(m.position_1y_pct);
-        const recentHigh=Number(m.high20_prev||mc.breakout_price||m.recent_high20);
-        const breakout=recentHigh>0&&price>=recentHigh*.985;
+        const priorHigh=Number(m.high20_prev||mc.breakout_price||m.recent_high20);
+        const breakout=priorHigh>0&&price>=priorHigh*.97;
         const recovery=m.pullback_rebreak===true||mc.breakout_first_bar===true
-          ||(mc.watch_ready===true&&price>=ma10&&ma10>=ma20*.985);
-        if(![price,prev,open,high,vol,avg,frac,pace,pct,ma10,ma20,ma60,pos].every(Number.isFinite)
+          ||(mc.watch_ready===true&&price>=ma10&&ma10>=ma20*.985)
+          ||(m.bottom_start?.current_base===true&&ma10>=ma20*.99);
+        const accelerating=pct>=2.5;
+        const minPace=accelerating?1.3:1.45;
+        const minVolume=accelerating?180:120;
+        if(![price,prev,open,high,vol,avg,frac,pace,projected,pct,ma10,ma20,ma60,pos].every(Number.isFinite)
           ||Math.min(price,prev,open,high,avg,ma10,ma20,ma60)<=0
-          ||pct<2.5||pct>7.5||vol<180||avg<350||pace<1.3||pace>5.5||frac<.03
-          ||price<open*1.008||price<high*.992||price<Math.max(ma10,ma20,ma60)
+          ||pct<.8||pct>7.5||vol<minVolume||avg<350||pace<minPace
+          ||pace>5.5||projected<500||frac<.03
+          ||price<open*(accelerating?1.006:1.002)
+          ||price<high*.99||price<Math.max(ma10,ma20,ma60)
           ||ma10<ma20*.985||ma20<ma60*.97||price>ma20*1.08
-          ||Number(item.score)<65||pos>=85||pos<0||(!breakout&&!recovery)
+          ||Number(item.score)<(accelerating?65:62)||pos>=85||pos<0
+          ||(!breakout&&!recovery)
           ||g.weak_after_breakout===true||g.kd_high_weak===true
           ||m.holding_management?.strong_breakdown===true
           ||m.quality_gate?.pass===false||!chasePass(item,price))
           return null;
-        const canTrial=action?.phase==='trial'&&action.trialable===true
+        const canTrial=!stale&&action?.phase==='trial'&&action.trialable===true
           &&action.buyable!==true&&action.live_quote_verified===true;
         return {id:String(item.stock_id),name:String(item.stock_name||''),
-          modelDay:String(item.as_of),day:todayQuoteDate(),
-          price,pct,pace,quoteTime:String(quote.quote_time||''),level:canTrial?2:1};
+          modelDay,day:todayQuoteDate(),stale,
+          price,pct,pace,quoteTime:String(quote.quote_time||''),
+          level:stale?0:canTrial?3:accelerating?2:1};
       };
       const checkPreLimitAlerts=rows=>{
         const host=document.getElementById('preLimitNotice');
@@ -5592,22 +5626,24 @@ h1 {
         if(!hits.length)return;
         preLimitSeen=Object.fromEntries(Object.entries(preLimitSeen).slice(-500));
         try{localStorage.setItem(PRELIMIT_ALERT_KEY,JSON.stringify(preLimitSeen))}catch{}
-        const lead=hits[0];
         host.hidden=false;
-        host.innerHTML='<div><b>⚡ 漲停前強攻預警｜'+hits.length+' 檔</b>'
+        host.innerHTML='<div><b>⚡ 盤中強攻前兆｜'+hits.length+' 檔</b>'
           +' <button type="button" id="dismissPreLimitNotice" aria-label="關閉提醒">✕</button></div>'
           +hits.slice(0,5).map(x=>'<div class="risk-note"><b>'+esc(x.id)+' '+esc(x.name)+'</b>'
             +'｜C現價 '+esc(num(x.price,2))+'｜今日 '+esc(num(x.pct,2))+'%'
             +'｜量速 '+esc(num(x.pace,2))+'倍'
             +'｜成交 '+esc(x.quoteTime)
-            +'｜'+(x.level===2?'🟠 既有小量試單條件已確認，可評估小部位'
-              :'🔎 強攻初段，仍待進場雷達核對試單資格')
+            +'｜S '+esc(x.modelDay)
+            +'｜'+(x.level===3?'🟠 原有試單資格已確認，仍須核對風險'
+              :x.stale?'⚠️ S模型尚未更新，僅盤中觀察，不可試單'
+              :x.level===2?'⚡ 動能加速，待試單條件確認'
+              :'🌱 強攻前兆，先觀察突破與成交續航')
             +'</div>').join('')
-          +'<small>僅在今日漲幅2.5%～7.5%且量價／原風控通過時提醒。非保證漲停、非直接買進指令；請核對券商即時行情。</small>';
+          +'<small>今日上漲0.8%～7.5%且有有效C成交與量能時分段提醒，不能預測一定漲停；舊S模型只作預警、不核發試單。請核對券商報價。</small>';
         host.querySelector('#dismissPreLimitNotice')?.addEventListener('click',()=>{host.hidden=true});
         if(typeof Notification!=='undefined'&&Notification.permission==='granted'){
           for(const x of hits.slice(0,3)){
-            try{new Notification((x.level===2?'🟠 試單條件成立｜':'⚡ 強攻初段｜')
+            try{new Notification((x.level===3?'🟠 試單條件成立｜':x.stale?'⚠️ 強攻起勢（S待更新）｜':x.level===2?'⚡ 動能加速｜':'🌱 強攻前兆｜')
               +x.id+' '+x.name,{body:'C '+num(x.price,2)+'｜漲 '+num(x.pct,2)
                 +'%｜量速 '+num(x.pace,2)+'倍｜'+x.quoteTime
                 +'｜仍須自行核對券商報價與風險',
