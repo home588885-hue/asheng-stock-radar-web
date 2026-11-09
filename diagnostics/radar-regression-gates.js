@@ -1113,3 +1113,37 @@ test('signed latest WATCH starter is visible to S monitor but is never itself a 
   assert.match(html,/entryBlockingNote\)\+'<\/small>/);
   assert.match(html,/const formal=eligible&&formalEntryValidation\.enabled&&m\.v5\?\.entry_confirmed===true/);
 });
+
+
+test('13:30 closing price display requires a post-close checked C trade',()=>{
+  const src=section('      const quoteDisplayState = (quote, item = null) => {',
+    '      const companyProfileState =');
+  const show=new Function('validTodayQuote','quoteRecentForDisplay',
+    'taipeiMarketState','todayQuoteDate','num',
+    src+'\nreturn quoteDisplayState;')(
+    q=>!!q&&q.has_today_trade===true&&q.quote_date==='20261109'&&Number(q.price)>0,
+    ()=>false,()=>({weekday:true,open:false,totalMinutes:833}),
+    ()=> '20261109',(n,d=2)=>Number(n).toFixed(d));
+  const q={quote_date:'20261109',quote_time:'13:30:00',
+    price:48.5,has_today_trade:true,post_close_checked:true};
+  assert.match(show(q).label,/今日13:30收盤成交（盤後核對）/);
+  assert.equal(show(q).value,48.5);
+  assert.match(show({...q,quote_time:'13:29:30'}).label,/非13:30收盤/);
+  assert.match(show({...q,post_close_checked:false}).label,/尚未核對收盤/);
+  assert.match(show(null,{as_of:'2026-11-06',metrics:{close:47.2}}).label,/S 模型收盤（非即時）/);
+  assert.match(html,/const priceLabel=q&&quoteDisplayState\(q,item\)\.label\.includes\('13:30收盤成交'\)/);
+});
+
+test('all three radar zones retain a single foreground C post-close refresh without new S scans',()=>{
+  const read=section('      const cPostCloseWindow=()=>{','      window.getLiveQuotes = async items => {');
+  assert.match(read,/m\.totalMinutes>810&&m\.totalMinutes<=1020/);
+  assert.match(read,/taipeiMarketState\(\)\.open\|\|cPostCloseWindow\(\)/);
+  assert.match(html,/stage === 'LAUNCH' && !document\.hidden && cQuoteReadWindow\(\)\) refreshSimpleQuotes\(\)/);
+  assert.match(html,/stage === 'ENTRY' && !document\.hidden && cQuoteReadWindow\(\)\) refreshLiveQuotes\(\)/);
+  assert.match(html,/if\(!holdingStillCurrent\(\)\|\|document\.hidden\|\|!cQuoteReadWindow\(\)\)return/);
+  assert.match(html,/if \(cQuoteReadWindow\(\)\) refreshHoldingSessionQuotes\(\)/);
+  assert.match(html,/cPostCloseQuoteAttempted\.add\(item\.stock_id\)/);
+  assert.match(html,/const checkedClose=afterClose&&sameDay&&q\.post_close_checked===true/);
+  assert.match(html,/const atClosingAuction=/);
+  assert.match(html,/const formal=eligible&&formalEntryValidation\.enabled&&m\.v5\?\.entry_confirmed===true/);
+});
