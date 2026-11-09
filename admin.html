@@ -603,6 +603,9 @@ h1 {
 .entry-list-overview span { color:#dbeafe; font-size:14px; line-height:1.6; }
 .entry-list-overview small { color:#9eafc9; font-size:12px; line-height:1.5; }
 .entry-bucket { border:1px solid #37465f; border-radius:14px; background:#111c31; margin:10px 0; overflow:hidden; }
+.price-limit-tag{display:inline-flex;align-items:center;margin-left:6px;padding:2px 7px;border-radius:7px;font-size:12px;font-weight:800;white-space:nowrap;vertical-align:middle}
+.price-limit-tag.price-limit-up{color:#fee2e2;background:#991b1b;border:1px solid #f87171}
+.price-limit-tag.price-limit-down{color:#dcfce7;background:#166534;border:1px solid #4ade80}
 .entry-bucket-focus { border-color:#4ade8088; }
 .entry-bucket-trial { border-color:#fb923c; }
 .entry-bucket-formal { border-color:#4ade80; }
@@ -4904,7 +4907,7 @@ h1 {
         const fraction=marketFraction(quote.quote_time);
         const pace=avg>0&&fraction>0?lots/(avg*fraction):NaN;
         const projected=fraction>0?lots/fraction:NaN;
-        const minLots=fraction>0?Math.max(200,Math.min(1000,Math.ceil(avg*fraction*.6))):NaN;
+        const minLots=fraction>0?Math.max(150,Math.min(900,Math.ceil(avg*fraction*.55))):NaN;
         const entryLife=String(m.trade_lifecycle?.entry?.state||'');
         const discovery=['near','starter','formal_candidate'].includes(entryLife)
           ||['PRELAUNCH','ACTIVE','ENTRY'].includes(String(m.scan_intelligence?.effective_lifecycle||''))
@@ -4916,15 +4919,15 @@ h1 {
         const nums=[close,ma10,ma20,ma60,avg,eodLots,pos,price,open,high,prev,lots,
           fraction,pace,projected,minLots];
         if(!nums.every(Number.isFinite)||Math.min(close,ma10,ma20,ma60,avg,price,open,high,prev)<=0
-          ||Number(item.score)<70||!discovery||avg<500||eodLots<500
+          ||Number(item.score)<65||!discovery||avg<350||eodLots<300
           ||pos<0||pos>=85||m.quality_gate?.pass===false
           ||g.weak_after_breakout===true||g.kd_high_weak===true
           ||m.holding_management?.strong_breakdown===true
           ||close<Math.max(ma20,ma60)*.98||close>ma20*1.08
           ||price<Math.max(ma10,ma20,ma60)
-          ||price<open*1.003||price<prev*.985||price<high*.985
+          ||price<open*1.001||price<prev*.985||price<high*.985
           ||price>ma20*1.065||price>prev*1.06||price>open*1.055
-          ||lots<minLots||projected<1000||pace<.7||pace>4
+          ||lots<minLots||projected<700||pace<.6||pace>4
           ||!chasePass(item,price))return null;
         // Existing 0050 quote is a weakness veto only. No additional fetch.
         const bench=quoteFreshForTrial(benchmark0050Quote)?benchmark0050Quote:null;
@@ -5214,6 +5217,35 @@ h1 {
         return {status,label,html};
       };
 
+      // Display-only price limit label. Never creates a trading signal.
+      // Existing C quotes lack exchange limits, so fallback is explicitly estimated.
+      const priceLimitState=(item,quote)=>{
+        if(!validTodayQuote(quote))return null;
+        const px=Number(quote.price),id=String(item?.stock_id||'');
+        if(!(px>0))return null;
+        const up=Number(quote.limit_up??quote.u),down=Number(quote.limit_down??quote.w);
+        if(up>down&&down>0){
+          if(Math.abs(px-up)<.0001)return {kind:'up',label:'🔴 漲停',note:'交易所行情漲停價'};
+          if(Math.abs(px-down)<.0001)return {kind:'down',label:'🟢 跌停',note:'交易所行情跌停價'};
+          return null;
+        }
+        const prev=Number(quote.prev_close);
+        if(!/^[1-9][0-9]{3}$/.test(id)||!['tse','otc'].includes(String(quote.market||'').toLowerCase())
+          ||!(prev>0))return null;
+        const tick=v=>v<10?.01:v<50?.05:v<100?.1:v<500?.5:v<1000?1:5;
+        const x=prev*1.1,y=prev*.9;
+        const estUp=Math.round(Math.floor((x+1e-8)/tick(x))*tick(x)*100)/100;
+        const estDown=Math.round(Math.ceil((y-1e-8)/tick(y))*tick(y)*100)/100;
+        const note='依昨收與一般股票10%幅度及升降單位推算，非交易所已核對的正式漲跌停價';
+        if(Math.abs(px-estUp)<.0001)return {kind:'up',label:'🔴 漲停（估）',note};
+        if(Math.abs(px-estDown)<.0001)return {kind:'down',label:'🟢 跌停（估）',note};
+        return null;
+      };
+      const priceLimitTagHtml=(item,quote)=>{
+        const state=priceLimitState(item,quote);
+        return state?'<span class="price-limit-tag price-limit-'+state.kind
+          +'" title="'+esc(state.note)+'">'+esc(state.label)+'</span>':'';
+      };
       const entryCompactStock = (row, bucketLabel) => {
         const item=row.item||{}, m=item.metrics||{}, id=String(item.stock_id||'');
         const score=Number(item.score), q=marketBridgeReady()&&validTodayQuote(row.quote)?row.quote:null;
@@ -5264,7 +5296,7 @@ h1 {
         const simple=radarSimpleView(item,q,safeDisplayAction,'entry');
         return `<details class="entry-mini" data-stock-key="${esc(id)}"${selected}>
           <summary class="entry-mini-summary radar-compact-summary">
-            <span class="entry-mini-name"><strong>${esc(id)} ${esc(item.stock_name||'')}</strong><small class="radar-simple-badge ${simple.status}">${esc(simple.label)}</small></span>
+            <span class="entry-mini-name"><strong>${esc(id)} ${esc(item.stock_name||'')}</strong>${priceLimitTagHtml(item,q)}<small class="radar-simple-badge ${simple.status}">${esc(simple.label)}</small></span>
             <span class="entry-mini-expand">展開</span>
             ${simple.html}
           </summary>
@@ -8431,7 +8463,7 @@ h1 {
         const levels=[[origin,fp(price)],['MA10',fp(ma10)],['MA20',fp(ma20)]];
         return '<section class="live-banner holding-action stock-motion stock-motion-compact radar-decision-card" data-motion-zone="'+esc(zone)+'">'
           +'<div class="radar-decision-label">① 目前判斷</div>'
-          +'<div class="radar-decision-title">'+esc(headline)+'</div>'
+          +'<div class="radar-decision-title">'+esc(headline)+priceLimitTagHtml(item,q)+'</div>'
           +'<div class="radar-decision-next"><b>② 下一步：</b>'+esc(next)+'</div>'
           +'<div class="radar-decision-why">'+esc(structure)+'</div>'
           +'<dl class="radar-decision-levels">'+levels.map(([k,v])=>
@@ -8516,7 +8548,7 @@ h1 {
         return `<section class="holding-mini-wrap" data-stock-id="${esc(id)}">
           <details class="holding-mini" data-stock-key="${esc(id)}"${selected}>
             <summary class="holding-mini-summary" aria-label="${esc(id+' '+String(item.stock_name||'')+'｜點擊展開股票動向')}">
-              <span class="holding-mini-name"><strong>${esc(id)} ${esc(item.stock_name||'')}</strong><small>持有 ${qty>0?esc(qty.toLocaleString('zh-TW')):'-'} 股</small></span>
+              <span class="holding-mini-name"><strong>${esc(id)} ${esc(item.stock_name||'')}</strong>${priceLimitTagHtml(item,live)}<small>持有 ${qty>0?esc(qty.toLocaleString('zh-TW')):'-'} 股</small></span>
               <span class="holding-mini-action ${tone}">${esc(actionLabel)}</span>
               <span class="holding-mini-expand">詳情</span>
               <span class="radar-simple-prices holding-simple-prices">
@@ -8553,7 +8585,7 @@ h1 {
         return `<section class="holding-mini-wrap" data-stock-id="${esc(id)}">
           <details class="holding-mini" data-stock-key="${esc(id)}"${holdingExpandedIds.has(id)?' open':''}>
             <summary class="holding-mini-summary">
-              <span class="holding-mini-name"><strong>${esc(id)} ${esc(displayName||'')}</strong><small>持股已核對｜新版模型補算中</small></span>
+              <span class="holding-mini-name"><strong>${esc(id)} ${esc(displayName||'')}</strong>${priceLimitTagHtml({stock_id:id},trade)}<small>持股已核對｜新版模型補算中</small></span>
               <span class="holding-mini-action ${stopHit?'exit':'warn'}">${stopHit?'🔴 -10%硬停損｜立即核對出場':'⚪ 模型待更新'}</span><span class="holding-mini-expand">詳情</span>
               <span class="radar-simple-prices holding-simple-prices">
                  <span><small>今日成交</small><b>${todayPrice>0?esc(num(todayPrice,2)):'待確認'}</b></span>
@@ -8670,7 +8702,7 @@ h1 {
         return `<section class="launch-mini-wrap" data-stock-id="${esc(id)}">
           <details class="entry-mini" data-stock-key="${esc(id)}"${selected}>
             <summary class="entry-mini-summary radar-compact-summary" aria-label="${esc(id+' '+String(item?.stock_name||'')+' '+status)}">
-              <span class="entry-mini-name"><strong>${esc(id)} ${esc(item?.stock_name||'')}</strong><small class="radar-simple-badge ${simple.status}">${esc(simple.label)}</small></span>
+              <span class="entry-mini-name"><strong>${esc(id)} ${esc(item?.stock_name||'')}</strong>${priceLimitTagHtml(item,q)}<small class="radar-simple-badge ${simple.status}">${esc(simple.label)}</small></span>
               <span class="entry-mini-expand">展開</span>
               ${simple.html}
              </summary>
