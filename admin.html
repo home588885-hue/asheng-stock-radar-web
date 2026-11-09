@@ -5716,7 +5716,8 @@ h1 {
         return {id:String(item.stock_id),name:String(item.stock_name||''),
           modelDay,day:todayQuoteDate(),stale,
           price,pct,pace,quoteTime:String(quote.quote_time||''),
-          level:stale?0:canTrial?3:accelerating?2:1};
+          level:stale?0:canTrial?3:accelerating?2:1,
+          displayPriority:radarVolumePriority(item,quote).rank};
       };
       const checkPreLimitAlerts=rows=>{
         const host=document.getElementById('preLimitNotice');
@@ -5731,6 +5732,9 @@ h1 {
           hits.push(signal);
         }
         if(!hits.length)return;
+        // The strongest low-base price/volume confirmation is shown first;
+        // no alerts are added, removed or promoted to buy permissions.
+        hits.sort((a,b)=>Number(b.displayPriority||0)-Number(a.displayPriority||0));
         preLimitSeen=Object.fromEntries(Object.entries(preLimitSeen).slice(-500));
         try{localStorage.setItem(PRELIMIT_ALERT_KEY,JSON.stringify(preLimitSeen))}catch{}
         host.hidden=false;
