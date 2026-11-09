@@ -5437,6 +5437,7 @@ h1 {
             <span class="entry-mini-name"><strong>${esc(id)} ${esc(item.stock_name||'')}</strong>${priceLimitTagHtml(item,q)}<small class="radar-simple-badge ${simple.status}${simple.pattern?' radar-pattern-badge':''}">${esc(simple.label)}</small></span>
             <span class="entry-mini-expand">展開</span>
             ${simple.html}
+            ${sectorRotationCompactHtml(item)}
           </summary>
           <div class="entry-mini-full">${continuationRiskMiniHtml(item)}${expanded}${(activeTrial||activeFormal)
             ?'<div class="entry-survival-status '+esc(survival.tone)+'" data-entry-survival-id="'+esc(id)+'" data-entry-survival-trial="'+(activeTrial?'1':'0')+'">'+esc(survival.text)+'</div>':''}</div>
@@ -8877,6 +8878,7 @@ h1 {
                  <span><small>持股成本</small><b>${cost>0?esc(num(cost,2)):'-'}</b></span>
                  <span><small>目前損益</small><b class="${holdingPnlClass(pnl)}">${pnl==null?'-':(pnl>0?'+':'')+esc(num(pnl,2))+'%'}</b></span>
                </span>
+               ${sectorRotationCompactHtml(item)}
                <span class="radar-simple-one-liner">一句話：${esc(positionStatus+addObservation)}</span>
                <span class="radar-simple-source">S ${esc(item.as_of||'待更新')}｜${live?'C 成交 '+esc(quoteDisplayState(live,item).moment):'無當日有效 C 成交'}｜風控提醒以原 B 方案為準</span>
              </summary>
@@ -9026,6 +9028,7 @@ h1 {
               <span class="entry-mini-name"><strong>${esc(id)} ${esc(item?.stock_name||'')}</strong>${priceLimitTagHtml(item,q)}<small class="radar-simple-badge ${simple.status}${simple.pattern?' radar-pattern-badge':''}">${esc(simple.label)}</small></span>
               <span class="entry-mini-expand">展開</span>
               ${simple.html}
+            ${sectorRotationCompactHtml(item)}
              </summary>
             <div class="entry-mini-full">${launchScoutHistoryHtml(item)}${continuationRiskMiniHtml(item)}${stockMovementHtml(item,q,'launch',launchDisplayAction)}
               ${radarDeepDetailsHtml((ma10Preliminary?'<div class="model-only-note">MA10 回踩盤中初步轉強，但發動前區不提供試單。須到進場雷達通過新版底部品質、0050 相對強度與有效量價確認。</div>':'')+detailed)}</div>
