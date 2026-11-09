@@ -751,7 +751,8 @@ test('Current and historical scouts render as one-level clickable stock cards wi
   for(const card of cards){
     assert.match(card,/class="entry-mini" data-stock-key="/);
     assert.match(card,/class="card radar-scout-detail"/);
-    assert.match(card,/歷史收盤（非即時）/);
+    assert.match(card,/歷史 S 收盤/);
+    assert.match(card,/歷史追蹤資料，只能研究，不能用來試單/);
     assert.match(card,/歷史資料，非目前買點/);
     assert.equal((card.match(/<details/g)||[]).length,1,'ONE fold level per historical stock');
     assert.doesNotMatch(card,/data-holding-buy|buyable:true|trialable:true|🟢 正式買點/);
