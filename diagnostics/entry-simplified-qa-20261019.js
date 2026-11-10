@@ -24,6 +24,8 @@ const {simplifiedEntryHtml,groupedEntrySavedWatches}=new Function(
   'entryCompactStock','esc','pullbackWatch','pullbackWatchSnapshots','pullbackWatchArchived',
   'holdings','unifiedRadarGeneration','expectedSignalDataDate','pullbackWatchState','num',
   // Isolated signed-V2 presentation dependencies; no network or live trading.
+  "const portfolioId=\'qa-isolated\';"+
+  "const document={getElementById:()=>null};"+
   "const quoteFreshForTrial=()=>false;"+
   "const formalEntryValidation={enabled:false};"+
   "const radarWatchAttentionState=()=>({priority:0});"+
