@@ -4480,7 +4480,7 @@ h1 {
         return {kind:low?'low':'mid',pace,gap20,pos,dist,lots};
       };
       const eodStarterWatchEligible = item => {
-        if(ma10StarterSetup(item))return true;
+        if(ma10StarterSetup(item)||signedStarterImpulseSetup(item))return true;
         if(!item||holdings.has(String(item.stock_id||''))||!unifiedRadarGeneration(item)||!chaseModelReady(item)
           ||String(item.as_of||'')!==expectedSignalDataDate())return false;
         const m=item.metrics||{},mc=m.ma_cluster||{},g=m.entry_candle_guard||{};
@@ -4770,6 +4770,61 @@ h1 {
           support:ma20>0?ma20:null,bias20:Number.isFinite(bias20)?bias20:null,
           position:Number.isFinite(pos)?pos:null,reasons:trialReasons};
       };
+
+      // Independent SIGNED S-starter observation-to-ORANGE route. It does not
+      // alter S score, V5 formal approval, scan quotas, holdings, or risk rules.
+      // A starter label alone NEVER grants trial: a fresh C trade is mandatory.
+      const signedStarterImpulseSetup = item => {
+        if(!item||item.__observation_only===true||item.__passive_monitor===true
+          ||holdings.has(String(item.stock_id||''))
+          ||!unifiedRadarGeneration(item)||!chaseModelReady(item)
+          ||String(item.as_of||'')!==expectedSignalDataDate())return null;
+        const m=item.metrics||{},mc=m.ma_cluster||{},g=m.entry_candle_guard||{};
+        const close=Number(m.close),ma10=Number(m.ma10),ma20=Number(m.ma20),ma60=Number(m.ma60);
+        const avg=Number(m.avg_volume_20_lots),vol=Number(m.current_volume_lots);
+        const pos=Number(m.position_1y_pct),k=Number(m.daily_k),d=Number(m.daily_d);
+        const life=String(m.trade_lifecycle?.entry?.state||'');
+        const mother=String(m.shanchuan_v2?.mother_child?.lifecycle?.state||'');
+        if(!['starter','formal_candidate'].includes(life)
+          ||Number(item.score)<40||mc.all_rising!==true||mc.above_all_mas!==true
+          ||g.main_bull!==true||g.weak_after_breakout===true
+          ||g.kd_high_weak===true||g.macd_weak===true
+          ||m.holding_management?.strong_breakdown===true
+          ||m.quality_gate?.pass===false
+          ||['mother_low_broken','child_low_broken','invalid','broken'].includes(mother)
+          ||![close,ma10,ma20,ma60,avg,vol,pos,k,d].every(Number.isFinite)
+          ||Math.min(close,ma10,ma20,ma60,avg)<=0
+          ||close<Math.max(ma10,ma20,ma60)||close>ma20*1.10
+          ||!chasePass(item,close)||avg<500||vol<1000
+          ||vol/avg<.7||vol/avg>5||pos<0||pos>=85
+          ||k<30||k>80||k<d)return null;
+        return {close,ma10,ma20,ma60,avg,vol,pos};
+      };
+      const signedStarterImpulseTrial = (item,quote) => {
+        const setup=signedStarterImpulseSetup(item);
+        if(!setup||!quoteFreshForTrial(quote)||newEntryRiskGate(item,quote)
+          ||priceLimitState(item,quote))return null;
+        const price=Number(quote.price),open=Number(quote.open),high=Number(quote.high),
+          prev=Number(quote.prev_close),lots=Number(quote.volume_lots);
+        const fraction=marketFraction(quote.quote_time);
+        const pace=setup.avg>0&&fraction>0?lots/(setup.avg*fraction):NaN;
+        const projected=fraction>0?lots/fraction:NaN;
+        const minLots=fraction>0?Math.max(200,Math.min(900,Math.ceil(setup.avg*fraction*.55))):NaN;
+        const gap20=setup.ma20>0?(price/setup.ma20-1)*100:NaN;
+        if(![price,open,high,prev,lots,fraction,pace,projected,minLots,gap20].every(Number.isFinite)
+          ||Math.min(price,open,high,prev,fraction)<=0
+          ||lots<minLots||projected<1000||pace<1.1||pace>3.7
+          ||price<Math.max(setup.ma10,setup.ma20,setup.ma60)*1.001
+          ||price<open*1.003||price<prev*1.003||price<high*.985
+          ||price>setup.ma20*1.07||gap20<0
+          ||price>open*1.055||price>prev*1.055||price>setup.close*1.055
+          ||!chasePass(item,price))return null;
+        // Reuse an existing 0050 quote only as a relative-weakness veto.
+        const bench=quoteFreshForTrial(benchmark0050Quote)?benchmark0050Quote:null;
+        const benchPrev=Number(bench?.prev_close);
+        if(bench&&benchPrev>0&&(price/prev-Number(bench.price)/benchPrev)*100<-.8)return null;
+        return {price,lots,pace,projected,gap20,ma20:setup.ma20};
+      };
       const guardBottomFirstAction=(item,quote,action)=>{
         if(!action||!['trial','confirmed'].includes(String(action.phase||'')))return action;
         if(action.key==='early_recovery_trial'&&action.research_trial===true){
@@ -4778,6 +4833,11 @@ h1 {
             return {...action,quality_version:early.route==='ma_reclaim'
               ?'2026-11-09-ma-reclaim-research-orange-v2':'2026-11-06-early-recovery-research-trial-v1'};
         }
+        // Distinct signed first-impulse lane is reverified here, never silently
+        // demoted by the lower-base-only gate intended for different patterns.
+        if(action.key==='signed_starter_impulse_trial'&&action.buyable!==true
+          &&signedStarterImpulseTrial(item,quote))return {...action,
+          quality_version:'2026-11-10-signed-starter-C-orange-v1'};
         const quality=bottomFirstQuality(item,quote);
         if(quality.trial)return {...action,quality_version:BOTTOM_FIRST_QUALITY_VERSION,
           detail:String(action.detail||'')+'｜'+(quality.relativePct==null
@@ -5035,10 +5095,15 @@ h1 {
           &&Number(item?.metrics?.current_volume_lots)>=1000
           &&item?.metrics?.entry_candle_guard?.weak_after_breakout!==true;
         const recoveryTrial=modelFresh?earlyRecoveryTrialState(item,quote):null;
-        if(!baseAction&&!recovery&&!originalMa10Watch&&!motherChildWatch&&!boxSetup&&!legacyDiscovery&&!recoveryTrial)return null;
+        const signedStarterSetup=modelFresh?signedStarterImpulseSetup(item):null;
+        if(!baseAction&&!recovery&&!originalMa10Watch&&!motherChildWatch&&!boxSetup
+          &&!legacyDiscovery&&!recoveryTrial&&!signedStarterSetup)return null;
         if(!baseAction)baseAction={key:'pullback_watch',rank:32,className:'scout',
-          text:motherChildWatch?'🟡 母子K突破｜研究追蹤':boxSetup?'🟡 箱型整理｜突破追蹤':'🟡 回踩支撐觀察｜等盤中量價',
-          detail:motherChildWatch?'母子K量價與籌碼條件齊，等待獨立獲利驗證':boxSetup?'等待箱頂突破並核對盤中成交量':'最近完整日K模型待核對',
+          text:motherChildWatch?'🟡 母子K突破｜研究追蹤':boxSetup?'🟡 箱型整理｜突破追蹤'
+            :signedStarterSetup?'🟡 起漲先手候選｜等有效成交':'🟡 回踩支撐觀察｜等盤中量價',
+          detail:motherChildWatch?'母子K量價與籌碼條件齊，等待獨立獲利驗證'
+            :boxSetup?'等待箱頂突破並核對盤中成交量'
+            :signedStarterSetup?'S已確認均線齊揚／starter，當日C量價尚待核對；不是買點':'最近完整日K模型待核對',
           keep_candidate:true};
         const quoteValid=marketBridgeReady()&&validTodayQuote(quote),fresh=quoteFreshForTrial(quote);
         const risk=newEntryRiskGate(item,quoteValid?quote:null);
@@ -5068,6 +5133,16 @@ h1 {
           live_quote_verified:true,text:'🟢 正式買點｜V5與有效成交確認',
           detail:'歷史驗證已開放＋既有V5成立＋當日5分鐘內成交與均線／位置風控通過｜'
           +String(baseAction.detail||'仍須自行控管部位')};
+        const signedStarterTrial=signedStarterSetup?signedStarterImpulseTrial(item,quote):null;
+        if(signedStarterTrial)return {...baseAction,key:'signed_starter_impulse_trial',
+          phase:'trial',rank:99,className:'trial',buyable:false,trialable:true,
+          active_launch_fallback:false,live_quote_verified:true,
+          research_trial:true,
+          text:'🟠 首段發動確認｜可以小量試單',
+          detail:'S有效starter＋5分鐘內C成交 '+num(signedStarterTrial.price,2)
+            +'｜量速 '+num(signedStarterTrial.pace,2)+'倍'
+            +'｜MA20乖離 '+num(signedStarterTrial.gap20,2)+'%'
+            +'｜已通過獨立先手量價與原風控，研究型試單；不是V5正式買進'};
         // An orange early trial can be issued from signed starter/ACTIVE/ENTRY
         // with fresh C and 1000 ACTUAL traded lots. Formal green still
         // requires the independently validated backend entry_validation PASS.
@@ -5793,10 +5868,12 @@ h1 {
           const m = item.metrics || {}, mc = m.ma_cluster || {};
           const close = Number(m.close), ma20 = Number(m.ma20);
           const pos = Number(m.position_1y_pct), k = Number(m.daily_k), lots = Number(m.current_volume_lots);
-          const researchReady=level===1&&action.key==='early_recovery_trial'
+          const researchReady=level===1
+            &&['early_recovery_trial','signed_starter_impulse_trial'].includes(String(action.key||''))
             &&action.research_trial===true&&action.live_quote_verified===true
             &&unifiedRadarGeneration(item)&&chaseModelReady(item)
-            &&quoteFreshForTrial(row.quote)&&chasePass(item,Number(row.quote?.price));
+            &&quoteFreshForTrial(row.quote)&&chasePass(item,Number(row.quote?.price))
+            &&(action.key!=='signed_starter_impulse_trial'||!!signedStarterImpulseTrial(item,row.quote));
           const strong = researchReady || (action.active_launch_fallback !== true && Number(item.score) >= 75
             && lots >= 1000 && mc.all_rising === true && mc.above_all_mas === true
             && close > 0 && ma20 > 0 && close >= ma20 && chasePass(item,close)
@@ -6050,11 +6127,12 @@ h1 {
         // EOD starter is a preparation shelf, not an orange trade confirmation.
         // Same original MA/volume/position thresholds; never relax C quote or buy gates.
         const eodTrialWatchReady=row=>(
-          eodStarterWatchEligible(row.item)
-          ||(bottomFirstQuality(row.item).trialBase
-            &&String(row.item?.metrics?.trade_lifecycle?.entry?.state||'')==='starter'
-            &&Number(row.item?.score)>=75))
-          &&bottomFirstQuality(row.item).prelaunch
+          !!signedStarterImpulseSetup(row.item)
+          ||((eodStarterWatchEligible(row.item)
+            ||(bottomFirstQuality(row.item).trialBase
+              &&String(row.item?.metrics?.trade_lifecycle?.entry?.state||'')==='starter'
+              &&Number(row.item?.score)>=75))
+            &&bottomFirstQuality(row.item).prelaunch))
           &&row.action?.stale_model!==true&&row.action?.candle_guard!==true;
         // WATCH/near and low-score names remain visible in the ordinary
         // observation shelf, but must not be labeled as a verified trial.
@@ -6282,7 +6360,8 @@ h1 {
         const earlyRows=byRank(allSignal.filter(row=>
           row.action?.intraday_early_launch===true||row.action?.intraday_early_watch===true));
         const starterRows=byRank(allSignal.filter(row=>row.action?.phase==='trial'
-          &&row.action?.trialable===true&&quoteFreshForTrial(row.quote)));
+          &&row.action?.trialable===true&&row.action?.live_quote_verified===true
+          &&quoteFreshForTrial(row.quote)));
         const completedRows=byRank(allSignal.filter(row=>row.action?.phase==='confirmed'
           &&row.action?.buyable===true&&formalEntryValidation.enabled&&quoteFreshForTrial(row.quote)));
         persistVerifiedTrialRows(starterRows);
