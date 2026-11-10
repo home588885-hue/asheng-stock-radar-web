@@ -6706,12 +6706,12 @@ h1 {
           ...strongFollowups,
           ...passiveResearch
         ];
-        const outHtml=banner+'<section class="entry-bucket" id="entryTrialHistoryContainer">'
-          +entryTrialHistoryHtml()+'</section>'+simplifiedEntryHtml({
+        const outHtml=banner+simplifiedEntryHtml({
           completedRows,starterRows,eodTrialRows,boxFirstRows,focusRows,signalRows,
           eodTrackRows,reclaimRows,queuedDisplayRows,recalcDisplayRows,
           retainedRows,avoidRows,pullbackRows,waitRows,tomorrowResearchRows
-        });
+        })+'<section class="entry-bucket" id="entryTrialHistoryContainer">'
+          +entryTrialHistoryHtml()+'</section>';
         updateBuySignalNotice([...completedRows,...starterRows]);
         stableListRender(outHtml,{quoteUpdate});
         void refreshEntryTrialHistory();
