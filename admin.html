@@ -4825,24 +4825,68 @@ h1 {
         if(bench&&benchPrev>0&&(price/prev-Number(bench.price)/benchPrev)*100<-.8)return null;
         return {price,lots,pace,projected,gap20,ma20:setup.ma20};
       };
+      // Green RESEARCH marker only; never changes the signed V5 formal gate.
+      // Upgrade an actual orange trial ONLY after four valid samples covering
+      // >=12 minutes and stricter current C price/volume/risk checks.
+      const researchGreenUpgrade=(item,quote,action)=>{
+        if(!action||action.phase!=='trial'||action.trialable!==true
+          ||action.live_quote_verified!==true||action.buyable===true
+          ||!item||item.__observation_only===true||item.__passive_monitor===true
+          ||holdings.has(String(item.stock_id||''))
+          ||!unifiedRadarGeneration(item)||!chaseModelReady(item)
+          ||String(item.as_of||'')!==expectedSignalDataDate()
+          ||!quoteFreshForTrial(quote)||priceLimitState(item,quote)
+          ||newEntryRiskGate(item,quote)||entrySurvivalPhase()!=='active')return action;
+        const record=entrySurvivalMap().get(String(item.stock_id||''));
+        const mt=String(quote.quote_time||'').match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+        const minute=mt?Number(mt[1])*60+Number(mt[2]):NaN;
+        if(!record||record.status!=='passed'||Number(record.samples)<4
+          ||!Number.isFinite(minute)||minute<770||minute>=800
+          ||Number(record.lastMinute)-Number(record.firstMinute)<12
+          ||minute<Number(record.lastMinute)
+          ||minute-Number(record.lastMinute)>5)return action;
+        const m=item.metrics||{},g=m.entry_candle_guard||{},mc=m.ma_cluster||{};
+        const p=Number(quote.price),op=Number(quote.open),prev=Number(quote.prev_close),
+          high=Number(quote.high),lots=Number(quote.volume_lots),
+          ma10=Number(m.ma10),ma20=Number(m.ma20),ma60=Number(m.ma60),
+          avg=Number(m.avg_volume_20_lots),pos=Number(m.position_1y_pct);
+        const life=String(m.trade_lifecycle?.entry?.state||'');
+        const mother=String(m.shanchuan_v2?.mother_child?.lifecycle?.state||'');
+        if(!['starter','formal_candidate'].includes(life)
+          ||mc.all_rising!==true||mc.above_all_mas!==true||g.main_bull!==true
+          ||g.weak_after_breakout===true||g.macd_weak===true||g.kd_high_weak===true
+          ||m.holding_management?.strong_breakdown===true||m.quality_gate?.pass===false
+          ||['mother_low_broken','child_low_broken','invalid','broken'].includes(mother)
+          ||![p,op,prev,high,lots,ma10,ma20,ma60,avg,pos].every(Number.isFinite)
+          ||Math.min(p,op,prev,high,ma10,ma20,ma60,avg)<=0
+          ||lots<1000||avg<500||pos<0||pos>=85
+          ||p<Math.max(ma10,ma20,ma60)*1.001
+          ||p<op*1.005||p<prev*1.005||p<high*.985
+          ||p>ma20*1.06||p>op*1.06||!chasePass(item,p))return action;
+        return {...action,research_green:true,formal_validated:false,
+          text:'🟢 技術買進條件達標｜研究型（尚未通過回測）',
+          detail:'當日C成交 '+num(p,2)+'｜12分鐘至少4筆有效取樣｜MA20乖離 '
+            +num((p/ma20-1)*100,2)+'%｜研究型技術買進參考，'
+            +'樣本外正期望未通過，非正式V5買進，勿當成保證獲利'};
+      };
       const guardBottomFirstAction=(item,quote,action)=>{
         if(!action||!['trial','confirmed'].includes(String(action.phase||'')))return action;
         if(action.key==='early_recovery_trial'&&action.research_trial===true){
           const early=earlyRecoveryTrialState(item,quote),risk=newEntryRiskGate(item,quote);
           if(early&&(!risk||risk.kind==='incomplete')&&action.buyable!==true)
-            return {...action,quality_version:early.route==='ma_reclaim'
-              ?'2026-11-09-ma-reclaim-research-orange-v2':'2026-11-06-early-recovery-research-trial-v1'};
+            return researchGreenUpgrade(item,quote,{...action,quality_version:early.route==='ma_reclaim'
+              ?'2026-11-09-ma-reclaim-research-orange-v2':'2026-11-06-early-recovery-research-trial-v1'});
         }
         // Distinct signed first-impulse lane is reverified here, never silently
         // demoted by the lower-base-only gate intended for different patterns.
         if(action.key==='signed_starter_impulse_trial'&&action.buyable!==true
-          &&signedStarterImpulseTrial(item,quote))return {...action,
-          quality_version:'2026-11-10-signed-starter-C-orange-v1'};
+          &&signedStarterImpulseTrial(item,quote))return researchGreenUpgrade(item,quote,{...action,
+          quality_version:'2026-11-10-signed-starter-C-orange-v1'});
         const quality=bottomFirstQuality(item,quote);
-        if(quality.trial)return {...action,quality_version:BOTTOM_FIRST_QUALITY_VERSION,
+        if(quality.trial)return researchGreenUpgrade(item,quote,{...action,quality_version:BOTTOM_FIRST_QUALITY_VERSION,
           detail:String(action.detail||'')+'｜'+(quality.relativePct==null
             ?'0050同期資料不足，採用更嚴格個股價格確認'
-            :'相對0050 '+num(quality.relativePct,2)+'個百分點（代理指標）')};
+            :'相對0050 '+num(quality.relativePct,2)+'個百分點（代理指標）')});
         return {...action,key:'bottom_first_quality_wait',phase:'observe',rank:18,
           className:'wait',buyable:false,trialable:false,
           live_quote_verified:false,
@@ -5381,7 +5425,8 @@ h1 {
         const status=limit?'avoid':confirmed?'ready':blocked?'avoid':'wait';
         const label=limit?.kind==='up'?'🔴 已漲停'+(limit.label.includes('估')?'（估）':'')
           :limit?.kind==='down'?'🟢 已跌停'+(limit.label.includes('估')?'（估）':'')
-          :status==='ready'?(a.phase==='trial'?'🟠 可小量試單':'🟢 正式買點')
+          :status==='ready'?(a.research_green===true?'🟢 技術買進｜研究型未驗證'
+            :a.phase==='trial'?'🟠 可小量試單':'🟢 正式買點')
           :status==='avoid'?'⚪ 暫不考慮'
           :momentum?.stale?'⚡ 放量起勢｜模型待更新'
           :momentum?.level===2?'⚡ 強攻加速｜留意風險'
@@ -5484,6 +5529,7 @@ h1 {
         const decisionText=limitNow?.kind==='up'?'🔴 已觸及漲停｜不追價'
           :limitNow?.kind==='down'?'🟢 已觸及跌停｜暫不買'
           :activeFormal?'🟢 正式買點（當日驗證）'
+          :activeTrial&&originalAction.research_green===true?'🟢 技術買進條件達標（研究型未驗證）'
           :activeTrial?'🟠 可小量試單（當日驗證）'
           :bucketLabel.includes('避開')?(originalAction.text||'🔴 風險警戒')
           :originalAction.text||'🟡 模型候選';
@@ -5646,7 +5692,9 @@ h1 {
         const safeStarter=verifiedToday(labels.starterRows,'trial');
         const today=[
           ...add(safeCompleted,'🟢 正式買點｜當日已驗證'),
-          ...add(safeStarter,'🟠 可小量試單｜當日已驗證')];
+          ...safeStarter.map(row=>({row,label:row.action?.research_green===true
+            ?'🟢 研究型技術買進｜未通過樣本外驗證'
+            :'🟠 可小量試單｜當日已驗證'}))];
         const watch=[
           ...add(labels.tomorrowResearchRows,'🌙 明日研究追蹤｜非買點'),
           ...add((labels.completedRows||[]).filter(row=>!safeCompleted.includes(row)),'🟡 正式買點待重新確認｜非買點'),
@@ -5704,8 +5752,8 @@ h1 {
         const shown=new Set([...today,...uniqueWatch,...risk].map(e=>String(e.row?.item?.stock_id||'')).filter(Boolean));
         const persistent=groupedEntrySavedWatches(shown);
         const groups=[
-          compactEntryGroupHtml('today','🟠 可以試單／🟢 正式買點',
-            '只有當日確認才可試單或買進',today,{open:true,alwaysShow:true}),
+          compactEntryGroupHtml('today','🟠 可以試單／🟢 技術買進／正式買點',
+            '研究型綠色未通過樣本外驗證；與V5正式買進分開',today,{open:true,alwaysShow:true}),
           compactEntryGroupHtml('tracking','⚡ 強攻觀察與候選',
             '第一根、回踩與跨日觀察合併，僅供明日研究（非買點）',
             uniqueWatch,{open:true,extraHtml:persistent.savedHtml,extraCount:persistent.savedCount,alwaysShow:true}),
@@ -5859,16 +5907,22 @@ h1 {
           const item = row?.item || {}, action = row?.action || {};
           const id = String(item.stock_id || ''), day = String(item.as_of || '');
           if (!id || !/^20\d{2}-\d{2}-\d{2}$/.test(day) || day !== expectedSignalDataDate() || holdings.has(id)) continue;
-          const level = action.phase==='confirmed'&&action.buyable===true
-            &&formalEntryValidation.enabled&&quoteFreshForTrial(row.quote)?2
-            : action.phase==='trial'&&action.trialable===true&&quoteFreshForTrial(row.quote)?1:0;
+          const level=action.phase==='confirmed'&&action.buyable===true
+            &&formalEntryValidation.enabled&&quoteFreshForTrial(row.quote)?3
+            :action.phase==='trial'&&action.trialable===true
+              &&action.research_green===true&&quoteFreshForTrial(row.quote)?2
+            :action.phase==='trial'&&action.trialable===true&&quoteFreshForTrial(row.quote)?1:0;
           if (!level) continue;
           // 同步沿用進場雷達「優先查看」的保守量價／均線／位置過濾，
           // 在發動前分頁也能提醒，不額外查詢進場雷達 API。
           const m = item.metrics || {}, mc = m.ma_cluster || {};
           const close = Number(m.close), ma20 = Number(m.ma20);
           const pos = Number(m.position_1y_pct), k = Number(m.daily_k), lots = Number(m.current_volume_lots);
-          const researchReady=level===1
+          const researchReady=(level===2&&action.research_green===true
+            &&action.formal_validated===false&&action.live_quote_verified===true
+            &&unifiedRadarGeneration(item)&&chaseModelReady(item)
+            &&quoteFreshForTrial(row.quote))
+            ||level===1
             &&['early_recovery_trial','signed_starter_impulse_trial'].includes(String(action.key||''))
             &&action.research_trial===true&&action.live_quote_verified===true
             &&unifiedRadarGeneration(item)&&chaseModelReady(item)
@@ -5895,7 +5949,9 @@ h1 {
         notice.innerHTML = '<b>🔔 盤中有效訊號更新｜'+changes.length+' 檔</b>'
           + '<div class="risk-note">只核對既有模型與當日有效成交；需自行評估部位及實際券商行情，不代表保證獲利或自動下單。</div>'
           + changes.slice(0,8).map(x => '<div class="risk-note">'
-            + (x.level === 2 ? '🟢 V5正式確認' : '🟠 盤中小量試單條件已到')
+            + (x.level === 3 ? '🟢 V5正式確認'
+              :x.level === 2 ? '🟢 技術買進條件達標（研究型、未通過回測）'
+              :'🟠 盤中小量試單條件已到')
             + '｜<b>'+esc(x.id)+' '+esc(x.name)+'</b>｜模型日 '+esc(x.day)
             + '｜下單前須核對今日股價、量能與風險</div>').join('')
           + (changes.length>8?'<div class="risk-note">其餘 '+(changes.length-8)+' 檔請查看進場雷達。</div>':'');
@@ -6606,6 +6662,8 @@ h1 {
           +' 的完成日K，起漲階段≠現在可以下單；隔天以新版 +8%／+12%／+15% 分級乖離上限、量價與C有效成交確認試單。'
           +'｜本輪候選 '+rows.length+' 檔，未掃到的股票不算淘汰。</small>'
           +'</section>';
+        const researchGreenCount=starterRows.filter(row=>row.action?.research_green===true
+          &&row.action?.formal_validated===false).length;
         const actionableCount=starterRows.length+completedRows.length;
         const latestCount=Number(latestScanProgress?.latest_count||0);
         const stockTotal=Number(latestScanProgress?.total_stocks||0);
@@ -6633,7 +6691,8 @@ h1 {
           +'｜均線收復試單準備 '+reclaimPrepared+' 檔（須盤中C成交再驗，非買點）';
         const banner='<div class="entry-list-overview" data-stable-key="entry-overview">'
           +'<strong>🎯 進場雷達｜三種決策，一眼看懂</strong>'
-          +'<span>🟢 正式買點 '+completedRows.length+'｜🟠 盤中試單 '+starterRows.length
+          +'<span>🟢 V5正式 '+completedRows.length+'｜🟢 研究型技術買進 '+researchGreenCount
+          +'｜🟠 小量試單 '+(starterRows.length-researchGreenCount)
           +'｜📋 前次新版留存 '+retainedRows.length+'｜應更新日 '+esc(expectedSignalDataDate())
           +scanCoverage+'</span>'
           +'<small>只有當日有效成交與原風控全部通過才可試單／確認買點。未更新日K只供觀察；全部詳細判斷點開個股查看。'
