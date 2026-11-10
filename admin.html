@@ -6706,13 +6706,15 @@ h1 {
           ...strongFollowups,
           ...passiveResearch
         ];
-        const outHtml=banner+simplifiedEntryHtml({
+        const outHtml=banner+'<section class="entry-bucket" id="entryTrialHistoryContainer">'
+          +entryTrialHistoryHtml()+'</section>'+simplifiedEntryHtml({
           completedRows,starterRows,eodTrialRows,boxFirstRows,focusRows,signalRows,
           eodTrackRows,reclaimRows,queuedDisplayRows,recalcDisplayRows,
           retainedRows,avoidRows,pullbackRows,waitRows,tomorrowResearchRows
         });
         updateBuySignalNotice([...completedRows,...starterRows]);
         stableListRender(outHtml,{quoteUpdate});
+        void refreshEntryTrialHistory();
         return { earlyRows, starterRows, completedRows, eodTrialRows, boxFirstRows, recalcRows, blockedRows, highRows,
           weakeningRows, queuedRows, nearRows, trackingRows, staleRows,
           focusRows, signalRows, eodTrackRows, reclaimRows, queuedDisplayRows, recalcDisplayRows,retainedRows,
@@ -8041,6 +8043,76 @@ h1 {
           pnl:plan.pnl,price,ratio,referenceDate:plan.observationDate,suggestedQty,
           secondTrigger:secondBreakout?secondLevel:null};
       };
+
+      // Account-isolated read-only history of *saved* signals, never reconstructed
+      // from old S models. Existing RLS grants authenticated users only own rows.
+      // No new quote calls, scans, writes, or recurring polling.
+      let entryTrialHistoryRows=[];
+      let entryTrialHistoryOpen=false;
+      let entryTrialHistoryStatus='idle';
+      let entryTrialHistoryLastRead=0;
+      let entryTrialHistoryLoading=false;
+      const entryTrialHistoryHtml=()=>{
+        const count=entryTrialHistoryStatus==='loaded'
+          ?entryTrialHistoryRows.length+' 筆':'查詢中';
+        const content=entryTrialHistoryStatus==='error'
+          ?'<div class="entry-simple-empty">⚠️ 試單歷史暫時無法讀取，保留正式資料，不顯示推測紀錄。</div>'
+          :entryTrialHistoryStatus!=='loaded'
+          ?'<div class="entry-simple-empty">正在查詢帳號已保存的試單紀錄…</div>'
+          :!entryTrialHistoryRows.length
+          ?'<div class="entry-simple-empty">目前沒有成功保存的試單紀錄。過去寫入失敗的訊號無法憑空補回。</div>'
+          :entryTrialHistoryRows.map(row=>{
+            const day=String(row.signal_date||'');
+            const quote=String(row.quote_time||'');
+            const saved=String(row.captured_at||'');
+            const savedAt=saved&&!Number.isNaN(Date.parse(saved))
+              ?new Date(saved).toLocaleString('zh-TW',{timeZone:'Asia/Taipei',hour12:false})
+              :'未確認';
+            const price=Number(row.price),priceLabel=Number.isFinite(price)&&price>0
+              ?num(price,2)+' 元':'價格未確認';
+            const name=String(row.stock_name||'');
+            const label=String(row.signal_label||'🟠 可小量試單');
+            const reason=String(row.reason||'盤中條件符合').slice(0,400);
+            return '<div class="risk-note" data-trial-history-stock="'+esc(String(row.stock_id||''))+'">'
+              +'<b>'+esc(String(row.stock_id||''))+' '+esc(name)+'</b>'
+              +'｜<b>'+esc(priceLabel)+'</b>'
+              +'｜行情 '+esc(day)+(quote?' '+esc(quote):' 時間未記錄')
+              +'<div>'+esc(label)+'</div>'
+              +'<small>判定：'+esc(reason)+'</small>'
+              +'<small style="display:block">資料庫收錄：'+esc(savedAt)
+              +'｜記錄的是當時畫面訊號，非實際買賣成交</small></div>';
+          }).join('');
+        return '<details class="entry-bucket-fold" data-entry-fold="trial-history"'
+          +(entryTrialHistoryOpen?' open':'')+'>'
+          +'<summary class="entry-bucket-head"><span class="entry-bucket-headline">'
+          +'<b>🗂️ 試單歷史紀錄｜'+esc(count)+'</b>'
+          +'<small>同帳號手機、電腦共用｜保存當時行情價格、時間、判定依據</small>'
+          +'</span></summary><div class="entry-bucket-body">'+content+'</div></details>';
+      };
+      const refreshEntryTrialHistory=async(force=false)=>{
+        if(stage!=='ENTRY'||document.hidden||entryTrialHistoryLoading)return;
+        const now=Date.now();
+        if(entryTrialHistoryLastRead&&now-entryTrialHistoryLastRead
+            <(force?15000:300000))return;
+        entryTrialHistoryLoading=true;entryTrialHistoryLastRead=now;
+        try{
+          const session=await authClient.auth.getSession();
+          if(!session?.data?.session?.access_token)throw Error('not_authenticated');
+          const {data,error}=await authClient.from('radar_trade_signal_history')
+            .select('stock_id,stock_name,signal_label,signal_date,quote_time,price,reason,captured_at')
+            .eq('signal_type','trial').order('captured_at',{ascending:false}).limit(40);
+          if(error)throw error;
+          entryTrialHistoryRows=Array.isArray(data)?data:[];
+          entryTrialHistoryStatus='loaded';
+        }catch(error){
+          entryTrialHistoryStatus='error';
+        }finally{
+          entryTrialHistoryLoading=false;
+          const host=document.getElementById('entryTrialHistoryContainer');
+          if(host&&stage==='ENTRY'&&!document.hidden)
+            host.innerHTML=entryTrialHistoryHtml();
+        }
+      };
       // Audit only the signal actually shown by an existing verified radar decision.
       // Nothing here changes scan quotas, prices, holdings, entry gates or risk rules.
       const TRADE_SIGNAL_AUDIT_API = SUPABASE_URL + '/functions/v1/asheng-signal-audit';
@@ -8099,6 +8171,8 @@ h1 {
           if(result?.ok===true){
             auditedTradeSignals.add(key);
             try{sessionStorage.setItem('asheng-signal-saved-v1-'+key,'1');}catch(e){}
+            // Refresh the durable, RLS-filtered list after the server confirms a write.
+            void refreshEntryTrialHistory(true);
           }
         })().catch(()=>{}).finally(()=>auditingTradeSignals.delete(key));
       };
@@ -10649,6 +10723,9 @@ h1 {
       $('#list').addEventListener('toggle', event => {
         const node=event.target;
         if(!node?.isConnected)return;
+        if(stage==='ENTRY'&&node.matches?.('details[data-entry-fold="trial-history"]')){
+          entryTrialHistoryOpen=!!node.open;return;
+        }
         if(stage==='LAUNCH' && node.matches?.('.launch-mini-wrap > details.entry-mini[data-stock-key]')){
           const id=String(node.dataset.stockKey||'');
           if(!id)return;
