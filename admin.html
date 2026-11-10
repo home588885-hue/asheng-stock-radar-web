@@ -5868,10 +5868,12 @@ h1 {
           const m = item.metrics || {}, mc = m.ma_cluster || {};
           const close = Number(m.close), ma20 = Number(m.ma20);
           const pos = Number(m.position_1y_pct), k = Number(m.daily_k), lots = Number(m.current_volume_lots);
-          const researchReady=level===1&&action.key==='early_recovery_trial'
+          const researchReady=level===1
+            &&['early_recovery_trial','signed_starter_impulse_trial'].includes(String(action.key||''))
             &&action.research_trial===true&&action.live_quote_verified===true
             &&unifiedRadarGeneration(item)&&chaseModelReady(item)
-            &&quoteFreshForTrial(row.quote)&&chasePass(item,Number(row.quote?.price));
+            &&quoteFreshForTrial(row.quote)&&chasePass(item,Number(row.quote?.price))
+            &&(action.key!=='signed_starter_impulse_trial'||!!signedStarterImpulseTrial(item,row.quote));
           const strong = researchReady || (action.active_launch_fallback !== true && Number(item.score) >= 75
             && lots >= 1000 && mc.all_rising === true && mc.above_all_mas === true
             && close > 0 && ma20 > 0 && close >= ma20 && chasePass(item,close)
