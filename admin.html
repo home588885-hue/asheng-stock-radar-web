@@ -8265,11 +8265,6 @@ h1 {
         const dayLots=Number(m.current_volume_lots);
         const date=String(item?.as_of||'').slice(0,10);
         const modelFresh=date===expectedSignalDataDate();
-        // Early drawdown reminder only. B-plan hard stop and moving exits unchanged.
-        if(risk.pnl<=-5)return {kind:'warning',risk,trail,
-          title:'🟠 -5%風險提醒｜注意轉弱',
-          detail:'成本 '+num(risk.cost,2)+'｜現價 '+num(risk.price,2)
-            +'｜損益 '+num(risk.pnl,2)+'%｜原B方案-10%硬停損不變；僅提醒，不自動賣出'};
         const highPosition=Number.isFinite(position)&&position>=75;
         // Only completed EOD volume, not an intraday raw volume comparison.
         const ratio=modelFresh&&avg>0&&dayLots>=0?dayLots/avg:null;
@@ -8287,6 +8282,11 @@ h1 {
               +(trail.currentGain>=0?'+':'')+num(trail.currentGain,2)+'%｜'+reasons
               +'｜'+trail.source+'；僅觀察警示，非B方案出場條件'};
         }
+        // Early drawdown reminder only. B-plan hard stop and moving exits unchanged.
+        if(risk.pnl<=-5)return {kind:'warning',risk,trail,
+          title:'🟠 -5%風險提醒｜注意轉弱',
+          detail:'成本 '+num(risk.cost,2)+'｜現價 '+num(risk.price,2)
+            +'｜損益 '+num(risk.pnl,2)+'%｜原B方案-10%硬停損不變；僅提醒，不自動賣出'};
         if(risk.lossWarning)return {kind:'warning',risk,trail,title:'🟠 虧損警戒｜禁止攤平',detail:'損益 '+num(risk.pnl,2)+'%｜停損 '+num(risk.stopPrice,2)};
         return {kind:'hold',risk,trail,title:'🟢 趨勢續抱｜不受30天限制',detail:'損益 '+num(risk.pnl,2)+'%'+(trail?.armed?'｜移動停利 '+num(trail.floorPrice,2):'｜達+20%後啟動最高價回落5%')};
       };
