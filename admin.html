@@ -4359,7 +4359,7 @@ h1 {
           ||Number(item.score)<75||mc.all_rising!==true
           ||g.main_bull!==true||g.weak_after_breakout===true||g.kd_high_weak===true
           ||m.holding_management?.strong_breakdown===true
-          ||m.quality_gate?.pass===false
+          ||(m.quality_gate?.pass===false&&m.quality_gate?.mode!=='warning_only_for_bc')
           ||![ma10,ma20,ma60,close,avg,vol,pos,k,chip,macd].every(Number.isFinite)
           ||Math.min(ma10,ma20,ma60,close,avg)<=0
           ||close<ma60||close<ma20*.985
@@ -4790,7 +4790,7 @@ h1 {
           ||g.main_bull!==true||g.weak_after_breakout===true
           ||g.kd_high_weak===true||g.macd_weak===true
           ||m.holding_management?.strong_breakdown===true
-          ||m.quality_gate?.pass===false
+          ||(m.quality_gate?.pass===false&&m.quality_gate?.mode!=='warning_only_for_bc')
           ||['mother_low_broken','child_low_broken','invalid','broken'].includes(mother)
           ||![close,ma10,ma20,ma60,avg,vol,pos,k,d].every(Number.isFinite)
           ||Math.min(close,ma10,ma20,ma60,avg)<=0
@@ -5034,7 +5034,7 @@ h1 {
           ||close<ma20*.945||close<ma60*.945||close>ma20*1.065
           ||g.weak_after_breakout===true||g.kd_high_weak===true
           ||m.holding_management?.strong_breakdown===true
-          ||m.quality_gate?.pass===false
+          ||(m.quality_gate?.pass===false&&m.quality_gate?.mode!=='warning_only_for_bc')
           ||['child_low_broken','mother_low_broken','invalid','broken'].includes(pattern))
           return null;
         return {ma10,ma20,ma60,avg,close};
@@ -5098,7 +5098,7 @@ h1 {
           fraction,pace,projected,minLots];
         if(!nums.every(Number.isFinite)||Math.min(close,ma10,ma20,ma60,avg,price,open,high,prev)<=0
           ||Number(item.score)<58||!discovery||avg<250||eodLots<150
-          ||pos<0||pos>=80||m.quality_gate?.pass===false
+          ||pos<0||pos>=80||(m.quality_gate?.pass===false&&m.quality_gate?.mode!=='warning_only_for_bc')
           ||g.weak_after_breakout===true||g.kd_high_weak===true
           ||m.holding_management?.strong_breakdown===true
           ||close<Math.max(ma20,ma60)*.98||close>ma20*1.08
@@ -5800,8 +5800,10 @@ h1 {
         });
         refreshDesktopOpt();
       }
-      // Pre-limit EARLY warning based only on existing matched C quote waves.
-      // Two stages: 0.8-2.5% early momentum, 2.5-7.5% accelerating.
+      // Pre-limit EARLY observation from existing matched C quote waves only.
+      // Stage one starts at +0.5% and never grants orange trial or green entry.
+      // Warning-only EOD quality / KD flags do not hide an otherwise verified live rise.
+      // Two stages: 0.5-2.5% early momentum, 2.5-7.5% accelerating.
       // A recently stale SIGNED S snapshot may warn, but NEVER grant a trial.
       const preLimitStrongMove=(item,quote,action=null)=>{
         if(!item||item.__passive_monitor===true||item.__observation_only===true
@@ -5827,20 +5829,20 @@ h1 {
           ||(mc.watch_ready===true&&price>=ma10&&ma10>=ma20*.985)
           ||(m.bottom_start?.current_base===true&&ma10>=ma20*.99);
         const accelerating=pct>=2.5;
-        const minPace=accelerating?1.3:1.45;
-        const minVolume=accelerating?180:120;
+        const minPace=accelerating?1.3:1.2;
+        const minVolume=accelerating?180:90;
         if(![price,prev,open,high,vol,avg,frac,pace,projected,pct,ma10,ma20,ma60,pos].every(Number.isFinite)
           ||Math.min(price,prev,open,high,avg,ma10,ma20,ma60)<=0
-          ||pct<.8||pct>7.5||vol<minVolume||avg<350||pace<minPace
-          ||pace>5.5||projected<500||frac<.03
+          ||pct<.5||pct>7.5||vol<minVolume||avg<350||pace<minPace
+          ||pace>5.5||projected<400||frac<.03
           ||price<open*(accelerating?1.006:1.002)
           ||price<high*.99||price<Math.max(ma10,ma20,ma60)
           ||ma10<ma20*.985||ma20<ma60*.97||price>ma20*1.08
           ||Number(item.score)<(accelerating?65:62)||pos>=85||pos<0
           ||(!breakout&&!recovery)
-          ||g.weak_after_breakout===true||g.kd_high_weak===true
+          ||g.weak_after_breakout===true
           ||m.holding_management?.strong_breakdown===true
-          ||m.quality_gate?.pass===false||!chasePass(item,price))
+          ||(m.quality_gate?.pass===false&&m.quality_gate?.mode!=='warning_only_for_bc')||!chasePass(item,price))
           return null;
         const canTrial=!stale&&action?.phase==='trial'&&action.trialable===true
           &&action.buyable!==true&&action.live_quote_verified===true;
@@ -5881,7 +5883,7 @@ h1 {
               :x.level===2?'⚡ 動能加速，待試單條件確認'
               :'🌱 強攻前兆，先觀察突破與成交續航')
             +'</div>').join('')
-          +'<small>今日上漲0.8%～7.5%且有有效C成交與量能時分段提醒，不能預測一定漲停；舊S模型只作預警、不核發試單。請核對券商報價。</small>';
+          +'<small>今日上漲0.5%～7.5%且有有效C成交與量能時分段提醒，不能預測一定漲停；舊S模型只作預警、不核發試單。請核對券商報價。</small>';
         host.querySelector('#dismissPreLimitNotice')?.addEventListener('click',()=>{host.hidden=true});
         if(typeof Notification!=='undefined'&&Notification.permission==='granted'){
           for(const x of hits.slice(0,3)){
