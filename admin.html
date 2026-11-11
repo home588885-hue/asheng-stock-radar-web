@@ -9097,9 +9097,10 @@ h1 {
           {holding_add_kind:addPlan.kind});
         const main=String(decision?.main||'續抱');
         const stopAlert=risk?.stopHard===true;
-        const actionLabel=bDecision.kind==='volume_exit_watch'||bDecision.kind==='profit_giveback_watch'
-          ||(bDecision.kind==='warning'&&Number(risk?.pnl)<=-5)
-          ?bDecision.title:stopAlert?decision.action.title:main;
+        const actionLabel=bDecision.kind==='volume_exit_watch'?bDecision.title
+          :bDecision.kind==='profit_giveback_watch'?bDecision.title
+          :bDecision.kind==='warning'&&Number(risk?.pnl)<=-5?bDecision.title
+          :stopAlert?decision.action.title:main;
         const tone=stopAlert||main==='出清'?'exit'
           :['volume_exit_watch','profit_giveback_watch'].includes(bDecision.kind)||main==='警戒'?'warn':'';
         const selected=holdingExpandedIds.has(id)?' open':'';
