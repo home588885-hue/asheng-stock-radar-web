@@ -1148,3 +1148,54 @@ test('all three radar zones retain a single foreground C post-close refresh with
   assert.match(html,/const atClosingAuction=/);
   assert.match(html,/const formal=eligible&&formalEntryValidation\.enabled&&m\.v5\?\.entry_confirmed===true/);
 });
+
+
+test('warning-only quality does not veto fresh-C early recovery; early +0.5% is watch only',()=>{
+  const fixture={stock_id:'2548',stock_name:'測試候選',as_of:'2026-11-10',stage:'C',score:72,
+    metrics:{close:93.5,ma10:91.59,ma20:91.67,ma60:93.04,avg_volume_20_lots:1204,
+      current_volume_lots:1523,position_1y_pct:11.8,
+      quality_gate:{mode:'warning_only_for_bc',pass:false},
+      scan_intelligence:{effective_lifecycle:'PRELAUNCH'},
+      prebreakout_scout:{eligible:true,as_of:'2026-11-10'},
+      ma_cluster:{watch_ready:true,all_rising:false},
+      entry_candle_guard:{main_bull:false,weak_after_breakout:false,kd_high_weak:false,macd_weak:false},
+      holding_management:{strong_breakdown:false},
+      shanchuan_v2:{mother_child:{lifecycle:{state:'none'}}}}};
+  const q={quote_date:'20261111',quote_time:'10:00:00',price:94.1,prev_close:93.5,
+    open:93.85,high:94.2,volume_lots:320};
+  const params=['holdings','unifiedRadarGeneration','chaseModelReady','expectedSignalDataDate',
+    'quoteFreshForTrial','validTodayQuote','marketFraction','chasePass','benchmark0050Quote'];
+  const args=[new Map(),()=>true,()=>true,()=> '2026-11-10',()=>true,()=>true,()=>.2,()=>true,null];
+  const setupCode=section('      const reclaimResearchSetup=item=>{','      const entrySnapshotState =');
+  const setup=new Function(...params,setupCode+
+    '\nreturn {reclaimResearchSetup,liveReclaimResearchTrial,earlyRecoveryTrialState};')(...args);
+  assert.ok(setup.reclaimResearchSetup(fixture),'warning-only quality is not a hard buy veto');
+  const actual=setup.earlyRecoveryTrialState(fixture,q);
+  assert.equal(actual?.route,'ma_reclaim','a fresh verified C reclaim can progress to research orange');
+  const strict={...fixture,metrics:{...fixture.metrics,
+    quality_gate:{mode:'hard',pass:false}}};
+  assert.equal(setup.reclaimResearchSetup(strict),null,'hard quality veto still blocks');
+  assert.equal(setup.earlyRecoveryTrialState(strict,q),null);
+  assert.equal(setup.earlyRecoveryTrialState({...fixture,as_of:'2026-11-09'},q),null,
+    'stale signed S cannot become an orange trial');
+  const alertCode=section('      const preLimitStrongMove=(item,quote,action=null)=>{',
+    '      const checkPreLimitAlerts=rows=>{');
+  const alert=new Function('holdings','unifiedRadarGeneration','chaseModelReady',
+    'expectedSignalDataDate','quoteFreshForTrial','priceLimitState',
+    'marketFraction','chasePass','todayQuoteDate','radarVolumePriority',
+    alertCode+'\nreturn preLimitStrongMove;')(
+    new Map(),()=>true,()=>true,()=> '2026-11-10',()=>true,()=>null,
+    ()=>.2,()=>true,()=> '20261111',()=>({rank:1}));
+  assert.equal(alert(fixture,q,null)?.level,1,'+0.64% early C rise is observation');
+  assert.equal(alert(fixture,q,null)?.stale,false);
+  assert.equal(alert({...fixture,as_of:'2026-11-09'},q,null)?.stale,true,
+    'prior-day model can only show stale warning');
+  assert.equal(alert(strict,q,null),null,'hard-quality gate still vetoes watch');
+  assert.equal(alert({...fixture,metrics:{...fixture.metrics,
+    entry_candle_guard:{weak_after_breakout:true}}},q,null),null,
+    'confirmed breakdown is never a bullish early signal');
+  assert.equal(alert(fixture,{...q,price:100},null),null,
+    'high chase/overextension price is not an early signal');
+  assert.match(html,/const formal=eligible&&formalEntryValidation\.enabled&&m\.v5\?\.entry_confirmed===true/);
+  assert.match(html,/stopHard:price<=cost\*\.90\+tolerance/);
+});
