@@ -66,7 +66,7 @@ Deno.serve(async (req:Request)=>{
   const validDay=source==="C"?day===now:day===asOf &&
     Math.abs(Date.parse(now+"T00:00:00Z")-Date.parse(day+"T00:00:00Z"))<8*86400000;
   if(!validDay)return out({ok:false,error:"stale_signal_date"},409);
-  const model=await rows("spring_swallow_scan_results?select=stock_id,as_of&stock_id=eq."+encodeURIComponent(id)+"&limit=1");
+  const model=await rows("spring_swallow_scan_results?select=stock_id,as_of&stock_id=eq."+encodeURIComponent(id)+"&order=as_of.desc&limit=1");
   if(!model.ok)return out({ok:false,error:"model_unavailable"},503);
   if(String(model.data?.[0]?.as_of||"")!==asOf)return out({ok:false,error:"model_snapshot_changed"},409);
   const data={
