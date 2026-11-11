@@ -5425,6 +5425,7 @@ h1 {
         const status=limit?'avoid':confirmed?'ready':blocked?'avoid':'wait';
         const label=limit?.kind==='up'?'🔴 已漲停'+(limit.label.includes('估')?'（估）':'')
           :limit?.kind==='down'?'🟢 已跌停'+(limit.label.includes('估')?'（估）':'')
+          :zone==='entry'&&!currentDay?'⚪ 模型日期過期｜不可試單'
           :status==='ready'?(a.research_green===true?'🟢 技術買進｜研究型未驗證'
             :a.phase==='trial'?'🟠 可小量試單':'🟢 正式買點')
           :status==='avoid'?'⚪ 暫不考慮'
@@ -8052,6 +8053,7 @@ h1 {
       let entryTrialHistoryStatus='idle';
       let entryTrialHistoryLastRead=0;
       let entryTrialHistoryLoading=false;
+      let entryTrialHistoryWriteProblem='';
       const entryTrialHistoryHtml=()=>{
         const count=entryTrialHistoryStatus==='loaded'
           ?entryTrialHistoryRows.length+' 筆':'查詢中';
@@ -8087,7 +8089,9 @@ h1 {
           +'<summary class="entry-bucket-head"><span class="entry-bucket-headline">'
           +'<b>🗂️ 試單歷史紀錄｜'+esc(count)+'</b>'
           +'<small>同帳號手機、電腦共用｜保存當時行情價格、時間、判定依據</small>'
-          +'</span></summary><div class="entry-bucket-body">'+content+'</div></details>';
+          +'</span></summary><div class="entry-bucket-body">'
+          +(entryTrialHistoryWriteProblem?'<div class="entry-simple-empty">⚠️ '+esc(entryTrialHistoryWriteProblem)+'</div>':'')
+          +content+'</div></details>';
       };
       const refreshEntryTrialHistory=async(force=false)=>{
         if(stage!=='ENTRY'||document.hidden||entryTrialHistoryLoading)return;
@@ -8117,6 +8121,13 @@ h1 {
       // Nothing here changes scan quotas, prices, holdings, entry gates or risk rules.
       const TRADE_SIGNAL_AUDIT_API = SUPABASE_URL + '/functions/v1/asheng-signal-audit';
       const auditedTradeSignals = new Set(), auditingTradeSignals = new Set();
+      const reportTradeSignalAuditError = (reason) => {
+        const code=String(reason||'unknown').slice(0,60);
+        entryTrialHistoryWriteProblem='本次已確認的試單訊號尚未成功保存（'+code+'）；請勿視為有歷史紀錄。';
+        console.warn('[asheng-signal-audit]',code);
+        const host=document.getElementById('entryTrialHistoryContainer');
+        if(host&&stage==='ENTRY'&&!document.hidden)host.innerHTML=entryTrialHistoryHtml();
+      };
       const auditSignalObserved = (item,quote,kind,label,reason,extra={}) => {
         const id=String(item?.stock_id||''), m=item?.metrics||{};
         const asOf=String(item?.as_of||'').slice(0,10);
@@ -8160,21 +8171,24 @@ h1 {
         void (async()=>{
           const {data}=await authClient.auth.getSession();
           const token=data?.session?.access_token;
-          if(!token)return;
+          if(!token){reportTradeSignalAuditError('登入狀態失效');return;}
           const response=await fetch(TRADE_SIGNAL_AUDIT_API,{
             method:'POST',headers:{'Content-Type':'application/json',
               Authorization:'Bearer '+token},
             body:JSON.stringify(payload),cache:'no-store'
           });
-          if(!response.ok)return;
           const result=await response.json().catch(()=>null);
-          if(result?.ok===true){
-            auditedTradeSignals.add(key);
-            try{sessionStorage.setItem('asheng-signal-saved-v1-'+key,'1');}catch(e){}
-            // Refresh the durable, RLS-filtered list after the server confirms a write.
-            void refreshEntryTrialHistory(true);
+          if(!response.ok||result?.ok!==true){
+            reportTradeSignalAuditError(String(result?.error||'HTTP '+response.status));
+            return;
           }
-        })().catch(()=>{}).finally(()=>auditingTradeSignals.delete(key));
+          auditedTradeSignals.add(key);
+          entryTrialHistoryWriteProblem='';
+          try{sessionStorage.setItem('asheng-signal-saved-v1-'+key,'1');}catch(e){}
+          // Refresh the durable, RLS-filtered list after the server confirms a write.
+          void refreshEntryTrialHistory(true);
+        })().catch(()=>reportTradeSignalAuditError('網路或服務異常'))
+          .finally(()=>auditingTradeSignals.delete(key));
       };
       // Clear yesterday's short-term warning only with a verified next-day C trade.
       // Pure UI decision, never touches MA20 exits, holdings, or S/C quotas.
@@ -8251,6 +8265,11 @@ h1 {
         const dayLots=Number(m.current_volume_lots);
         const date=String(item?.as_of||'').slice(0,10);
         const modelFresh=date===expectedSignalDataDate();
+        // Early drawdown reminder only. B-plan hard stop and moving exits unchanged.
+        if(risk.pnl<=-5)return {kind:'warning',risk,trail,
+          title:'🟠 -5%風險提醒｜注意轉弱',
+          detail:'成本 '+num(risk.cost,2)+'｜現價 '+num(risk.price,2)
+            +'｜損益 '+num(risk.pnl,2)+'%｜原B方案-10%硬停損不變；僅提醒，不自動賣出'};
         const highPosition=Number.isFinite(position)&&position>=75;
         // Only completed EOD volume, not an intraday raw volume comparison.
         const ratio=modelFresh&&avg>0&&dayLots>=0?dayLots/avg:null;
@@ -9043,6 +9062,8 @@ h1 {
           ?(risk.confirmed?'已達-10%硬停損':'-10%停損價格待核對')
           :high?.triggered&&risk?.confirmed
             ?'移動停利保護線已觸及'
+          :bDecision.kind==='warning'&&risk?.confirmed&&pnl!=null&&pnl<=-5
+            ?'🟠 已達-5%風險警戒｜B方案-10%停損維持'
           :bDecision.kind==='profit_giveback_watch'?'🟠 獲利回吐／短均線警戒（非出場條件）'
           :pnl==null?'資料待確認':pnl<0?'虧損警戒中'
             :pnl===0?'損益兩平':high?.armed
@@ -9077,6 +9098,7 @@ h1 {
         const main=String(decision?.main||'續抱');
         const stopAlert=risk?.stopHard===true;
         const actionLabel=bDecision.kind==='volume_exit_watch'||bDecision.kind==='profit_giveback_watch'
+          ||(bDecision.kind==='warning'&&Number(risk?.pnl)<=-5)
           ?bDecision.title:stopAlert?decision.action.title:main;
         const tone=stopAlert||main==='出清'?'exit'
           :['volume_exit_watch','profit_giveback_watch'].includes(bDecision.kind)||main==='警戒'?'warn':'';
@@ -9103,7 +9125,8 @@ h1 {
             <div class="holding-mini-body">
               ${researchNote}
               <div class="holding-mini-status">${esc(positionStatus+addObservation+protectionDetail+positionDetail
-                +(bDecision.kind==='profit_giveback_watch'?'｜'+bDecision.detail:''))}</div>
+                +(bDecision.kind==='profit_giveback_watch'
+                  ||(bDecision.kind==='warning'&&Number(risk?.pnl)<=-5)?'｜'+bDecision.detail:''))}</div>
               ${holdingMa20DaysHtml(item,live)}
               ${continuationRiskMiniHtml(item)}
               ${stockMovementHtml(item,live,'holding',{text:actionLabel,detail:decision.reminder})}
