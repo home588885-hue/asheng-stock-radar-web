@@ -1,0 +1,55 @@
+name: One-time historical price coverage gapfill 2021-2023
+on:
+  push:
+    branches: [research/core-vnext-evidence-gate-20261022]
+    paths: [.github/workflows/research-2022-23-gapfill-once.yml]
+permissions:
+  contents: read
+jobs:
+  gapfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Fetch previously-missing historical OHLC from free source
+        shell: bash
+        run: |
+          python - <<'PY'
+          import csv,io,json,urllib.request,zipfile
+          from collections import defaultdict
+          from pathlib import Path
+          BASE="https://github.com/yukishirotsubasa/tw-stock-data-release/releases/download/daily-close-csv"
+          codes=set("""6550 6515 6446 6016 6026 2881 2885 5469 2516 6947""".split())
+          bars=defaultdict(dict);coverage={}
+          for year in (2021,2022,2023):
+              name=f"yearly_{year}.zip"
+              req=urllib.request.Request(f"{BASE}/{name}",headers={"User-Agent":"Asheng-gapfill-20261023/1"})
+              with urllib.request.urlopen(req,timeout=90) as stream: zbytes=stream.read()
+              with zipfile.ZipFile(io.BytesIO(zbytes)) as arc:
+                  for file in arc.namelist():
+                      if not file.endswith(".csv"):continue
+                      with arc.open(file) as fp:
+                          csvreader=csv.DictReader(io.TextIOWrapper(fp,encoding="utf-8-sig",errors="replace",newline=""))
+                          if not {"date","code","open","high","low","close"}.issubset(csvreader.fieldnames or []):continue
+                          for r in csvreader:
+                              s=str(r["code"]).strip()
+                              if s not in codes:continue
+                              dt=str(r["date"]).replace("-","").replace("/","")
+                              try: o,h,l,c=[float(r[x]) for x in ("open","high","low","close")]
+                              except Exception:continue
+                              if len(dt)!=8 or o<=0 or c<=0 or h<max(o,c,l) or l<=0:continue
+                              bars[s][dt]=(dt,o,h,l,c)
+              coverage[str(year)]={s:sum(dt.startswith(str(year)) for dt in z) for s,z in bars.items()}
+              print(year,'symbols',len(bars),'total_price_rows',sum(map(len,bars.values())),flush=True)
+          with zipfile.ZipFile("gapfill_stock_years_2021_23.zip","w",zipfile.ZIP_DEFLATED) as out:
+              for s,series in bars.items():
+                  out.writestr(s+".csv","date,open,high,low,close\n"+"\n".join(",".join(map(str,series[d])) for d in sorted(series))+"\n")
+              out.writestr("coverage.json",json.dumps(coverage))
+          print("DONE",json.dumps({"symbols":len(bars),"rows":sum(map(len,bars.values()))}),flush=True)
+          PY
+      - name: Upload limited-life research data
+        uses: actions/upload-artifact@v4
+        with:
+          name: historical-gapfill-2021-2023-selected
+          path: gapfill_stock_years_2021_23.zip
+          retention-days: 1
+          if-no-files-found: error

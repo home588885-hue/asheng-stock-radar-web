@@ -1,0 +1,71 @@
+name: Research only - historical price snapshot 2022-2025
+on:
+  push:
+    branches: [research/core-vnext-evidence-gate-20261022]
+    paths:
+      - .github/workflows/research-historical-bars-once-20261023.yml
+permissions:
+  contents: read
+jobs:
+  capture:
+    if: github.ref == 'refs/heads/research/core-vnext-evidence-gate-20261022'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Download selected public historical TWSE TPEX daily OHLC
+        shell: bash
+        run: |
+          python - <<'PY'
+          import csv, io, json, os, urllib.request, zipfile
+          from pathlib import Path
+          from collections import defaultdict
+          symbols=None
+          base="https://github.com/yukishirotsubasa/tw-stock-data-release/releases/download/daily-close-csv"
+          out=defaultdict(dict)
+          for year in (2024,2025):
+              url=f"{base}/yearly_{year}.zip"
+              req=urllib.request.Request(url,headers={"User-Agent":"AshengRadar-IsolatedResearch/1.0"})
+              with urllib.request.urlopen(req,timeout=90) as res:
+                  archive_bytes=res.read()
+              num_rows=0
+              with zipfile.ZipFile(io.BytesIO(archive_bytes)) as zf:
+                  names=[n for n in zf.namelist() if n.lower().endswith(".csv") and not n.startswith("__MACOSX")]
+                  print(f"SOURCE {year}: archive_mb={len(archive_bytes)/1e6:.1f}, csv_entries={len(names)}")
+                  if not names: raise RuntimeError("empty yearly OHLC archive")
+                  for name in names:
+                      with zf.open(name) as fp:
+                          data=io.TextIOWrapper(fp,encoding="utf-8-sig",errors="replace",newline="")
+                          rd=csv.DictReader(data)
+                          keys=set(rd.fieldnames or [])
+                          if not {"date","code","open","high","low","close"}.issubset(keys):
+                              continue
+                          for row in rd:
+                              sym=str(row["code"]).strip()
+                              if symbols is not None and sym not in symbols: continue
+                              dt=str(row["date"]).strip().replace("-","").replace("/","")
+                              if len(dt)!=8 or not dt.isdigit():continue
+                              try:
+                                  vals=[float(str(row[k]).replace(",","")) for k in ("open","high","low","close")]
+                              except (ValueError,TypeError):continue
+                              o,h,l,c=vals
+                              if not (o>0 and h>0 and l>0 and c>0 and h>=max(o,c,l) and l<=min(o,c,h)):
+                                  continue
+                              out[sym][dt]=[dt,o,h,l,c]
+                              num_rows+=1
+              print(f"ROWS {year}: selected={num_rows}")
+          from zipfile import ZIP_DEFLATED
+          p=Path("research_prices_fullmarket_2024_2025.zip")
+          with zipfile.ZipFile(p,"w",compression=ZIP_DEFLATED,compresslevel=8) as arc:
+              for code,mp in sorted(out.items()):
+                  if not mp:continue
+                  s="date,open,high,low,close\n"+"\n".join(",".join(map(str,bar)) for bar in sorted(mp.values()))+"\n"
+                  arc.writestr(f"{code}.csv",s)
+          print("DONE",json.dumps({"selected_symbols":('ALL' if symbols is None else len(symbols)),"with_rows":sum(bool(x) for x in out.values()),"bars_total":sum(len(x) for x in out.values()),"artifact_bytes":p.stat().st_size}))
+          PY
+      - name: Upload short-lived research artifact (no strategy signals, holdings, or credentials)
+        uses: actions/upload-artifact@v4
+        with:
+          name: asheng-full-market-bars-2024-2025-readonly
+          path: research_prices_fullmarket_2024_2025.zip
+          retention-days: 1
+          if-no-files-found: error

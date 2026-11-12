@@ -1,0 +1,21 @@
+name: Research once - prove prospective frozen shadow safety
+on:
+  push:
+    branches: [research/core-vnext-evidence-gate-20261022]
+    paths: [.github/workflows/research-disjoint-proof-gate-once.yml]
+permissions:
+  contents: read
+jobs:
+  offline-fail-closed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify disjoint stock validation gate fails closed
+        run: node diagnostics/vnext-growth-disjoint-guard-20261023.test.js
+      - name: Verify prior future-proof gate remains safe
+        run: node diagnostics/vnext-proof-gate-20261023.test.js
+      - name: Verify 12 immutable prospective shadow tests
+        run: python3 -m unittest discover -s diagnostics -p 'test_vnext_forward_shadow_registry_20261023.py' -v
+      - name: Verify no-lookahead range10 research screen
+        run: python3 -m unittest discover -s diagnostics -p 'test_vnext_lowrange_shadow_20261023.py' -v

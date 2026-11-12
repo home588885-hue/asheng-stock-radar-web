@@ -1,0 +1,45 @@
+{
+  "model": "growth_pullback_0050_rise_delay2",
+  "simulator": "conservative_daily_ohlc_cash_limited",
+  "purchase_limit_twd": 5000,
+  "cash_cap_twd": 60000,
+  "exit_hard_stop_pct": -5,
+  "exit_take_profit_pct": 10,
+  "min_commission_each_side_twd": 20,
+  "data_verified_price_count": 98,
+  "data_dividend_errors": 0,
+  "independent_cohort": {
+    "cost_stress_0_30": {
+      "universe_id": "97-new-tickers-signal-years-2026",
+      "year": 2026,
+      "trades": 94,
+      "wins": 27,
+      "net_twd": -8111.78,
+      "eod_mark_to_market_drawdown_pct": -14.21,
+      "stock_universe_overlap_with_development": 0,
+      "slippage_one_side_pct": 0.3
+    },
+    "cost_stress_0_50": {
+      "universe_id": "97-new-tickers-signal-years-2026",
+      "year": 2026,
+      "trades": 94,
+      "wins": 25,
+      "net_twd": -10676.8,
+      "eod_mark_to_market_drawdown_pct": -18.5,
+      "stock_universe_overlap_with_development": 0,
+      "slippage_one_side_pct": 0.5
+    }
+  },
+  "future_forward": null,
+  "info": {
+    "source": "2026 TWSE/TPEX public OHLC 41 weekly archives, FinMind dividends 89 observations",
+    "coverage": "2026-01-01 .. 2026-10-16",
+    "isolated_signals": 114,
+    "source_tickers": 97,
+    "missing_entry_days": 2,
+    "screened_out_by_market": 17,
+    "not_prospective": true,
+    "production_state": "UNMODIFIED",
+    "warning": "Synthetic dividend wealth approximations, no broker fill verification"
+  }
+}
