@@ -9049,6 +9049,33 @@ h1 {
       // card() already renders action, today's/model price, day change, volume,
       // saved holding cost/P&L, trade buttons, expandable rules, and 12-minute
       // survival (inside holdingActionHtml). Do not duplicate those panels.
+      // Only render server-verified, model-dated transitions in the owned-holdings view.
+      // This is an on-screen event, never a LINE/email/push/automatic order.
+      const holdingTransitionState = item => {
+        const t=holdings.get(String(item?.stock_id||''))?.technical_alerts;
+        if(!t?.verified||String(t.as_of||'')!==String(item?.as_of||'').slice(0,10))
+          return null;
+        const score={high:0,warning:1,watch:2,recovery:3,recovery_watch:4};
+        const sorted=Array.isArray(t.events)?t.events.slice().sort((a,b)=>
+          (score[a.level]??9)-(score[b.level]??9)): [];
+        if(!sorted.length)return null;
+        const modelDay=String(item?.as_of||'').slice(0,10);
+        const isFresh=modelDay===expectedSignalDataDate();
+        const symbolLabel={high:'🔴',warning:'🟠',watch:'🟡',recovery:'🟢',recovery_watch:'🟢'};
+        return {asOf:modelDay,isFresh,events:sorted,top:sorted[0],
+          symbol:symbolLabel[sorted[0].level]||'📍'};
+      };
+      const holdingTransitionDetailHtml = item => {
+        const t=holdingTransitionState(item);
+        if(!t)return '';
+        const title=(t.isFresh?'持股事件變化':'歷史模型事件')+'｜'+t.asOf;
+        const lines=t.events.slice(0,5).map(e=>'<div>• '+esc(String(e.message||''))+'</div>').join('');
+        const note=t.isFresh?'僅屬收盤技術提醒，請核對實際行情；不會自動交易。'
+          :'模型尚非最新交易日，僅供回顧，不作當日交易訊號。';
+        return '<div class="model-only-note" role="status" style="display:block;border:1px solid #516984;border-radius:9px;padding:10px 12px;margin:8px 0;line-height:1.65">'
+          +'<strong>'+esc(t.symbol+' '+title)+'</strong>'+lines
+          +'<small>'+esc(note)+'</small></div>';
+      };
       const holdingMiniHtml = (item, quote = null) => {
         registerCSectorStock(item);
         const id=String(item.stock_id||''),m=item.metrics||{};
@@ -9122,7 +9149,7 @@ h1 {
                  <span><small>目前損益</small><b class="${holdingPnlClass(pnl)}">${pnl==null?'-':(pnl>0?'+':'')+esc(num(pnl,2))+'%'}</b></span>
                </span>
                ${sectorRotationCompactHtml(item)}
-               <span class="radar-simple-one-liner">一句話：${esc(positionStatus+addObservation)}</span>
+               <span class="radar-simple-one-liner">一句話：${esc(positionStatus+addObservation)}${holdingTransitionState(item)?'｜'+esc(holdingTransitionState(item).symbol+' '+holdingTransitionState(item).top.message+'（'+holdingTransitionState(item).asOf+'）'):''} </span>
                <span class="radar-simple-source">S ${esc(item.as_of||'待更新')}｜${live?'C 成交 '+esc(quoteDisplayState(live,item).moment):'無當日有效 C 成交'}｜風控提醒以原 B 方案為準</span>
              </summary>
             <div class="holding-mini-body">
@@ -9130,6 +9157,7 @@ h1 {
               <div class="holding-mini-status">${esc(positionStatus+addObservation+protectionDetail+positionDetail
                 +(bDecision.kind==='profit_giveback_watch'
                   ||(bDecision.kind==='warning'&&Number(risk?.pnl)<=-5)?'｜'+bDecision.detail:''))}</div>
+              ${holdingTransitionDetailHtml(item)}
               ${holdingMa20DaysHtml(item,live)}
               ${continuationRiskMiniHtml(item)}
               ${stockMovementHtml(item,live,'holding',{text:actionLabel,detail:decision.reminder})}
