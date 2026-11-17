@@ -5172,10 +5172,15 @@ h1 {
         const eligible=fresh&&String(item?.as_of||'')===expectedSignalDataDate()
           &&masOkay&&chasePass(item,price)
           &&Number.isFinite(position)&&position<85&&lots>=1000;
-        const formal=eligible&&formalEntryValidation.enabled&&m.v5?.entry_confirmed===true;
+        const formal=eligible&&formalEntryValidation.enabled
+          &&(m.v5?.entry_confirmed===true || (signedStarterSetup
+            &&m.ma_cluster?.all_rising===true
+            &&m.ma_cluster?.above_all_mas===true
+            &&Number(item.score)>=80
+            &&Number(m.daily_k)<=80));
         if(formal)return {...baseAction,phase:'confirmed',buyable:true,trialable:false,
-          live_quote_verified:true,text:'🟢 正式買點｜V5與有效成交確認',
-          detail:'歷史驗證已開放＋既有V5成立＋當日5分鐘內成交與均線／位置風控通過｜'
+          live_quote_verified:true,text:'🟢 正式買點｜策略核准與有效成交確認',
+          detail:'後端策略驗證通過＋V5或均線齊揚先手路線成立＋當日5分鐘內成交與均線／位置風控通過｜'
           +String(baseAction.detail||'仍須自行控管部位')};
         const signedStarterTrial=signedStarterSetup?signedStarterImpulseTrial(item,quote):null;
         if(signedStarterTrial)return {...baseAction,key:'signed_starter_impulse_trial',
