@@ -5188,13 +5188,12 @@ h1 {
             +'｜MA20乖離 '+num(signedStarterTrial.gap20,2)+'%'
             +'｜已通過獨立先手量價與原風控，研究型試單；不是V5正式買進'};
         // An orange early trial can be issued from signed starter/ACTIVE/ENTRY
-        // with fresh C and 1000 ACTUAL traded lots. Formal green still
+        // with fresh C, a dynamic actual-volume floor and projected daily volume. Formal green still
         // requires the independently validated backend entry_validation PASS.
         const relaxedQuality=bottomFirstQuality(item,quote);
         const entryLife=String(m.trade_lifecycle?.entry?.state||'');
         if(relaxedQuality.trial&&['starter','near','formal_candidate'].includes(entryLife)
-          &&['ACTIVE','ENTRY'].includes(modelLaunchPhase(item))
-          &&Number(quote?.volume_lots)>=1000)
+          &&['ACTIVE','ENTRY'].includes(modelLaunchPhase(item)))
           return {...baseAction,key:'bottom_first_live_trial',phase:'trial',
             buyable:false,trialable:true,rank:96,className:'trial',
             live_quote_verified:true,
