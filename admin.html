@@ -6704,13 +6704,30 @@ h1 {
           +'｜S生命週期候選 '+signedLifeRows.length+' 檔（非買點）'
           +'｜MA10早期路線75分門檻達標 '+ma10ScoreQualified+' 檔'
           +'｜均線收復試單準備 '+reclaimPrepared+' 檔（須盤中C成交再驗，非買點）';
+        // Separate model screening from actionable C-verified permissions.
+        // This uses already-loaded rows and adds no network/scanner work.
+        const modelCandidates=rows.filter(row=>
+          String(row.item?.as_of||'')===expected
+          &&['starter','near','formal_candidate'].includes(
+            String(row.item?.metrics?.trade_lifecycle?.entry?.state||''))).length;
+        const freshLiveQuotes=rows.filter(row=>quoteFreshForTrial(row.quote)).length;
+        const actionableTrialCount=starterRows.filter(row=>row.action?.trialable===true).length;
+        const actionableBuyCount=completedRows.filter(row=>row.action?.buyable===true).length;
+        const diagnostic='｜📊 模型進場候選 '+modelCandidates
+          +'｜有效盤中報價 '+freshLiveQuotes
+          +'｜盤後準備 '+eodTrialRows.length;
+        const noSignalReason=actionableTrialCount+actionableBuyCount===0
+          ?(freshLiveQuotes===0
+            ?'目前沒有有效的5分鐘內C報價可完成盤中驗證；不能判定全部股票技術面不合格'
+            :'目前已載入報價的股票，尚未同時通過策略、量價及風控驗證')
+          :'已出現盤中確認訊號；未入選者仍須依個股風控判定';
         const banner='<div class="entry-list-overview" data-stable-key="entry-overview">'
           +'<strong>🎯 進場雷達｜三種決策，一眼看懂</strong>'
           +'<span>🟢 V5正式 '+completedRows.length+'｜🟢 研究型技術買進 '+researchGreenCount
-          +'｜🟠 小量試單 '+(starterRows.length-researchGreenCount)
-          +'｜📋 前次新版留存 '+retainedRows.length+'｜應更新日 '+esc(expectedSignalDataDate())
+          +'｜🟠 盤中可試單 '+actionableTrialCount
+          +'｜📋 前次新版留存 '+retainedRows.length+diagnostic+'｜應更新日 '+esc(expectedSignalDataDate())
           +scanCoverage+'</span>'
-          +'<small>只有當日有效成交與原風控全部通過才可試單／確認買點。未更新日K只供觀察；全部詳細判斷點開個股查看。'
+          +'<small>'+esc(noSignalReason)+'。只有當日有效成交與原風控全部通過才可試單／確認買點。未更新日K只供觀察；全部詳細判斷點開個股查看。'
           +(staleRows.length?'｜另有 '+staleRows.length+' 檔過期資料不列入':'')
           +'</small><small>'+esc(entryBlockingNote)+'</small></div>';
         // The old '明日看盤清單' was a second full stock-card feed.
