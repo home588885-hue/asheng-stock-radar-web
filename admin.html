@@ -6435,6 +6435,7 @@ h1 {
         const completedRows=byRank(allSignal.filter(row=>row.action?.phase==='confirmed'
           &&row.action?.buyable===true&&formalEntryValidation.enabled&&quoteFreshForTrial(row.quote)));
         persistVerifiedTrialRows(starterRows);
+        retrySignalAuditOutbox();
         // Exact live-trial bucket already passed C freshness, risk, model and trialable gates.
         // No extra quote/scanner request. Never log EOD preparation as an actionable trial.
         starterRows.forEach(row=>void auditSignalObserved(
@@ -8134,6 +8135,59 @@ h1 {
       // Nothing here changes scan quotas, prices, holdings, entry gates or risk rules.
       const TRADE_SIGNAL_AUDIT_API = SUPABASE_URL + '/functions/v1/asheng-signal-audit';
       const auditedTradeSignals = new Set(), auditingTradeSignals = new Set();
+      // Persist verified on-screen trial evidence before the async POST. If the
+      // quote disappears or the tab reloads, the original observation survives.
+      const SIGNAL_AUDIT_OUTBOX_KEY='asheng-signal-audit-outbox-v1-'+portfolioId;
+      const signalAuditOutbox=new Map();
+      const persistSignalAuditOutbox=()=>{
+        try{localStorage.setItem(SIGNAL_AUDIT_OUTBOX_KEY,
+          JSON.stringify([...signalAuditOutbox.values()].slice(-100)));}catch(e){}
+      };
+      try{
+        const saved=JSON.parse(localStorage.getItem(SIGNAL_AUDIT_OUTBOX_KEY)||'[]');
+        for(const entry of Array.isArray(saved)?saved:[]){
+          if(typeof entry?.key==='string'&&entry.key.length<500
+            &&entry.payload?.signal_type==='trial'
+            &&Date.now()-Date.parse(entry.observed_at)<3*86400000)
+            signalAuditOutbox.set(entry.key,entry);
+        }
+      }catch(e){}
+      const sendSignalAudit=async(key,payload)=>{
+        if(auditedTradeSignals.has(key)||auditingTradeSignals.has(key))return;
+        auditingTradeSignals.add(key);
+        try{
+          const {data}=await authClient.auth.getSession();
+          const token=data?.session?.access_token;
+          if(!token)throw Error('登入狀態失效');
+          const response=await fetch(TRADE_SIGNAL_AUDIT_API,{
+            method:'POST',headers:{'Content-Type':'application/json',
+              Authorization:'Bearer '+token},
+            body:JSON.stringify(payload),cache:'no-store'
+          });
+          const result=await response.json().catch(()=>null);
+          if(!response.ok||result?.ok!==true)
+            throw Error(String(result?.error||'HTTP '+response.status));
+          auditedTradeSignals.add(key);
+          signalAuditOutbox.delete(key);persistSignalAuditOutbox();
+          entryTrialHistoryWriteProblem='';
+          try{sessionStorage.setItem('asheng-signal-saved-v1-'+key,'1');}catch(e){}
+          void refreshEntryTrialHistory(true);
+        }catch(e){reportTradeSignalAuditError(String(e?.message||'網路或服務異常'));}
+        finally{auditingTradeSignals.delete(key);}
+      };
+      const retrySignalAuditOutbox=()=>{
+        if(stage!=='ENTRY'||document.hidden)return;
+        for(const [key,entry] of signalAuditOutbox){
+          if(Date.now()-Date.parse(entry.observed_at)>3*86400000){
+            signalAuditOutbox.delete(key);continue;
+          }
+          if(Date.now()-Number(entry.last_attempt_at||0)<60000)continue;
+          entry.last_attempt_at=Date.now();
+          void sendSignalAudit(key,entry.payload);
+        }
+        persistSignalAuditOutbox();
+      };
+
       const reportTradeSignalAuditError = (reason) => {
         const code=String(reason||'unknown').slice(0,60);
         entryTrialHistoryWriteProblem='本次已確認的試單訊號尚未成功保存（'+code+'）；請勿視為有歷史紀錄。';
@@ -8180,28 +8234,10 @@ h1 {
           model_version:String(m.model?.version||''),reason:String(reason||'').slice(0,700),
           holding_add_kind:String(extra?.holding_add_kind||'')
         };
-        auditingTradeSignals.add(key);
-        void (async()=>{
-          const {data}=await authClient.auth.getSession();
-          const token=data?.session?.access_token;
-          if(!token){reportTradeSignalAuditError('登入狀態失效');return;}
-          const response=await fetch(TRADE_SIGNAL_AUDIT_API,{
-            method:'POST',headers:{'Content-Type':'application/json',
-              Authorization:'Bearer '+token},
-            body:JSON.stringify(payload),cache:'no-store'
-          });
-          const result=await response.json().catch(()=>null);
-          if(!response.ok||result?.ok!==true){
-            reportTradeSignalAuditError(String(result?.error||'HTTP '+response.status));
-            return;
-          }
-          auditedTradeSignals.add(key);
-          entryTrialHistoryWriteProblem='';
-          try{sessionStorage.setItem('asheng-signal-saved-v1-'+key,'1');}catch(e){}
-          // Refresh the durable, RLS-filtered list after the server confirms a write.
-          void refreshEntryTrialHistory(true);
-        })().catch(()=>reportTradeSignalAuditError('網路或服務異常'))
-          .finally(()=>auditingTradeSignals.delete(key));
+        signalAuditOutbox.set(key,{key,payload,observed_at:new Date().toISOString(),
+          last_attempt_at:Date.now()});
+        persistSignalAuditOutbox();
+        void sendSignalAudit(key,payload);
       };
       // Clear yesterday's short-term warning only with a verified next-day C trade.
       // Pure UI decision, never touches MA20 exits, holdings, or S/C quotas.
