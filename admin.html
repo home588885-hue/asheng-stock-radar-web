@@ -6438,6 +6438,11 @@ h1 {
         retrySignalAuditOutbox();
         // Exact live-trial bucket already passed C freshness, risk, model and trialable gates.
         // No extra quote/scanner request. Never log EOD preparation as an actionable trial.
+        completedRows.forEach(row=>void auditSignalObserved(
+          row.item,row.quote,'buy',
+          '🟢 正式可買進｜'+String(row.action?.text||'盤中策略已確認'),
+          String(row.action?.detail||row.action?.text||'完整正式買進條件通過')
+        ));
         starterRows.forEach(row=>void auditSignalObserved(
           row.item,row.quote,'trial',
           '🟠 可小量試單｜'+String(row.action?.text||'C盤中條件已確認'),
@@ -8135,7 +8140,7 @@ h1 {
           if(!session?.data?.session?.access_token)throw Error('not_authenticated');
           const {data,error}=await authClient.from('radar_trade_signal_history')
             .select('stock_id,stock_name,signal_label,signal_date,quote_time,price,reason,captured_at')
-            .eq('signal_type','trial').order('captured_at',{ascending:false}).limit(40);
+            .in('signal_type',['trial','buy']).order('captured_at',{ascending:false}).limit(40);
           if(error)throw error;
           entryTrialHistoryRows=Array.isArray(data)?data:[];
           entryTrialHistoryStatus='loaded';
@@ -8164,7 +8169,7 @@ h1 {
         const saved=JSON.parse(localStorage.getItem(SIGNAL_AUDIT_OUTBOX_KEY)||'[]');
         for(const entry of Array.isArray(saved)?saved:[]){
           if(typeof entry?.key==='string'&&entry.key.length<500
-            &&entry.payload?.signal_type==='trial'
+            &&['trial','buy'].includes(entry.payload?.signal_type)
             &&Date.now()-Date.parse(entry.observed_at)<3*86400000)
             signalAuditOutbox.set(entry.key,entry);
         }
@@ -8222,8 +8227,8 @@ h1 {
         const source=live?'C':'S',text=String(label||'').slice(0,160);
         // Old models and past candidates must never be relabelled as today's trade signal.
         if(!/^[0-9A-Z.-]{2,12}$/.test(id)|| !/^\d{4}-\d{2}-\d{2}$/.test(asOf)
-          ||!['trial','add'].includes(kind)||!text||!unifiedRadarGeneration(item))return;
-        if(kind==='trial' && (holdings.has(id)||asOf!==expectedSignalDataDate()))return;
+          ||!['trial','buy','add'].includes(kind)||!text||!unifiedRadarGeneration(item))return;
+        if(['trial','buy'].includes(kind) && (holdings.has(id)||asOf!==expectedSignalDataDate()))return;
         if(kind==='add' && !holdings.has(id))return;
         if(!live && asOf!==expectedSignalDataDate())return;
         if(live && signalDate!==todayQuoteDate().replace(/(\d{4})(\d{2})(\d{2})/,'$1-$2-$3'))return;
