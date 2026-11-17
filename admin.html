@@ -4757,12 +4757,12 @@ h1 {
             &&price>=open*1.001&&price>=prev*minRise&&price>=todayHigh*.985
             &&price>=Math.max(ma20,ma60,ma10*.997,ma5*.995)
             &&Number.isFinite(pace)&&pace>=1&&pace<=3.6
-            &&nowVol>=1000&&projected>=1000
+            &&nowVol>=Math.min(1000,Math.max(300,Math.ceil(avg*.25)))&&projected>=1000
             &&price<=ma20*1.065
             &&price<=open*1.055&&price<=prev*1.065
             &&(g.macd_weak!==true || (price>=open*1.008&&price>=prev*1.02&&pace>=1.4))
             &&chasePass(item,price)))
-            trialReasons.push('盤中成交未達1000張／支撐、量速或價格轉強不足');
+            trialReasons.push('盤中實際量或預估全天量不足／支撐、量速或價格轉強不足');
         }
         return {version:BOTTOM_FIRST_QUALITY_VERSION,prelaunch,trialBase,
           holdingRebreak,trial:trialBase&&live&&trialReasons.length===0,
