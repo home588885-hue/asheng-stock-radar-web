@@ -53,15 +53,16 @@ Deno.serve(async (req:Request)=>{
   const day=String(body?.signal_date||"");
   const source=String(body?.source||"");
   const price=n(body?.price,100000);
-  if(!symbol.test(id)||!["trial","add"].includes(type)||!label ||
+  if(!symbol.test(id)||!["trial","buy","add"].includes(type)||!label ||
     !date.test(day)||!date.test(asOf)||!["C","S"].includes(source)||price===null||price<=0)
     return out({ok:false,error:"invalid_signal"},400);
   // Capture only ACTUAL displayed actionable labels, not research or no-buy descriptions.
   const trial=type==="trial" &&
     /^(?:🎯 第一根可試單|🟠 可小量試單|🔵 盤中起漲｜可小量試單|🧪 可試單)/u.test(label);
+  const buy=type==="buy" && /^🟢 正式可買進｜/u.test(label);
   const add=type==="add" &&
     /^(?:🟠 可評估加碼|🟢 可加碼)/u.test(label);
-  if(!trial&&!add)return out({ok:false,error:"non_actionable_label"},400);
+  if(!trial&&!buy&&!add)return out({ok:false,error:"non_actionable_label"},400);
   const now=taipeiDate();
   const validDay=source==="C"?day===now:day===asOf &&
     Math.abs(Date.parse(now+"T00:00:00Z")-Date.parse(day+"T00:00:00Z"))<8*86400000;
