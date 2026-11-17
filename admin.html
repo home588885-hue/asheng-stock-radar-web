@@ -6706,7 +6706,7 @@ h1 {
             String(item?.metrics?.trade_lifecycle?.entry?.state||'')));
         const ma10ScoreQualified=signedLifeRows.filter(item=>Number(item.score)>=75).length;
         const formalGateNote=formalEntryValidation.status==='hold'
-          ?'🔒 正式綠色買點維持關閉（樣本外驗證未過）'
+          ?'🔒 正式綠燈暫停：'+String(formalEntryValidation.reason||'樣本外驗證未過')+'；橘燈仍可追蹤，不能視為正式買進'
           :formalEntryValidation.enabled?'🟢 正式買點仍須當日成交及原風控'
           :'🔒 正式綠色買點尚未驗證通過';
         const reclaimPrepared=liveBasePicks.filter(item=>reclaimResearchSetup(item)).length;
