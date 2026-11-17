@@ -6386,7 +6386,7 @@ h1 {
           if(visualReady(row)&&!['trial','confirmed'].includes(String(a.phase||''))){
             b.eodTrial.push(safeRow(row,{
               key:'eod_formal_candidate',phase:'observe',rank:55,className:'scout',
-              text:'🟢 盤後買進候選｜尚非正式買點',
+              text:'🟢 綠燈候選追蹤｜正式買進待驗證',
               detail:'模型 '+date+'｜日K均線、量價及位置初篩通過；尚未取得盤中成交確認'
                 +'及正式策略驗證，不代表現在可以買進'
             }));
@@ -6734,6 +6734,7 @@ h1 {
         const banner='<div class="entry-list-overview" data-stable-key="entry-overview">'
           +'<strong>🎯 進場雷達｜三種決策，一眼看懂</strong>'
           +'<span>🟢 V5正式 '+completedRows.length+'｜🟢 研究型技術買進 '+researchGreenCount
+          +'｜🟢 綠燈候選追蹤 '+eodTrialRows.filter(row=>row.action?.key==='eod_formal_candidate').length
           +'｜🟠 盤中可試單 '+actionableTrialCount
           +'｜📋 前次新版留存 '+retainedRows.length+diagnostic+'｜應更新日 '+esc(expectedSignalDataDate())
           +scanCoverage+'</span>'
