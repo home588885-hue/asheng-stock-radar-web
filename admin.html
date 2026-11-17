@@ -6375,12 +6375,24 @@ h1 {
               detail:'當日有效成交 '+num(price,2)+' 低於必要均線；站回MA10／20／60再核對'}));
             return;
           }
-          if(eodTrialWatchReady(row)&&!['trial','confirmed'].includes(String(a.phase||''))){
-            const starterSetup=ma10StarterSetup(item);
-            const status=entryTrialPreparationCopy(item,q,starterSetup);
+          // Background EOD candidates remain visible without C quotes.
+          // They are NEVER trade permissions: only the independent live gate
+          // can produce a verified orange trial or formal green buy.
+          if(visualReady(row)&&!['trial','confirmed'].includes(String(a.phase||''))){
             b.eodTrial.push(safeRow(row,{
-              key:'eod_trial_watch',phase:'observe',rank:44,className:'scout',
-              text:status.text,detail:status.detail
+              key:'eod_formal_candidate',phase:'observe',rank:55,className:'scout',
+              text:'🟢 盤後買進候選｜尚非正式買點',
+              detail:'模型 '+date+'｜日K均線、量價及位置初篩通過；尚未取得盤中成交確認'
+                +'及正式策略驗證，不代表現在可以買進'
+            }));
+            return;
+          }
+          if(eodTrialWatchReady(row)&&!['trial','confirmed'].includes(String(a.phase||''))){
+            b.eodTrial.push(safeRow(row,{
+              key:'eod_trial_candidate',phase:'observe',rank:44,className:'scout',
+              text:'🟠 盤後可試單候選｜尚非盤中試單',
+              detail:'模型 '+date+'｜盤後先手條件通過，無須即時C報價即可顯示候選；'
+                +'實際試單仍須當日有效成交、價格支撐與風控確認'
             }));
             return;
           }
